@@ -22,6 +22,10 @@ This repository packages the WiFi coverage simulator as a small Docker image
 
 ---
 
+## Demo
+
+A demo of the full tool running can be accessed here: https://nevva.github.io/wifi-simulator/
+
 ## Quick start (any Docker host)
 
 On a host with Docker + Docker Compose, in this folder:
