@@ -1,0 +1,9 @@
+services:
+  wifi-simulator:
+    build: .
+    image: wifi-simulator:latest
+    container_name: wifi-simulator
+    ports:
+      # host:container — ändra 8080 om porten är upptagen
+      - "8080:80"
+    restart: unless-stopped

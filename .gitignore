@@ -1,0 +1,10 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor folders
+.idea/
+.vscode/
+
+# Local experiments — never commit saved project files by accident
+*.wifiproj.json
