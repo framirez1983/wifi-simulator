@@ -413,6 +413,17 @@ const translations = {
     "ap.tilt": "Inclinación hacia abajo",
     "ap.gain": "Ganancia de antena",
     "ap.remove": "Eliminar punto de acceso",
+    "wall.straighten": "Enderezar pared",
+    "wall.lengthMeters": "Longitud (m)",
+    "wall.angleDegrees": "Ángulo (°)",
+    "wall.angleHint": "0° apunta hacia +X; los ángulos positivos giran hacia +Y.",
+    "wall.snapTitle": "Ajuste de paredes",
+    "wall.endpointSnap": "Ajuste a extremos",
+    "wall.endpointSnapPx": "Distancia",
+    "wall.orthoSnap": "Ajuste ortogonal",
+    "wall.orthoSnapDeg": "Tolerancia",
+    "wall.invalidLength": "Introduce una longitud positiva.",
+    "wall.invalidAngle": "Introduce un ángulo válido.",
     "wall.material": "Material",
     "wall.length": "Longitud",
     "wall.attenuation": "Atenuación",
@@ -578,6 +589,17 @@ const translations = {
     "ap.tilt": "Downtilt",
     "ap.gain": "Antenna gain",
     "ap.remove": "Remove access point",
+    "wall.straighten": "Straighten wall",
+    "wall.lengthMeters": "Length (m)",
+    "wall.angleDegrees": "Angle (°)",
+    "wall.angleHint": "0° points toward +X; positive angles rotate toward +Y.",
+    "wall.snapTitle": "Wall snapping",
+    "wall.endpointSnap": "Endpoint snapping",
+    "wall.endpointSnapPx": "Distance",
+    "wall.orthoSnap": "Orthogonal snapping",
+    "wall.orthoSnapDeg": "Tolerance",
+    "wall.invalidLength": "Enter a positive length.",
+    "wall.invalidAngle": "Enter a valid angle.",
     "wall.material": "Material",
     "wall.length": "Length",
     "wall.attenuation": "Attenuation",
@@ -743,6 +765,17 @@ const translations = {
     "ap.tilt": "Nedtilt",
     "ap.gain": "Antennförstärkning",
     "ap.remove": "Ta bort accesspunkt",
+    "wall.straighten": "Räta upp vägg",
+    "wall.lengthMeters": "Längd (m)",
+    "wall.angleDegrees": "Vinkel (°)",
+    "wall.angleHint": "0° pekar mot +X; positiva vinklar roterar mot +Y.",
+    "wall.snapTitle": "Väggsnäppning",
+    "wall.endpointSnap": "Snäpp till ändpunkter",
+    "wall.endpointSnapPx": "Avstånd",
+    "wall.orthoSnap": "Ortogonal snäppning",
+    "wall.orthoSnapDeg": "Tolerans",
+    "wall.invalidLength": "Ange en positiv längd.",
+    "wall.invalidAngle": "Ange en giltig vinkel.",
     "wall.material": "Material",
     "wall.length": "Längd",
     "wall.attenuation": "Dämpning",
@@ -915,6 +948,29 @@ new MutationObserver(records=>{
 document.documentElement.lang=uiLanguage;
 translateNodes();
 
+const wallSnapStoragePrefix = 'wifiSimulator.';
+const wallSnapPrefs = {
+  endpointSnap: true,
+  endpointDistance: 10,
+  orthoSnap: true,
+  orthoTolerance: 5,
+};
+function loadWallSnapPrefs(){
+  try{
+    const on=localStorage.getItem(wallSnapStoragePrefix+'wallSnapEnabled');
+    const px=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallSnapDistance'));
+    const oo=localStorage.getItem(wallSnapStoragePrefix+'wallOrthoSnapEnabled');
+    const deg=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallOrthoTolerance'));
+    if(on!==null) wallSnapPrefs.endpointSnap = on !== 'false';
+    if(Number.isFinite(px)) wallSnapPrefs.endpointDistance = clamp(px, 1, 40);
+    if(oo!==null) wallSnapPrefs.orthoSnap = oo !== 'false';
+    if(Number.isFinite(deg)) wallSnapPrefs.orthoTolerance = clamp(deg, 0, 30);
+  }catch(_){}
+}
+function saveWallSnapPref(key,value){
+  try{ localStorage.setItem(wallSnapStoragePrefix+key, String(value)); }catch(_){}
+}
+
 // ---------- small helpers ----------
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
@@ -922,6 +978,18 @@ const uid = (p='id')=>p+'_'+Math.random().toString(36).slice(2,9);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
 const dist=(ax,ay,bx,by)=>Math.hypot(bx-ax,by-ay);
+const wallAngleDeg=w=>Math.atan2(w.y2-w.y1,w.x2-w.x1)*180/Math.PI;
+function normAngleDeg(a){ return ((a%360)+360)%360; }
+function wallLen(w){ return dist(w.x1,w.y1,w.x2,w.y2); }
+function setWallFromLengthAngle(w,len,deg){
+  const rad=deg*Math.PI/180;
+  w.x2=w.x1+Math.cos(rad)*len;
+  w.y2=w.y1+Math.sin(rad)*len;
+}
+function geometryChanged(){
+  _indoor=null; scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
+}
+loadWallSnapPrefs();
 
 // ---------- defaults ----------
 const BANDS = {
@@ -1099,6 +1167,7 @@ function draw2d(){
     ctx.lineWidth = selW?3:2.2; ctx.strokeStyle = shade(m.color,-0.25);
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
   });
+  drawWallEndpointHandles();
 
   // wall draft preview
   if(draft){
@@ -1232,6 +1301,32 @@ function pickWall(wx,wy){
   }
   return null;
 }
+function selectedSingleWall(){
+  if(!selection || selection.type!=='wall' || multiWalls.length) return null;
+  return floor().walls.find(w=>w.id===selection.id) || null;
+}
+function drawWallEndpointHandles(){
+  const w=selectedSingleWall();
+  if(!w || view!=='2d') return;
+  [[w.x1,w.y1],[w.x2,w.y2]].forEach(([x,y])=>{
+    const p=W2S(x,y);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(p.x,p.y,5.5,0,Math.PI*2);
+    ctx.fillStyle='#0d1117'; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#34d6c4'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2);
+    ctx.fillStyle='#eafffb'; ctx.fill();
+    ctx.restore();
+  });
+}
+function pickWallEndpointHandle(sx,sy){
+  const w=selectedSingleWall();
+  if(!w || view!=='2d') return null;
+  const handles=[{end:'a',x:w.x1,y:w.y1},{end:'b',x:w.x2,y:w.y2}];
+  let best=null, bd=10;
+  handles.forEach(h=>{ const p=W2S(h.x,h.y), d=Math.hypot(sx-p.x,sy-p.y); if(d<bd){bd=d;best=h;} });
+  return best;
+}
 function pickZone(wx,wy){
   const f=floor(); const zs=f.zones||[];
   for(let i=zs.length-1;i>=0;i--){ const z=zs[i];
@@ -1271,14 +1366,38 @@ function selectAllWalls(){
   const f=floor(); multiWalls=f.walls.map(w=>w.id);
   selection=multiWalls.length?{type:'walls'}:null; renderProp(); draw2d();
 }
-function snap(wx,wy){
-  // snap to existing wall endpoints, then to 0.25 m grid when near
-  const f=floor(); const tol=10/camera.zoom; let best=null,bd=tol;
-  f.walls.forEach(w=>{
-    [[w.x1,w.y1],[w.x2,w.y2]].forEach(([x,y])=>{const d=dist(wx,wy,x,y);if(d<bd){bd=d;best={x,y};}});
+function nearestEndpointSnap(wx,wy,excludeWallId){
+  if(!wallSnapPrefs.endpointSnap) return null;
+  let best=null, bd=wallSnapPrefs.endpointDistance;
+  floor().walls.forEach(w=>{
+    if(w.id===excludeWallId) return;
+    [[w.x1,w.y1],[w.x2,w.y2]].forEach(([x,y])=>{
+      const p=W2S(x,y), q=W2S(wx,wy), d=Math.hypot(q.x-p.x,q.y-p.y);
+      if(d<bd){bd=d;best={x,y};}
+    });
   });
-  if(best) return best;
-  return {x:Math.round(wx*4)/4, y:Math.round(wy*4)/4};
+  return best;
+}
+function applyOrthoSnap(pt,fixed){
+  if(!fixed || !wallSnapPrefs.orthoSnap) return pt;
+  const dx=pt.x-fixed.x, dy=pt.y-fixed.y, len=Math.hypot(dx,dy);
+  if(len<1e-6) return pt;
+  const ang=normAngleDeg(Math.atan2(dy,dx)*180/Math.PI);
+  const targets=[0,90,180,270];
+  let best=targets[0], bd=Infinity;
+  targets.forEach(a=>{ const d=Math.abs(((ang-a+540)%360)-180); if(d<bd){bd=d;best=a;} });
+  if(bd>wallSnapPrefs.orthoTolerance) return pt;
+  const rad=best*Math.PI/180;
+  return {x:fixed.x+Math.cos(rad)*len, y:fixed.y+Math.sin(rad)*len};
+}
+function snapWallPoint(wx,wy,opts={}){
+  if(!opts.altKey){
+    const endpoint=nearestEndpointSnap(wx,wy,opts.excludeWallId);
+    if(endpoint) return endpoint;
+  }
+  let pt=opts.grid===false ? {x:wx,y:wy} : {x:Math.round(wx*4)/4, y:Math.round(wy*4)/4};
+  if(!opts.altKey) pt=applyOrthoSnap(pt,opts.fixed);
+  return pt;
 }
 
 // ----- pointer events on 2D canvas -----
@@ -1301,10 +1420,24 @@ cv.addEventListener('pointerdown',e=>{
     panning=true; panStart={mx:e.offsetX,my:e.offsetY, cx:camera.x, cy:camera.y}; return;
   }
   if(tool==='select'){
+    const handle=pickWallEndpointHandle(e.offsetX,e.offsetY);
+    if(handle){
+      const wl=selectedSingleWall();
+      dragging={type:'wall-endpoint',id:wl.id,end:handle.end,sx:e.offsetX,sy:e.offsetY,
+        start:{x1:wl.x1,y1:wl.y1,x2:wl.x2,y2:wl.y2}, committed:false,moved:false};
+      return;
+    }
     const ap=pickAP(w.x,w.y);
     if(ap){ select('ap',ap.id); commit(); dragging={type:'ap',id:ap.id,ox:w.x-ap.x,oy:w.y-ap.y}; return; }
     const wl=pickWall(w.x,w.y);
-    if(wl){ select('wall',wl.id); return; }
+    if(wl){
+      if(selection && selection.type==='wall' && selection.id===wl.id && !multiWalls.length){
+        dragging={type:'wall-body',id:wl.id,sx:e.offsetX,sy:e.offsetY,startWx:w.x,startWy:w.y,
+          start:{x1:wl.x1,y1:wl.y1,x2:wl.x2,y2:wl.y2}, committed:false,moved:false};
+        return;
+      }
+      select('wall',wl.id); return;
+    }
     const f=floor();
     if(f.bg&&f.bg._img&&!f.bg.locked&&insideBg(w.x,w.y)){ select('bg'); commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; return; }
     const z=pickZone(w.x,w.y);
@@ -1318,7 +1451,7 @@ cv.addEventListener('pointerdown',e=>{
     commit(); f.aps.push(ap); select('ap',ap.id); scheduleHeat(); refreshStats();
   }
   else if(tool==='wall'){
-    const s=snap(w.x,w.y);
+    const s=snapWallPoint(w.x,w.y,{altKey:e.altKey});
     if(!draft){ draft={x1:s.x,y1:s.y,x2:s.x,y2:s.y}; }
     else{
       commit();
@@ -1353,9 +1486,40 @@ window.addEventListener('pointermove',e=>{
     else if(dragging.type==='bg'){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; }
     else if(dragging.type==='zone'){ const z=(f.zones||[]).find(q=>q.id===dragging.id);
       if(z){ const wd=Math.abs(z.x2-z.x1), hd=Math.abs(z.y2-z.y1); const nx=w.x-dragging.ox, ny=w.y-dragging.oy; z.x1=nx; z.y1=ny; z.x2=nx+wd; z.y2=ny+hd; } }
+    else if(dragging.type==='wall-endpoint'){
+      const wl=f.walls.find(x=>x.id===dragging.id);
+      if(wl){
+        const movedPx=Math.hypot(ox-dragging.sx,oy-dragging.sy);
+        if(movedPx>=4 || dragging.moved){
+          if(!dragging.committed){ commit(); dragging.committed=true; }
+          dragging.moved=true;
+          const fixed=dragging.end==='a'
+            ? {x:dragging.start.x2,y:dragging.start.y2}
+            : {x:dragging.start.x1,y:dragging.start.y1};
+          const s=snapWallPoint(w.x,w.y,{fixed,excludeWallId:wl.id,altKey:e.altKey,grid:false});
+          if(dragging.end==='a'){ wl.x1=s.x; wl.y1=s.y; wl.x2=dragging.start.x2; wl.y2=dragging.start.y2; }
+          else { wl.x1=dragging.start.x1; wl.y1=dragging.start.y1; wl.x2=s.x; wl.y2=s.y; }
+        }
+      }
+      draw2d(); return;
+    }
+    else if(dragging.type==='wall-body'){
+      const wl=f.walls.find(x=>x.id===dragging.id);
+      if(wl){
+        const movedPx=Math.hypot(ox-dragging.sx,oy-dragging.sy);
+        if(movedPx>=4 || dragging.moved){
+          if(!dragging.committed){ commit(); dragging.committed=true; }
+          dragging.moved=true;
+          const dx=w.x-dragging.startWx, dy=w.y-dragging.startWy;
+          wl.x1=dragging.start.x1+dx; wl.y1=dragging.start.y1+dy;
+          wl.x2=dragging.start.x2+dx; wl.y2=dragging.start.y2+dy;
+        }
+      }
+      draw2d(); return;
+    }
     scheduleHeat(); draw2d(); return;
   }
-  if(draft){ const s=snap(w.x,w.y); draft.x2=s.x; draft.y2=s.y; draw2d(); }
+  if(draft){ const s=snapWallPoint(w.x,w.y,{fixed:{x:draft.x1,y:draft.y1},altKey:e.altKey}); draft.x2=s.x; draft.y2=s.y; draw2d(); }
   if(tool==='measure'&&measureLine&&!measureLine.done){ measureLine.x2=w.x;measureLine.y2=w.y;draw2d(); }
 });
 window.addEventListener('pointerup',e=>{
@@ -1369,7 +1533,12 @@ window.addEventListener('pointerup',e=>{
     }
     draw2d(); mouse.down=false; return;
   }
-  if(dragging){ dragging=null; renderProp(); refreshStats(); }
+  if(dragging){
+    const needsGeometryUpdate=(dragging.type==='wall-endpoint'||dragging.type==='wall-body') && dragging.moved;
+    dragging=null;
+    if(needsGeometryUpdate){ geometryChanged(); renderProp(); }
+    else { refreshStats(); renderProp(); }
+  }
   if(erasing){ erasing=false; }
   if(boxing){
     const f=floor(); const ids=[];
@@ -2021,12 +2190,32 @@ function deleteSelection(){
   else if(selection.type==='bg') f.bg=null;
   selection=null; scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d();
 }
+function wallSnapControlsHtml(){
+  return `<div class="field" data-editor-pref="wall-snap" style="margin-top:10px"><label>${t('wall.snapTitle')}</label>
+    <div class="field"><label><input type="checkbox" id="pSnapOn" ${wallSnapPrefs.endpointSnap?'checked':''}> ${t('wall.endpointSnap')}</label>
+      <label>${t('wall.endpointSnapPx')}</label>
+      <div class="slider"><input id="pSnapDist" type="range" min="1" max="40" step="1" value="${wallSnapPrefs.endpointDistance}"><span class="val" id="pSnapDistV">${wallSnapPrefs.endpointDistance.toFixed(0)} px</span></div></div>
+    <div class="field"><label><input type="checkbox" id="pOrthoOn" ${wallSnapPrefs.orthoSnap?'checked':''}> ${t('wall.orthoSnap')}</label>
+      <label>${t('wall.orthoSnapDeg')}</label>
+      <div class="slider"><input id="pOrthoTol" type="range" min="0" max="30" step="1" value="${wallSnapPrefs.orthoTolerance}"><span class="val" id="pOrthoTolV">${wallSnapPrefs.orthoTolerance.toFixed(0)}°</span></div></div>
+  </div>`;
+}
+function wireWallSnapControls(){
+  const snapOn=$('#pSnapOn'), snapDist=$('#pSnapDist'), orthoOn=$('#pOrthoOn'), orthoTol=$('#pOrthoTol');
+  if(!snapOn) return;
+  snapOn.onchange=e=>{ wallSnapPrefs.endpointSnap=e.target.checked; saveWallSnapPref('wallSnapEnabled',wallSnapPrefs.endpointSnap); };
+  snapDist.oninput=e=>{ wallSnapPrefs.endpointDistance=+e.target.value; $('#pSnapDistV').textContent=wallSnapPrefs.endpointDistance.toFixed(0)+' px'; saveWallSnapPref('wallSnapDistance',wallSnapPrefs.endpointDistance); };
+  orthoOn.onchange=e=>{ wallSnapPrefs.orthoSnap=e.target.checked; saveWallSnapPref('wallOrthoSnapEnabled',wallSnapPrefs.orthoSnap); };
+  orthoTol.oninput=e=>{ wallSnapPrefs.orthoTolerance=+e.target.value; $('#pOrthoTolV').textContent=wallSnapPrefs.orthoTolerance.toFixed(0)+'°'; saveWallSnapPref('wallOrthoTolerance',wallSnapPrefs.orthoTolerance); };
+}
 function renderProp(){
   const body=$('#propBody'); const title=$('#propTitle');
   if(!selection){ setUiText(title,'properties.title');
     body.innerHTML='<div class="empty" data-i18n="properties.selectionHint">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den. Dra en ruta i tom yta för att markera flera väggar, eller Shift+klicka för att lägga till enstaka.</div>'
+      +wallSnapControlsHtml()
       +'<button class="tbtn" id="pSelAll" style="width:100%;justify-content:center;margin-top:8px" data-i18n="wall.selectAll">Markera alla väggar på planet</button>'
       +'<button class="tbtn" id="pCleanup" style="width:100%;justify-content:center;margin-top:8px" data-i18n="wall.cleanup">Städa upp väggar (slå ihop)</button>';
+    wireWallSnapControls();
     $('#pSelAll').onclick=selectAllWalls;
     $('#pCleanup').onclick=cleanupWalls; return; }
   const f=floor();
@@ -2080,15 +2269,38 @@ function renderProp(){
   else if(selection.type==='wall'){
     const w=f.walls.find(x=>x.id===selection.id); if(!w){select(null);return;}
     setUiText(title,'tool.wall');
-    const len=dist(w.x1,w.y1,w.x2,w.y2);
+    const len=wallLen(w), angle=normAngleDeg(wallAngleDeg(w));
     body.innerHTML=`
-      <div class="field"><label data-i18n="wall.material">Material</label><select id="pMat">
+      <div class="field"><label>${t('wall.material')}</label><select id="pMat">
         ${state.materials.map(m=>`<option value="${m.id}" ${w.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
-      <div class="stat"><span data-i18n="wall.length">Längd</span><b>${len.toFixed(2)} m</b></div>
-      <div class="stat"><span data-i18n="wall.attenuation">Dämpning</span><b>${matById(w.materialId).db} dB</b></div>
-      <button class="delbtn" id="pDel" data-i18n="wall.remove">Ta bort vägg</button>`;
+      <div class="row2"><div class="field"><label>${t('wall.lengthMeters')}</label><input id="pWallLen" type="number" step="0.01" min="0.01" value="${len.toFixed(2)}"></div>
+        <div class="field"><label>${t('wall.angleDegrees')}</label><input id="pWallAng" type="number" step="0.1" value="${angle.toFixed(1)}"></div></div>
+      <div class="hint">${t('wall.angleHint')}</div>
+      <div class="stat"><span>${t('wall.attenuation')}</span><b>${matById(w.materialId).db} dB</b></div>
+      <button class="tbtn" id="pStraighten" style="width:100%;justify-content:center;margin:8px 0">${t('wall.straighten')}</button>
+      ${wallSnapControlsHtml()}
+      <button class="delbtn" id="pDel">${t('wall.remove')}</button>`;
     $('#pMat').onchange=e=>{w.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
+    $('#pWallLen').onchange=e=>{
+      const v=parseFloat(e.target.value);
+      if(!(v>0)){ e.target.value=wallLen(w).toFixed(2); showToast(true,t('wall.invalidLength'),null,1600); return; }
+      commit(); setWallFromLengthAngle(w,v,wallAngleDeg(w)); geometryChanged(); renderProp();
+    };
+    $('#pWallAng').onchange=e=>{
+      const v=parseFloat(e.target.value);
+      if(!Number.isFinite(v)){ e.target.value=normAngleDeg(wallAngleDeg(w)).toFixed(1); showToast(true,t('wall.invalidAngle'),null,1600); return; }
+      commit(); setWallFromLengthAngle(w,wallLen(w),v); geometryChanged(); renderProp();
+    };
+    $('#pStraighten').onclick=()=>{
+      const a=normAngleDeg(wallAngleDeg(w));
+      const targets=[0,90,180,270,360];
+      let best=0, bd=Infinity;
+      targets.forEach(x=>{ const d=Math.abs(a-x); if(d<bd){bd=d;best=x;} });
+      if(best===360) best=0;
+      commit(); setWallFromLengthAngle(w,wallLen(w),best); geometryChanged(); renderProp();
+    };
+    wireWallSnapControls();
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='walls'){
@@ -2781,8 +2993,8 @@ function wireGlobals(){
   $('#btnAutoPlace').onclick=openAutoPlace;
   // commit (undo) for property/material/floor edits
   const rp=$('#right');
-  rp.addEventListener('pointerdown',e=>{ if(e.target.matches('input[type=range],select')) commitThrottled(); }, true);
-  rp.addEventListener('focusin',e=>{ if(e.target.matches('input[type=text],input[type=number]')) commitThrottled(); });
+  rp.addEventListener('pointerdown',e=>{ if(!e.target.closest('[data-editor-pref]') && e.target.matches('input[type=range],select')) commitThrottled(); }, true);
+  rp.addEventListener('focusin',e=>{ if(!e.target.closest('[data-editor-pref]') && e.target.matches('input[type=text],input[type=number]')) commitThrottled(); });
   const lp=$('#left');
   lp.addEventListener('pointerdown',e=>{ if(e.target.matches('input[type=range],select')) commitThrottled(); }, true);
   lp.addEventListener('focusin',e=>{ if(e.target.matches('input')) commitThrottled(); });
