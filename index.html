@@ -390,6 +390,7 @@ const translations = {
     "tool.wall": "Pared",
     "tool.pillar": "Pilar",
     "tool.ap": "Punto de acceso",
+    "tool.label": "Etiqueta",
     "tool.bg": "Plano",
     "tool.erase": "Borrar",
     "tool.zone": "Zona de exclusión",
@@ -440,6 +441,11 @@ const translations = {
     "pillar.material": "Material",
     "pillar.attenuation": "Atenuación",
     "pillar.remove": "Eliminar pilar",
+    "label.title": "Etiqueta",
+    "label.text": "Texto",
+    "label.size": "Tamaño",
+    "label.rotation": "Rotación",
+    "label.remove": "Eliminar etiqueta",
     "bg.title": "Plano de fondo",
     "bg.show": "Mostrar plano en esta planta",
     "bg.scale": "Escala (metros por anchura de imagen)",
@@ -575,6 +581,7 @@ const translations = {
     "tool.wall": "Wall",
     "tool.pillar": "Pillar",
     "tool.ap": "Access point",
+    "tool.label": "Label",
     "tool.bg": "Floor plan",
     "tool.erase": "Erase",
     "tool.zone": "Exclusion zone",
@@ -625,6 +632,11 @@ const translations = {
     "pillar.material": "Material",
     "pillar.attenuation": "Attenuation",
     "pillar.remove": "Remove pillar",
+    "label.title": "Label",
+    "label.text": "Text",
+    "label.size": "Size",
+    "label.rotation": "Rotation",
+    "label.remove": "Remove label",
     "bg.title": "Background floor plan",
     "bg.show": "Show floor plan on this floor",
     "bg.scale": "Scale (meters per image width)",
@@ -760,6 +772,7 @@ const translations = {
     "tool.wall": "Vägg",
     "tool.pillar": "Pelare",
     "tool.ap": "Accesspunkt",
+    "tool.label": "Etikett",
     "tool.bg": "Ritning",
     "tool.erase": "Radera",
     "tool.zone": "Spärryta",
@@ -810,6 +823,11 @@ const translations = {
     "pillar.material": "Material",
     "pillar.attenuation": "Dämpning",
     "pillar.remove": "Ta bort pelare",
+    "label.title": "Etikett",
+    "label.text": "Text",
+    "label.size": "Storlek",
+    "label.rotation": "Rotation",
+    "label.remove": "Ta bort etikett",
     "bg.title": "Bakgrundsritning",
     "bg.show": "Visa ritning på detta plan",
     "bg.scale": "Skala (meter per bildbredd)",
@@ -1041,7 +1059,7 @@ const DEFAULT_MATERIALS = [
 let state;
 function freshFloor(name, idx){
   return { id:uid('flr'), name:name||('Floor '+(idx+1)), height:3.0, w:20, d:14,
-           walls:[], pillars:[], aps:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
+           walls:[], pillars:[], aps:[], labels:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
 }
 function freshState(){
   const mats = DEFAULT_MATERIALS.map(m=>({...m}));
@@ -1059,10 +1077,10 @@ function makeAP(x,y,name){
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
 
-let tool='select';      // select | wall | pillar | ap | bg | erase | measure
+let tool='select';      // select | wall | pillar | ap | label | bg | erase | measure
 let view='2d';
 let showHeat=true;
-let selection=null;     // {type:'ap'|'wall'|'pillar'|'bg', id?}
+let selection=null;     // {type:'ap'|'wall'|'pillar'|'label'|'bg', id?}
 let heatMode='simple';  // 'simple' | 'trace'
 let calibState=null;    // {p1,p2,awaitDist} during background-image scale calibration
 let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} during auto wall detection
@@ -1073,6 +1091,7 @@ const TOOLS = [
   ['wall','tool.wall','V','<path d="M4 7l16 0M4 12l16 0M4 17l16 0" opacity=".3"/><path d="M3 5v14M21 5v14M3 5h18M3 19h18"/>'],
   ['pillar','tool.pillar','P','<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity=".55"/>'],
   ['ap','tool.ap','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
+  ['label','tool.label','T','<path d="M5 6h14M12 6v12M9 18h6"/>'],
   ['bg','tool.bg','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
   ['erase','tool.erase','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
   ['zone','tool.zone','Z','<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M6 18L18 6M11 18L18 11M6 13L13 6" opacity=".55"/>'],
@@ -1263,6 +1282,31 @@ function draw2d(){
     ctx.fillText(ap.txPower+' dBm · '+apBandLabel(ap), p.x+12, p.y+6);
   });
 
+  // non-RF labels
+  (f.labels||[]).forEach(lb=>{
+    const p=W2S(lb.x,lb.y);
+    const sel=selection&&selection.type==='label'&&selection.id===lb.id;
+    const size=clamp(lb.size||16,8,96);
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate((lb.rotation||0)*Math.PI/180);
+    ctx.font=`600 ${size}px sans-serif`;
+    ctx.textBaseline='middle';
+    ctx.fillStyle=sel?'#7aa2ff':'#e8eef7';
+    ctx.strokeStyle='rgba(6,10,16,.82)';
+    ctx.lineWidth=Math.max(2,size*0.16);
+    ctx.strokeText(lb.text||'Label',0,0);
+    ctx.fillText(lb.text||'Label',0,0);
+    if(sel){
+      const m=ctx.measureText(lb.text||'Label');
+      const pad=4, h=size*1.25;
+      ctx.strokeStyle='#7aa2ff'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+      ctx.strokeRect(-pad,-h/2,m.width+pad*2,h);
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  });
+
   // calibration overlay
   if(calibState){
     const drawPt=(pt,n)=>{const s=W2S(pt.x,pt.y);
@@ -1350,6 +1394,21 @@ function pickPillar(wx,wy){
   }
   return null;
 }
+function pickLabel(wx,wy){
+  const f=floor(); const labels=f.labels||[];
+  const sp=W2S(wx,wy);
+  for(let i=labels.length-1;i>=0;i--){
+    const lb=labels[i], p=W2S(lb.x,lb.y), size=clamp(lb.size||16,8,96);
+    ctx.save(); ctx.font=`600 ${size}px sans-serif`;
+    const w=Math.max(24,ctx.measureText(lb.text||'Label').width), h=size*1.25;
+    ctx.restore();
+    const a=-(lb.rotation||0)*Math.PI/180;
+    const dx=sp.x-p.x, dy=sp.y-p.y;
+    const lx=dx*Math.cos(a)-dy*Math.sin(a), ly=dx*Math.sin(a)+dy*Math.cos(a);
+    if(lx>=-6 && lx<=w+6 && ly>=-h/2-6 && ly<=h/2+6) return lb;
+  }
+  return null;
+}
 function distToSeg(px,py,x1,y1,x2,y2){
   const dx=x2-x1,dy=y2-y1; const L2=dx*dx+dy*dy;
   let t = L2? ((px-x1)*dx+(py-y1)*dy)/L2 : 0; t=clamp(t,0,1);
@@ -1403,6 +1462,7 @@ function inAnyZone(wx,wy, f){
 function eraseAt(wx,wy){
   const f=floor(); let changed=false;
   const ap=pickAP(wx,wy); if(ap){ f.aps=f.aps.filter(a=>a!==ap); changed=true; }
+  const lb=pickLabel(wx,wy); if(lb){ f.labels=(f.labels||[]).filter(x=>x!==lb); changed=true; }
   const pl=pickPillar(wx,wy); if(pl){ f.pillars=(f.pillars||[]).filter(x=>x!==pl); changed=true; }
   const wl=pickWall(wx,wy); if(wl){ f.walls=f.walls.filter(x=>x!==wl); multiWalls=multiWalls.filter(id=>id!==wl.id); changed=true; }
   const z=pickZone(wx,wy); if(z){ f.zones=f.zones.filter(q=>q!==z); changed=true; }
@@ -1500,6 +1560,8 @@ cv.addEventListener('pointerdown',e=>{
     }
     const ap=pickAP(w.x,w.y);
     if(ap){ select('ap',ap.id); commit(); dragging={type:'ap',id:ap.id,ox:w.x-ap.x,oy:w.y-ap.y}; return; }
+    const lb=pickLabel(w.x,w.y);
+    if(lb){ select('label',lb.id); commit(); dragging={type:'label',id:lb.id,ox:w.x-lb.x,oy:w.y-lb.y}; return; }
     const pl=pickPillar(w.x,w.y);
     if(pl){ select('pillar',pl.id); commit(); dragging={type:'pillar',id:pl.id,ox:w.x-pl.x,oy:w.y-pl.y}; return; }
     const wl=pickWall(w.x,w.y);
@@ -1528,6 +1590,12 @@ cv.addEventListener('pointerdown',e=>{
     if(!f.pillars)f.pillars=[];
     const pl={id:uid('plr'),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,diameter:0.6,materialId:state.activeMat};
     commit(); f.pillars.push(pl); select('pillar',pl.id); scheduleHeat(); refreshStats(); if(view==='3d')build3d();
+  }
+  else if(tool==='label'){
+    const f=floor();
+    if(!f.labels)f.labels=[];
+    const lb={id:uid('lbl'),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,text:'Label',size:18,rotation:0};
+    commit(); f.labels.push(lb); select('label',lb.id); refreshStats();
   }
   else if(tool==='wall'){
     if(!draft){
@@ -1565,6 +1633,7 @@ window.addEventListener('pointermove',e=>{
   if(dragging){
     const f=floor();
     if(dragging.type==='ap'){ const ap=f.aps.find(a=>a.id===dragging.id); if(ap){ap.x=Math.round((w.x-dragging.ox)*4)/4;ap.y=Math.round((w.y-dragging.oy)*4)/4;} }
+    else if(dragging.type==='label'){ const lb=(f.labels||[]).find(l=>l.id===dragging.id); if(lb){lb.x=Math.round((w.x-dragging.ox)*4)/4;lb.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='pillar'){ const pl=(f.pillars||[]).find(p=>p.id===dragging.id); if(pl){pl.x=Math.round((w.x-dragging.ox)*4)/4;pl.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='bg'){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; }
     else if(dragging.type==='zone'){ const z=(f.zones||[]).find(q=>q.id===dragging.id);
@@ -1656,7 +1725,7 @@ window.addEventListener('keydown',e=>{
   if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
   if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; measureLine=null; select(null); draw2d(); }
-  const map={m:'select',v:'wall',p:'pillar',a:'ap',r:'bg',e:'erase',z:'zone',l:'measure'};
+  const map={m:'select',v:'wall',p:'pillar',a:'ap',t:'label',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
 });
@@ -2192,7 +2261,7 @@ function setTool(t){
   tool=t; draft=null;
   $$('#tools .tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   refreshToolText();
-  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
+  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='label'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
   if(t==='bg'){ $('#fileBg').click(); }
 }
 function buildTools(){
@@ -2235,6 +2304,7 @@ function duplicateFloor(i){
   copy.id=uid('flr'); copy.name=src.name+' (copy)';
   copy.walls.forEach(w=>w.id=uid('wl'));
   (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
+  (copy.labels||[]).forEach(l=>l.id=uid('lbl'));
   copy.aps.forEach(a=>a.id=uid('ap'));
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
   if(copy.bg && src.bg && src.bg._img) copy.bg._img=src.bg._img;
@@ -2309,6 +2379,7 @@ function deleteSelection(){
   if(selection.type==='ap') f.aps=f.aps.filter(a=>a.id!==selection.id);
   else if(selection.type==='wall') f.walls=f.walls.filter(w=>w.id!==selection.id);
   else if(selection.type==='pillar') f.pillars=(f.pillars||[]).filter(p=>p.id!==selection.id);
+  else if(selection.type==='label') f.labels=(f.labels||[]).filter(l=>l.id!==selection.id);
   else if(selection.type==='zone') f.zones=(f.zones||[]).filter(z=>z.id!==selection.id);
   else if(selection.type==='bg') f.bg=null;
   selection=null; scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d();
@@ -2389,6 +2460,25 @@ function renderProp(){
     $('#pChan').onchange=e=>{ if(!ap.channels)ap.channels=defaultChannels(); ap.channels[state.band]=+e.target.value; scheduleHeat(); };
     $('#pX').onchange=e=>{ap.x=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
     $('#pY').onchange=e=>{ap.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
+    $('#pDel').onclick=deleteSelection;
+  }
+  else if(selection.type==='label'){
+    const lb=(f.labels||[]).find(x=>x.id===selection.id); if(!lb){select(null);return;}
+    setUiText(title,'label.title');
+    body.innerHTML=`
+      <div class="field"><label>${t('label.text')}</label><input id="pLabelText" type="text" value="${escapeHtml(lb.text||'Label')}"></div>
+      <div class="field"><label>${t('label.size')}</label>
+        <div class="slider"><input id="pLabelSize" type="range" min="8" max="72" step="1" value="${clamp(lb.size||18,8,72)}"><span class="val" id="pLabelSizeV">${clamp(lb.size||18,8,72)} px</span></div></div>
+      <div class="field"><label>${t('label.rotation')}</label>
+        <div class="slider"><input id="pLabelRot" type="range" min="-180" max="180" step="1" value="${lb.rotation||0}"><span class="val" id="pLabelRotV">${lb.rotation||0}°</span></div></div>
+      <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${lb.x.toFixed(2)}"></div>
+        <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${lb.y.toFixed(2)}"></div></div>
+      <button class="delbtn" id="pDel">${t('label.remove')}</button>`;
+    $('#pLabelText').oninput=e=>{lb.text=e.target.value;draw2d();};
+    $('#pLabelSize').oninput=e=>{lb.size=+e.target.value;$('#pLabelSizeV').textContent=lb.size+' px';draw2d();};
+    $('#pLabelRot').oninput=e=>{lb.rotation=+e.target.value;$('#pLabelRotV').textContent=lb.rotation+'°';draw2d();};
+    $('#pX').onchange=e=>{lb.x=+e.target.value;draw2d();};
+    $('#pY').onchange=e=>{lb.y=+e.target.value;draw2d();};
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='pillar'){
@@ -2888,7 +2978,7 @@ function commitThrottled(){ const t=performance.now(); if(t-_commitThrottle<450)
 function restoreState(json){
   state=JSON.parse(json);
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; _indoor=null;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
@@ -2923,7 +3013,7 @@ function loadProject(file){
       if(s.noiseFloor==null)s.noiseFloor=-95;
       if(s.indoorOnly==null)s.indoorOnly=true;
       _indoor=null;
-      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
+      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
         f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
@@ -2966,6 +3056,15 @@ function exportPNG(){
     g.fillStyle='#34d6c4';g.beginPath();g.arc(wx2p(ap.x),wy2p(ap.y),8,0,7);g.fill();
     g.strokeStyle='#04201d';g.lineWidth=3;g.stroke();
     g.fillStyle='#eafffb';g.font='bold 20px sans-serif';g.fillText(ap.name,wx2p(ap.x)+12,wy2p(ap.y)-10);});
+  // labels
+  (f.labels||[]).forEach(lb=>{
+    const x=wx2p(lb.x), y=wy2p(lb.y), size=clamp(lb.size||18,8,96)*(W/1200);
+    g.save(); g.translate(x,y); g.rotate((lb.rotation||0)*Math.PI/180);
+    g.font=`bold ${size}px sans-serif`; g.textBaseline='middle';
+    g.strokeStyle='rgba(6,10,16,.82)'; g.lineWidth=Math.max(2,size*0.16);
+    g.fillStyle='#e8eef7'; g.strokeText(lb.text||'Label',0,0); g.fillText(lb.text||'Label',0,0);
+    g.restore();
+  });
   // title + legend
   g.fillStyle='rgba(13,17,23,.8)';g.fillRect(0,0,W,46);
   g.fillStyle='#cdd7e3';g.font='bold 22px sans-serif';
