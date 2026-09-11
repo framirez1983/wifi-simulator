@@ -1029,18 +1029,18 @@ const BANDS = {
   '6'  :{label:'6 GHz',   mhz:6500},
 };
 const DEFAULT_MATERIALS = [
-  {id:uid('mat'), name:'Gips',    db:3,  color:'#c9b58a'},
-  {id:uid('mat'), name:'Trä',     db:4,  color:'#a9743c'},
-  {id:uid('mat'), name:'Glas',    db:6,  color:'#6fc3d6'},
-  {id:uid('mat'), name:'Tegel',   db:9,  color:'#b5573e'},
-  {id:uid('mat'), name:'Betong',  db:15, color:'#8a8f96'},
-  {id:uid('mat'), name:'Metall',  db:26, color:'#cfd6df'},
+  {id:uid('mat'), name:'Gypsum / Drywall', db:3,  color:'#c9b58a'},
+  {id:uid('mat'), name:'Wood',             db:4,  color:'#a9743c'},
+  {id:uid('mat'), name:'Glass',            db:6,  color:'#6fc3d6'},
+  {id:uid('mat'), name:'Brick',            db:9,  color:'#b5573e'},
+  {id:uid('mat'), name:'Concrete',         db:15, color:'#8a8f96'},
+  {id:uid('mat'), name:'Metal',            db:26, color:'#cfd6df'},
 ];
 
 // ---------- state ----------
 let state;
 function freshFloor(name, idx){
-  return { id:uid('flr'), name:name||('Plan '+(idx+1)), height:3.0, w:20, d:14,
+  return { id:uid('flr'), name:name||('Floor '+(idx+1)), height:3.0, w:20, d:14,
            walls:[], pillars:[], aps:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
 }
 function freshState(){
@@ -1049,7 +1049,7 @@ function freshState(){
     version:2, materials:mats, plExp:3.0, slabDb:16, band:'5',
     activeFloor:0, activeMat:mats[4].id,
     covThreshold:-67, showFail:false, heatView:'rssi', noiseFloor:-95, indoorOnly:true,
-    floors:[ freshFloor('Bottenvåning',0) ],
+    floors:[ freshFloor('Ground floor',0) ],
   };
   return s;
 }
@@ -2232,7 +2232,7 @@ function duplicateFloor(i){
   commit();
   const src=state.floors[i];
   const copy=JSON.parse(JSON.stringify(src,(k,v)=>k==='_img'?undefined:v));
-  copy.id=uid('flr'); copy.name=src.name+' (kopia)';
+  copy.id=uid('flr'); copy.name=src.name+' (copy)';
   copy.walls.forEach(w=>w.id=uid('wl'));
   (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
   copy.aps.forEach(a=>a.id=uid('ap'));
@@ -3145,7 +3145,7 @@ function wireGlobals(){
   $('#btnRedo').onclick=redo;
   $('#addFloor').onclick=()=>{ commit(); const f=freshFloor(null,state.floors.length); f.height=state.floors[state.floors.length-1].height;
     state.floors.push(f); setActiveFloor(state.floors.length-1); buildFloors(); refreshStats(); };
-  $('#addMat').onclick=()=>{ commit(); const m={id:uid('mat'),name:'Nytt material',db:5,color:'#9aa7b5'}; state.materials.push(m); state.activeMat=m.id; buildMaterials(); };
+  $('#addMat').onclick=()=>{ commit(); const m={id:uid('mat'),name:'New material',db:5,color:'#9aa7b5'}; state.materials.push(m); state.activeMat=m.id; buildMaterials(); };
   $('#btnHeat').onclick=()=>{ showHeat=!showHeat; $('#btnHeat').classList.toggle('primary',showHeat);
     $('#legend').classList.toggle('off',!showHeat); if(showHeat)scheduleHeat(); else {heatCanvas=null;draw2d();if(view==='3d')refresh3dHeat();} };
   $('#btnTrace').onclick=()=>{ runRayTrace(()=>{}); };
