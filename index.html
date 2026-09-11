@@ -296,6 +296,10 @@ höger·drag · panorera</div>
           <div class="slider"><input type="range" id="planH" min="2" max="6" step="0.1"><span class="val" id="planHV">—</span></div></div>
         <div class="hint" data-i18n="floor.sizeHint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
       </div>
+      <div class="grp" id="settingsPanel" data-editor-pref="settings">
+        <h3 data-i18n="section.settings">Ajustes</h3>
+        <div id="editorSettings"></div>
+      </div>
       <div class="grp" id="coveragePanel">
         <h3 data-i18n="section.coverage">Täckning &amp; visning</h3>
         <div class="field"><label data-i18n="coverage.metric">Visad storhet</label><div class="pillrow" id="heatViewPills"></div></div>
@@ -367,6 +371,10 @@ const translations = {
     "properties.title": "Propiedades",
     "properties.empty": "Selecciona un punto de acceso, una pared o una imagen de fondo para editarlo.",
     "section.activeFloor": "Planta activa",
+    "section.settings": "Ajustes",
+    "settings.appearance": "Apariencia del editor",
+    "settings.wallVisualWidth": "Grosor visual de pared",
+    "settings.showGrid": "Mostrar cuadrícula",
     "floor.width": "Anchura (X)",
     "floor.depth": "Profundidad (Y)",
     "floor.ceiling": "Altura del techo",
@@ -563,6 +571,10 @@ const translations = {
     "properties.title": "Properties",
     "properties.empty": "Select an access point, wall or background image to edit it.",
     "section.activeFloor": "Active floor",
+    "section.settings": "Settings",
+    "settings.appearance": "Editor appearance",
+    "settings.wallVisualWidth": "Visual wall thickness",
+    "settings.showGrid": "Show grid",
     "floor.width": "Width (X)",
     "floor.depth": "Depth (Y)",
     "floor.ceiling": "Ceiling height",
@@ -759,6 +771,10 @@ const translations = {
     "properties.title": "Egenskaper",
     "properties.empty": "Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den.",
     "section.activeFloor": "Aktivt plan",
+    "section.settings": "Inställningar",
+    "settings.appearance": "Redigerarens utseende",
+    "settings.wallVisualWidth": "Visuell väggtjocklek",
+    "settings.showGrid": "Visa rutnät",
     "floor.width": "Bredd (X)",
     "floor.depth": "Djup (Y)",
     "floor.ceiling": "Takhöjd",
@@ -989,6 +1005,7 @@ function refreshLanguage(){
   document.title=t('app.title');
   document.getElementById('uiLanguage').value=uiLanguage;
   translateNodes();
+  buildEditorSettings();
   refreshToolText();
   // Drawing uses the existing heat canvas; no RF computation or UI reconstruction.
   draw2d();
@@ -1035,6 +1052,21 @@ function loadWallSnapPrefs(){
 function saveWallSnapPref(key,value){
   try{ localStorage.setItem(wallSnapStoragePrefix+key, String(value)); }catch(_){}
 }
+const editorPrefs = {
+  wallVisualWidth: 5,
+  showGrid: true,
+};
+function loadEditorPrefs(){
+  try{
+    const ww=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallVisualWidth'));
+    const sg=localStorage.getItem(wallSnapStoragePrefix+'showGrid');
+    if(Number.isFinite(ww)) editorPrefs.wallVisualWidth=clamp(ww,2,14);
+    if(sg!==null) editorPrefs.showGrid = sg !== 'false';
+  }catch(_){}
+}
+function saveEditorPref(key,value){
+  try{ localStorage.setItem(wallSnapStoragePrefix+key, String(value)); }catch(_){}
+}
 
 // ---------- small helpers ----------
 const $  = (s,r=document)=>r.querySelector(s);
@@ -1055,6 +1087,7 @@ function geometryChanged(){
   _indoor=null; scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
 }
 loadWallSnapPrefs();
+loadEditorPrefs();
 
 // ---------- defaults ----------
 const BANDS = {
@@ -1174,7 +1207,7 @@ function draw2d(){
   const r=cv.getBoundingClientRect();
   ctx.clearRect(0,0,r.width,r.height);
 
-  drawGrid(r);
+  if(editorPrefs.showGrid) drawGrid(r);
   const f = floor();
 
   // background drawing image
@@ -1229,11 +1262,12 @@ function draw2d(){
     const a=W2S(wl.x1,wl.y1), b=W2S(wl.x2,wl.y2);
     const m=matById(wl.materialId);
     const selW = (selection&&selection.type==='wall'&&selection.id===wl.id) || multiWalls.includes(wl.id);
+    const visualWidth=editorPrefs.wallVisualWidth||5;
     ctx.lineCap='round';
-    ctx.lineWidth = selW?7:5;
+    ctx.lineWidth = selW?visualWidth+2:visualWidth;
     ctx.strokeStyle = selW? '#7aa2ff' : m.color;
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-    ctx.lineWidth = selW?3:2.2; ctx.strokeStyle = shade(m.color,-0.25);
+    ctx.lineWidth = Math.max(1,visualWidth*0.44); ctx.strokeStyle = shade(m.color,-0.25);
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
   });
   drawWallEndpointHandles();
@@ -2401,25 +2435,38 @@ function deleteSelection(){
   else if(selection.type==='bg') f.bg=null;
   selection=null; scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d();
 }
-function wallSnapControlsHtml(){
+function wallSnapControlsHtml(prefix='p'){
   return `<div class="field" data-editor-pref="wall-snap" style="margin-top:10px"><label>${t('wall.snapTitle')}</label>
-    <div class="field"><label><input type="checkbox" id="pSnapMaster" ${wallSnapPrefs.enabled?'checked':''}> ${uiText('wall.snapMaster')}</label></div>
-    <div class="field"><label><input type="checkbox" id="pSnapOn" ${wallSnapPrefs.endpointSnap?'checked':''}> ${t('wall.endpointSnap')}</label>
+    <div class="field"><label><input type="checkbox" id="${prefix}SnapMaster" ${wallSnapPrefs.enabled?'checked':''}> ${uiText('wall.snapMaster')}</label></div>
+    <div class="field"><label><input type="checkbox" id="${prefix}SnapOn" ${wallSnapPrefs.endpointSnap?'checked':''}> ${t('wall.endpointSnap')}</label>
       <label>${t('wall.endpointSnapPx')}</label>
-      <div class="slider"><input id="pSnapDist" type="range" min="1" max="40" step="1" value="${wallSnapPrefs.endpointDistance}"><span class="val" id="pSnapDistV">${wallSnapPrefs.endpointDistance.toFixed(0)} px</span></div></div>
-    <div class="field"><label><input type="checkbox" id="pOrthoOn" ${wallSnapPrefs.orthoSnap?'checked':''}> ${t('wall.orthoSnap')}</label>
+      <div class="slider"><input id="${prefix}SnapDist" type="range" min="1" max="40" step="1" value="${wallSnapPrefs.endpointDistance}"><span class="val" id="${prefix}SnapDistV">${wallSnapPrefs.endpointDistance.toFixed(0)} px</span></div></div>
+    <div class="field"><label><input type="checkbox" id="${prefix}OrthoOn" ${wallSnapPrefs.orthoSnap?'checked':''}> ${t('wall.orthoSnap')}</label>
       <label>${t('wall.orthoSnapDeg')}</label>
-      <div class="slider"><input id="pOrthoTol" type="range" min="0" max="30" step="1" value="${wallSnapPrefs.orthoTolerance}"><span class="val" id="pOrthoTolV">${wallSnapPrefs.orthoTolerance.toFixed(0)}°</span></div></div>
+      <div class="slider"><input id="${prefix}OrthoTol" type="range" min="0" max="30" step="1" value="${wallSnapPrefs.orthoTolerance}"><span class="val" id="${prefix}OrthoTolV">${wallSnapPrefs.orthoTolerance.toFixed(0)}°</span></div></div>
   </div>`;
 }
-function wireWallSnapControls(){
-  const snapMaster=$('#pSnapMaster'), snapOn=$('#pSnapOn'), snapDist=$('#pSnapDist'), orthoOn=$('#pOrthoOn'), orthoTol=$('#pOrthoTol');
+function wireWallSnapControls(prefix='p'){
+  const snapMaster=$('#'+prefix+'SnapMaster'), snapOn=$('#'+prefix+'SnapOn'), snapDist=$('#'+prefix+'SnapDist'), orthoOn=$('#'+prefix+'OrthoOn'), orthoTol=$('#'+prefix+'OrthoTol');
   if(!snapOn) return;
   snapMaster.onchange=e=>{ wallSnapPrefs.enabled=e.target.checked; saveWallSnapPref('wallSnappingEnabled',wallSnapPrefs.enabled); };
   snapOn.onchange=e=>{ wallSnapPrefs.endpointSnap=e.target.checked; saveWallSnapPref('wallSnapEnabled',wallSnapPrefs.endpointSnap); };
-  snapDist.oninput=e=>{ wallSnapPrefs.endpointDistance=+e.target.value; $('#pSnapDistV').textContent=wallSnapPrefs.endpointDistance.toFixed(0)+' px'; saveWallSnapPref('wallSnapDistance',wallSnapPrefs.endpointDistance); };
+  snapDist.oninput=e=>{ wallSnapPrefs.endpointDistance=+e.target.value; $('#'+prefix+'SnapDistV').textContent=wallSnapPrefs.endpointDistance.toFixed(0)+' px'; saveWallSnapPref('wallSnapDistance',wallSnapPrefs.endpointDistance); };
   orthoOn.onchange=e=>{ wallSnapPrefs.orthoSnap=e.target.checked; saveWallSnapPref('wallOrthoSnapEnabled',wallSnapPrefs.orthoSnap); };
-  orthoTol.oninput=e=>{ wallSnapPrefs.orthoTolerance=+e.target.value; $('#pOrthoTolV').textContent=wallSnapPrefs.orthoTolerance.toFixed(0)+'°'; saveWallSnapPref('wallOrthoTolerance',wallSnapPrefs.orthoTolerance); };
+  orthoTol.oninput=e=>{ wallSnapPrefs.orthoTolerance=+e.target.value; $('#'+prefix+'OrthoTolV').textContent=wallSnapPrefs.orthoTolerance.toFixed(0)+'°'; saveWallSnapPref('wallOrthoTolerance',wallSnapPrefs.orthoTolerance); };
+}
+function buildEditorSettings(){
+  const host=$('#editorSettings'); if(!host)return;
+  host.innerHTML=`
+    <div class="field"><label>${t('settings.appearance')}</label>
+      <div class="field"><label><input type="checkbox" id="sShowGrid" ${editorPrefs.showGrid?'checked':''}> ${t('settings.showGrid')}</label></div>
+      <label>${t('settings.wallVisualWidth')}</label>
+      <div class="slider"><input id="sWallVisualWidth" type="range" min="2" max="14" step="1" value="${editorPrefs.wallVisualWidth}"><span class="val" id="sWallVisualWidthV">${editorPrefs.wallVisualWidth.toFixed(0)} px</span></div>
+    </div>
+    ${wallSnapControlsHtml('s')}`;
+  $('#sShowGrid').onchange=e=>{ editorPrefs.showGrid=e.target.checked; saveEditorPref('showGrid',editorPrefs.showGrid); draw2d(); };
+  $('#sWallVisualWidth').oninput=e=>{ editorPrefs.wallVisualWidth=+e.target.value; $('#sWallVisualWidthV').textContent=editorPrefs.wallVisualWidth.toFixed(0)+' px'; saveEditorPref('wallVisualWidth',editorPrefs.wallVisualWidth); draw2d(); };
+  wireWallSnapControls('s');
 }
 function renderProp(){
   const body=$('#propBody'); const title=$('#propTitle');
@@ -3303,7 +3350,7 @@ function setupBgInput(){
 //  BOOT
 // ============================================================
 function bootUI(){
-  buildTools(); buildFloors(); buildMaterials(); buildBands(); buildHeatView(); buildLegend();
+  buildTools(); buildFloors(); buildMaterials(); buildBands(); buildHeatView(); buildLegend(); buildEditorSettings();
   setTool('select'); updateChips(); refreshStats(); renderProp(); syncFloorPanel();
   $('#plExp').value=state.plExp; $('#plExpV').textContent=state.plExp.toFixed(1);
   $('#slabDb').value=state.slabDb; $('#slabDbV').textContent=state.slabDb+' dB';
