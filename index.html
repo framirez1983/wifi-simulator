@@ -401,6 +401,7 @@ const translations = {
     "tool.ap": "Punto de acceso",
     "tool.label": "Etiqueta",
     "tool.rack": "Rack / sitio",
+    "tool.cable": "Cable",
     "tool.bg": "Plano",
     "tool.erase": "Borrar",
     "tool.zone": "Zona de exclusión",
@@ -465,6 +466,15 @@ const translations = {
     "rack.kindIdf": "IDF",
     "rack.kindRack": "Rack",
     "rack.remove": "Eliminar rack / sitio",
+    "cable.title": "Ruta de cable",
+    "cable.reserve": "Reserva de instalación",
+    "cable.length": "Longitud geométrica",
+    "cable.estimated": "Longitud estimada",
+    "cable.addNode": "Añadir nodo",
+    "cable.remove": "Eliminar ruta",
+    "cable.pickRack": "Selecciona un rack / sitio.",
+    "cable.pickAp": "Selecciona un AP para completar la ruta.",
+    "ap.sourceRack": "Rack / sitio origen",
     "bg.title": "Plano de fondo",
     "bg.show": "Mostrar plano en esta planta",
     "bg.scale": "Escala (metros por anchura de imagen)",
@@ -609,6 +619,7 @@ const translations = {
     "tool.ap": "Access point",
     "tool.label": "Label",
     "tool.rack": "Rack / site",
+    "tool.cable": "Cable",
     "tool.bg": "Floor plan",
     "tool.erase": "Erase",
     "tool.zone": "Exclusion zone",
@@ -673,6 +684,15 @@ const translations = {
     "rack.kindIdf": "IDF",
     "rack.kindRack": "Rack",
     "rack.remove": "Remove rack / site",
+    "cable.title": "Cable route",
+    "cable.reserve": "Installation reserve",
+    "cable.length": "Geometric length",
+    "cable.estimated": "Estimated length",
+    "cable.addNode": "Add node",
+    "cable.remove": "Remove route",
+    "cable.pickRack": "Select a rack / site.",
+    "cable.pickAp": "Select an AP to complete the route.",
+    "ap.sourceRack": "Source rack / site",
     "bg.title": "Background floor plan",
     "bg.show": "Show floor plan on this floor",
     "bg.scale": "Scale (meters per image width)",
@@ -817,6 +837,7 @@ const translations = {
     "tool.ap": "Accesspunkt",
     "tool.label": "Etikett",
     "tool.rack": "Rack / plats",
+    "tool.cable": "Kabel",
     "tool.bg": "Ritning",
     "tool.erase": "Radera",
     "tool.zone": "Spärryta",
@@ -881,6 +902,15 @@ const translations = {
     "rack.kindIdf": "IDF",
     "rack.kindRack": "Rack",
     "rack.remove": "Ta bort rack / plats",
+    "cable.title": "Kabelrutt",
+    "cable.reserve": "Installationsreserv",
+    "cable.length": "Geometrisk längd",
+    "cable.estimated": "Uppskattad längd",
+    "cable.addNode": "Lägg till nod",
+    "cable.remove": "Ta bort rutt",
+    "cable.pickRack": "Välj ett rack / en plats.",
+    "cable.pickAp": "Välj en AP för att slutföra rutten.",
+    "ap.sourceRack": "Källrack / plats",
     "bg.title": "Bakgrundsritning",
     "bg.show": "Visa ritning på detta plan",
     "bg.scale": "Skala (meter per bildbredd)",
@@ -1132,7 +1162,7 @@ const DEFAULT_MATERIALS = [
 let state;
 function freshFloor(name, idx){
   return { id:uid('flr'), name:name||('Floor '+(idx+1)), height:3.0, w:20, d:14,
-           walls:[], pillars:[], aps:[], labels:[], racks:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
+           walls:[], pillars:[], aps:[], labels:[], racks:[], cableRoutes:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
 }
 function freshState(){
   const mats = DEFAULT_MATERIALS.map(m=>({...m}));
@@ -1151,13 +1181,14 @@ function makeAP(x,y,name){
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
 
-let tool='select';      // select | wall | pillar | ap | label | rack | bg | erase | measure
+let tool='select';      // select | wall | pillar | ap | label | rack | cable | bg | erase | measure
 let view='2d';
 let showHeat=true;
-let selection=null;     // {type:'ap'|'wall'|'pillar'|'label'|'rack'|'bg', id?}
+let selection=null;     // {type:'ap'|'wall'|'pillar'|'label'|'rack'|'cable'|'bg', id?}
 let heatMode='simple';  // 'simple' | 'trace'
 let calibState=null;    // {p1,p2,awaitDist} during background-image scale calibration
 let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} during auto wall detection
+let cableDraft=null;    // {rackId} while creating a cable route
 
 // ---------- TOOLS palette ----------
 const TOOLS = [
@@ -1167,6 +1198,7 @@ const TOOLS = [
   ['ap','tool.ap','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
   ['label','tool.label','T','<path d="M5 6h14M12 6v12M9 18h6"/>'],
   ['rack','tool.rack','I','<rect x="7" y="4" width="10" height="16" rx="1.5"/><path d="M9.5 8h5M9.5 12h5M9.5 16h5"/><circle cx="10" cy="8" r=".6" fill="currentColor" stroke="none"/><circle cx="10" cy="12" r=".6" fill="currentColor" stroke="none"/><circle cx="10" cy="16" r=".6" fill="currentColor" stroke="none"/>'],
+  ['cable','tool.cable','C','<path d="M4 7c5 0 3 10 8 10s3-10 8-10"/><circle cx="4" cy="7" r="2"/><circle cx="20" cy="7" r="2"/>'],
   ['bg','tool.bg','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
   ['erase','tool.erase','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
   ['zone','tool.zone','Z','<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M6 18L18 6M11 18L18 11M6 13L13 6" opacity=".55"/>'],
@@ -1310,6 +1342,22 @@ function draw2d(){
     ctx.strokeStyle=selP?'#7aa2ff':shade(m.color,-0.25); ctx.stroke();
     ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2,r*0.22),0,Math.PI*2);
     ctx.fillStyle=selP?'#7aa2ff':m.color; ctx.fill();
+    ctx.restore();
+  });
+
+  // non-RF cable routes
+  (f.cableRoutes||[]).forEach(route=>{
+    const pts=routePoints(route,f); if(pts.length<2)return;
+    const sel=selection&&selection.type==='cable'&&selection.id===route.id;
+    ctx.save();
+    ctx.strokeStyle=sel?'#7aa2ff':'#f4a83a';
+    ctx.lineWidth=sel?4:3; ctx.setLineDash(sel?[]:[8,5]); ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath();
+    pts.forEach((pt,i)=>{ const p=W2S(pt.x,pt.y); if(i)ctx.lineTo(p.x,p.y); else ctx.moveTo(p.x,p.y); });
+    ctx.stroke(); ctx.setLineDash([]);
+    if(sel){
+      (route.nodes||[]).forEach(n=>{ const p=W2S(n.x,n.y); ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fillStyle='#7aa2ff'; ctx.fill(); ctx.strokeStyle='#0d1117'; ctx.lineWidth=2; ctx.stroke(); });
+    }
     ctx.restore();
   });
 
@@ -1510,6 +1558,27 @@ function pickRack(wx,wy){
   }
   return null;
 }
+function pickCableNode(wx,wy){
+  if(!selection||selection.type!=='cable') return null;
+  const f=floor(), route=(f.cableRoutes||[]).find(r=>r.id===selection.id);
+  if(!route) return null;
+  const tol=9/camera.zoom;
+  for(let i=(route.nodes||[]).length-1;i>=0;i--){
+    const n=route.nodes[i];
+    if(dist(wx,wy,n.x,n.y)<=tol) return {route,index:i,node:n};
+  }
+  return null;
+}
+function pickCableRoute(wx,wy){
+  const f=floor(), routes=f.cableRoutes||[], tol=7/camera.zoom;
+  for(let i=routes.length-1;i>=0;i--){
+    const pts=routePoints(routes[i],f);
+    for(let j=1;j<pts.length;j++){
+      if(distToSeg(wx,wy,pts[j-1].x,pts[j-1].y,pts[j].x,pts[j].y)<=tol) return routes[i];
+    }
+  }
+  return null;
+}
 function distToSeg(px,py,x1,y1,x2,y2){
   const dx=x2-x1,dy=y2-y1; const L2=dx*dx+dy*dy;
   let t = L2? ((px-x1)*dx+(py-y1)*dy)/L2 : 0; t=clamp(t,0,1);
@@ -1560,10 +1629,26 @@ function inAnyZone(wx,wy, f){
   for(const z of zs){ if(wx>=Math.min(z.x1,z.x2)&&wx<=Math.max(z.x1,z.x2)&&wy>=Math.min(z.y1,z.y2)&&wy<=Math.max(z.y1,z.y2)) return true; }
   return false;
 }
+function routeEndpoints(route,f=floor()){
+  const rack=(f.racks||[]).find(r=>r.id===route.rackId);
+  const ap=f.aps.find(a=>a.id===route.apId);
+  return {rack,ap};
+}
+function routePoints(route,f=floor()){
+  const {rack,ap}=routeEndpoints(route,f);
+  if(!rack||!ap) return [];
+  return [{x:rack.x,y:rack.y},...(route.nodes||[]),{x:ap.x,y:ap.y}];
+}
+function routeLength(route,f=floor()){
+  const pts=routePoints(route,f); let len=0;
+  for(let i=1;i<pts.length;i++) len+=dist(pts[i-1].x,pts[i-1].y,pts[i].x,pts[i].y);
+  return len;
+}
 function eraseAt(wx,wy){
   const f=floor(); let changed=false;
-  const ap=pickAP(wx,wy); if(ap){ f.aps=f.aps.filter(a=>a!==ap); changed=true; }
-  const rk=pickRack(wx,wy); if(rk){ f.racks=(f.racks||[]).filter(x=>x!==rk); changed=true; }
+  const ap=pickAP(wx,wy); if(ap){ f.aps=f.aps.filter(a=>a!==ap); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.apId!==ap.id); changed=true; }
+  const cr=pickCableRoute(wx,wy); if(cr){ f.cableRoutes=(f.cableRoutes||[]).filter(r=>r!==cr); changed=true; }
+  const rk=pickRack(wx,wy); if(rk){ f.racks=(f.racks||[]).filter(x=>x!==rk); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.rackId!==rk.id); f.aps.forEach(a=>{ if(a.sourceRackId===rk.id) delete a.sourceRackId; }); changed=true; }
   const lb=pickLabel(wx,wy); if(lb){ f.labels=(f.labels||[]).filter(x=>x!==lb); changed=true; }
   const pl=pickPillar(wx,wy); if(pl){ f.pillars=(f.pillars||[]).filter(x=>x!==pl); changed=true; }
   const wl=pickWall(wx,wy); if(wl){ f.walls=f.walls.filter(x=>x!==wl); multiWalls=multiWalls.filter(id=>id!==wl.id); changed=true; }
@@ -1653,6 +1738,8 @@ cv.addEventListener('pointerdown',e=>{
     panning=true; panStart={mx:e.offsetX,my:e.offsetY, cx:camera.x, cy:camera.y}; return;
   }
   if(tool==='select'){
+    const cableNode=pickCableNode(w.x,w.y);
+    if(cableNode){ commit(); dragging={type:'cable-node',id:cableNode.route.id,index:cableNode.index,ox:w.x-cableNode.node.x,oy:w.y-cableNode.node.y}; return; }
     const handle=pickWallEndpointHandle(e.offsetX,e.offsetY);
     if(handle){
       const wl=selectedSingleWall();
@@ -1668,6 +1755,8 @@ cv.addEventListener('pointerdown',e=>{
     if(lb){ select('label',lb.id); commit(); dragging={type:'label',id:lb.id,ox:w.x-lb.x,oy:w.y-lb.y}; return; }
     const pl=pickPillar(w.x,w.y);
     if(pl){ select('pillar',pl.id); commit(); dragging={type:'pillar',id:pl.id,ox:w.x-pl.x,oy:w.y-pl.y}; return; }
+    const cr=pickCableRoute(w.x,w.y);
+    if(cr){ select('cable',cr.id); return; }
     const wl=pickWall(w.x,w.y);
     if(wl){
       if(selection && selection.type==='wall' && selection.id===wl.id && !multiWalls.length){
@@ -1707,6 +1796,22 @@ cv.addEventListener('pointerdown',e=>{
     const rk={id:uid('rck'),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,name:'Rack '+(f.racks.length+1),kind:'Rack'};
     commit(); f.racks.push(rk); select('rack',rk.id); refreshStats();
   }
+  else if(tool==='cable'){
+    const f=floor();
+    if(!cableDraft){
+      const rk=pickRack(w.x,w.y);
+      if(rk){ cableDraft={rackId:rk.id}; showToast(true,uiMessage('cable.pickAp'),null,1600); }
+      else showToast(true,uiMessage('cable.pickRack'),null,1600);
+    } else {
+      const ap=pickAP(w.x,w.y);
+      if(ap){
+        if(!f.cableRoutes)f.cableRoutes=[];
+        commit();
+        const route={id:uid('cab'),rackId:cableDraft.rackId,apId:ap.id,nodes:[],reservePct:10};
+        f.cableRoutes.push(route); ap.sourceRackId=cableDraft.rackId; cableDraft=null; select('cable',route.id); refreshStats();
+      } else showToast(true,uiMessage('cable.pickAp'),null,1600);
+    }
+  }
   else if(tool==='wall'){
     if(!draft){
       const s=snapWallPoint(w.x,w.y,{altKey:e.altKey});
@@ -1743,6 +1848,7 @@ window.addEventListener('pointermove',e=>{
   if(dragging){
     const f=floor();
     if(dragging.type==='ap'){ const ap=f.aps.find(a=>a.id===dragging.id); if(ap){ap.x=Math.round((w.x-dragging.ox)*4)/4;ap.y=Math.round((w.y-dragging.oy)*4)/4;} }
+    else if(dragging.type==='cable-node'){ const route=(f.cableRoutes||[]).find(r=>r.id===dragging.id); if(route&&route.nodes&&route.nodes[dragging.index]){route.nodes[dragging.index].x=Math.round((w.x-dragging.ox)*4)/4;route.nodes[dragging.index].y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='rack'){ const rk=(f.racks||[]).find(r=>r.id===dragging.id); if(rk){rk.x=Math.round((w.x-dragging.ox)*4)/4;rk.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='label'){ const lb=(f.labels||[]).find(l=>l.id===dragging.id); if(lb){lb.x=Math.round((w.x-dragging.ox)*4)/4;lb.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='pillar'){ const pl=(f.pillars||[]).find(p=>p.id===dragging.id); if(pl){pl.x=Math.round((w.x-dragging.ox)*4)/4;pl.y=Math.round((w.y-dragging.oy)*4)/4;} }
@@ -1835,7 +1941,7 @@ window.addEventListener('keydown',e=>{
   if(mod && e.key.toLowerCase()==='z'){ e.preventDefault(); if(e.shiftKey)redo(); else undo(); return; }
   if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
-  if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; measureLine=null; select(null); draw2d(); }
+  if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; measureLine=null; select(null); draw2d(); }
   const map={m:'select',v:'wall',p:'pillar',a:'ap',t:'label',i:'rack',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
@@ -2369,10 +2475,10 @@ function refresh3dHeat(){
 //  UI WIRING
 // ============================================================
 function setTool(t){
-  tool=t; draft=null;
+  tool=t; draft=null; cableDraft=null;
   $$('#tools .tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   refreshToolText();
-  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='label'||t==='rack'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
+  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='label'||t==='rack'||t==='cable'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
   if(t==='bg'){ $('#fileBg').click(); }
 }
 function buildTools(){
@@ -2416,8 +2522,10 @@ function duplicateFloor(i){
   copy.walls.forEach(w=>w.id=uid('wl'));
   (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
   (copy.labels||[]).forEach(l=>l.id=uid('lbl'));
-  (copy.racks||[]).forEach(r=>r.id=uid('rck'));
-  copy.aps.forEach(a=>a.id=uid('ap'));
+  const rackIds={}, apIds={};
+  (copy.racks||[]).forEach(r=>{ const old=r.id; r.id=uid('rck'); rackIds[old]=r.id; });
+  copy.aps.forEach(a=>{ const old=a.id; a.id=uid('ap'); apIds[old]=a.id; if(a.sourceRackId&&rackIds[a.sourceRackId])a.sourceRackId=rackIds[a.sourceRackId]; });
+  (copy.cableRoutes||[]).forEach(c=>{ c.id=uid('cab'); if(rackIds[c.rackId])c.rackId=rackIds[c.rackId]; if(apIds[c.apId])c.apId=apIds[c.apId]; });
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
   if(copy.bg && src.bg && src.bg._img) copy.bg._img=src.bg._img;
   state.floors.splice(i+1,0,copy); state.activeFloor=i+1;
@@ -2488,8 +2596,9 @@ function deleteSelection(){
     f.walls=f.walls.filter(w=>!multiWalls.includes(w.id)); multiWalls=[]; selection=null;
     scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d(); return; }
   if(!selection)return; const f=floor();
-  if(selection.type==='ap') f.aps=f.aps.filter(a=>a.id!==selection.id);
-  else if(selection.type==='rack') f.racks=(f.racks||[]).filter(r=>r.id!==selection.id);
+  if(selection.type==='ap'){ f.aps=f.aps.filter(a=>a.id!==selection.id); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.apId!==selection.id); }
+  else if(selection.type==='rack'){ f.racks=(f.racks||[]).filter(r=>r.id!==selection.id); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.rackId!==selection.id); f.aps.forEach(a=>{ if(a.sourceRackId===selection.id) delete a.sourceRackId; }); }
+  else if(selection.type==='cable') f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.id!==selection.id);
   else if(selection.type==='wall') f.walls=f.walls.filter(w=>w.id!==selection.id);
   else if(selection.type==='pillar') f.pillars=(f.pillars||[]).filter(p=>p.id!==selection.id);
   else if(selection.type==='label') f.labels=(f.labels||[]).filter(l=>l.id!==selection.id);
@@ -2548,6 +2657,10 @@ function renderProp(){
       <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
       <div class="row2"><div class="field"><label data-i18n="ap.manufacturer">Tillverkare</label><input id="pManufacturer" type="text" value="${escapeHtml(ap.manufacturer||'')}"></div>
         <div class="field"><label data-i18n="ap.model">Modell</label><input id="pModel" type="text" value="${escapeHtml(ap.model||'')}"></div></div>
+      <div class="field"><label data-i18n="ap.sourceRack">Källrack / plats</label><select id="pSourceRack">
+        <option value="">—</option>
+        ${(f.racks||[]).map(r=>`<option value="${r.id}" ${ap.sourceRackId===r.id?'selected':''}>${escapeHtml((r.kind||'Rack')+' · '+(r.name||'Rack'))}</option>`).join('')}
+      </select></div>
       <div class="field"><label data-i18n="ap.bands">Frekvensband (flerval)</label><div class="pillrow" id="pBands"></div></div>
       <div class="field"><label data-i18n="ap.power">Sändareffekt</label>
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
@@ -2572,6 +2685,7 @@ function renderProp(){
     $('#pName').oninput=e=>{ap.name=e.target.value;draw2d();};
     $('#pManufacturer').oninput=e=>{ap.manufacturer=e.target.value;};
     $('#pModel').oninput=e=>{ap.model=e.target.value;};
+    $('#pSourceRack').onchange=e=>{ if(e.target.value)ap.sourceRackId=e.target.value; else delete ap.sourceRackId; };
     const pb=$('#pBands');
     Object.entries(BANDS).forEach(([k,v])=>{
       const on=ap.bands.includes(k);
@@ -2607,6 +2721,24 @@ function renderProp(){
     $('#pRackKind').onchange=e=>{rk.kind=e.target.value;draw2d();renderProp();};
     $('#pX').onchange=e=>{rk.x=+e.target.value;draw2d();};
     $('#pY').onchange=e=>{rk.y=+e.target.value;draw2d();};
+    $('#pDel').onclick=deleteSelection;
+  }
+  else if(selection.type==='cable'){
+    const route=(f.cableRoutes||[]).find(x=>x.id===selection.id); if(!route){select(null);return;}
+    const {rack,ap}=routeEndpoints(route,f);
+    setUiText(title,'cable.title');
+    const length=routeLength(route,f), reserve=Math.max(0,route.reservePct==null?10:route.reservePct), estimated=length*(1+reserve/100);
+    body.innerHTML=`
+      <div class="stat"><span>${t('rack.title')}</span><b>${escapeHtml(rack?((rack.kind||'Rack')+' · '+(rack.name||'Rack')):'—')}</b></div>
+      <div class="stat"><span>${t('tool.ap')}</span><b>${escapeHtml(ap?ap.name:'—')}</b></div>
+      <div class="stat"><span>${t('cable.length')}</span><b>${length.toFixed(1)} m</b></div>
+      <div class="stat"><span>${t('cable.estimated')}</span><b id="pCableEstimated">${estimated.toFixed(1)} m</b></div>
+      <div class="field"><label>${t('cable.reserve')}</label>
+        <div class="slider"><input id="pCableReserve" type="range" min="0" max="50" step="1" value="${reserve}"><span class="val" id="pCableReserveV">${reserve}%</span></div></div>
+      <button class="tbtn" id="pCableAddNode" style="width:100%;justify-content:center;margin:8px 0">${t('cable.addNode')}</button>
+      <button class="delbtn" id="pDel">${t('cable.remove')}</button>`;
+    $('#pCableReserve').oninput=e=>{route.reservePct=+e.target.value;$('#pCableReserveV').textContent=route.reservePct+'%';$('#pCableEstimated').textContent=(routeLength(route,f)*(1+route.reservePct/100)).toFixed(1)+' m';draw2d();};
+    $('#pCableAddNode').onclick=()=>{ const pts=routePoints(route,f); if(pts.length>=2){ commit(); const a=pts[0], b=pts[1]; if(!route.nodes)route.nodes=[]; route.nodes.unshift({x:(a.x+b.x)/2,y:(a.y+b.y)/2}); draw2d(); renderProp(); } };
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='label'){
@@ -3125,7 +3257,7 @@ function commitThrottled(){ const t=performance.now(); if(t-_commitThrottle<450)
 function restoreState(json){
   state=JSON.parse(json);
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; _indoor=null;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
@@ -3160,7 +3292,7 @@ function loadProject(file){
       if(s.noiseFloor==null)s.noiseFloor=-95;
       if(s.indoorOnly==null)s.indoorOnly=true;
       _indoor=null;
-      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
+      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
         f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
@@ -3186,6 +3318,10 @@ function planExportBounds(f){
     b.minx=Math.min(b.minx,r.x-1); b.maxx=Math.max(b.maxx,r.x+2.5);
     b.miny=Math.min(b.miny,r.y-1); b.maxy=Math.max(b.maxy,r.y+1);
   });
+  (f.cableRoutes||[]).forEach(route=>routePoints(route,f).forEach(p=>{
+    b.minx=Math.min(b.minx,p.x-0.5); b.maxx=Math.max(b.maxx,p.x+0.5);
+    b.miny=Math.min(b.miny,p.y-0.5); b.maxy=Math.max(b.maxy,p.y+0.5);
+  }));
   return b;
 }
 function drawCleanPlan(g,f,b,W,H){
@@ -3209,6 +3345,11 @@ function drawCleanPlan(g,f,b,W,H){
     const rx=(p.diameter||0.6)/2*sx, ry=(p.diameter||0.6)/2*sy;
     g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
     g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
+  (f.cableRoutes||[]).forEach(route=>{
+    const pts=routePoints(route,f); if(pts.length<2)return;
+    g.strokeStyle='#d97706'; g.lineWidth=4; g.setLineDash([12,8]); g.lineCap='round'; g.lineJoin='round';
+    g.beginPath(); pts.forEach((pt,i)=>{ if(i)g.lineTo(wx2p(pt.x),wy2p(pt.y)); else g.moveTo(wx2p(pt.x),wy2p(pt.y)); }); g.stroke(); g.setLineDash([]);
+  });
   f.aps.forEach(ap=>{
     g.fillStyle='#0d9488'; g.beginPath(); g.arc(wx2p(ap.x),wy2p(ap.y),9,0,Math.PI*2); g.fill();
     g.strokeStyle='#053b36'; g.lineWidth=3; g.stroke();
@@ -3257,6 +3398,12 @@ function exportPNG(){
     const rx=(p.diameter||0.6)/2/(b.maxx-b.minx)*W, ry=(p.diameter||0.6)/2/(b.maxy-b.miny)*H;
     g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
     g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
+  // cable routes
+  (f.cableRoutes||[]).forEach(route=>{
+    const pts=routePoints(route,f); if(pts.length<2)return;
+    g.strokeStyle='#f4a83a'; g.lineWidth=4; g.setLineDash([12,8]); g.lineCap='round'; g.lineJoin='round';
+    g.beginPath(); pts.forEach((pt,i)=>{ if(i)g.lineTo(wx2p(pt.x),wy2p(pt.y)); else g.moveTo(wx2p(pt.x),wy2p(pt.y)); }); g.stroke(); g.setLineDash([]);
+  });
   // APs
   f.aps.forEach(ap=>{ if(!ap.bands.includes(state.band))return;
     g.fillStyle='#34d6c4';g.beginPath();g.arc(wx2p(ap.x),wy2p(ap.y),8,0,7);g.fill();
