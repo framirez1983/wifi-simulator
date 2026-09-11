@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RF Planner — WiFi-täckningssimulator</title>
+<title data-i18n="app.title">RF Planner — Simulador de cobertura WiFi</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
@@ -125,7 +125,7 @@
     color:var(--faint);background:rgba(13,17,23,.7);padding:4px 9px;border-radius:6px;
     border:1px solid var(--line);pointer-events:none;z-index:5}
   .nav3dhint{position:absolute;right:12px;top:12px;font-size:10px;color:var(--faint);
-    font-family:var(--mono);text-align:right;line-height:1.7;pointer-events:none;z-index:5;
+    font-family:var(--mono);text-align:right;line-height:1.7;white-space:pre-line;pointer-events:none;z-index:5;
     background:rgba(13,17,23,.7);padding:6px 9px;border-radius:6px;border:1px solid var(--line);display:none}
 
   /* legend */
@@ -202,22 +202,25 @@
         <path d="M5.8 9.8a9 9 0 0 1 12.4 0" opacity=".7"/>
         <path d="M3.2 7.1a13 13 0 0 1 17.6 0" opacity=".4"/>
       </svg>
-      <div>RF&nbsp;Planner <small>wifi&nbsp;coverage</small></div>
+      <div>RF&nbsp;Planner <small data-i18n="app.tagline">wifi coverage</small></div>
     </div>
     <div class="seg" id="viewseg">
-      <button data-view="2d" class="active">Planritning 2D</button>
-      <button data-view="3d">Vy 3D</button>
+      <button data-view="2d" class="active" data-i18n="view.plan">Planritning 2D</button>
+      <button data-view="3d" data-i18n="view.scene">Vy 3D</button>
     </div>
-    <button class="tbtn" id="btnUndo" title="Ångra (Ctrl/Cmd+Z)" disabled>
+    <button class="tbtn" id="btnUndo" title="Ångra (Ctrl/Cmd+Z)" data-i18n-title="toolbar.undo" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 5 5v1"/></svg>
     </button>
-    <button class="tbtn" id="btnRedo" title="Gör om (Ctrl/Cmd+Shift+Z)" disabled>
+    <button class="tbtn" id="btnRedo" title="Gör om (Ctrl/Cmd+Shift+Z)" data-i18n-title="toolbar.redo" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0-5 5v1"/></svg>
     </button>
     <div class="topspace"></div>
-    <button class="tbtn" id="btnHeat" title="Visa/dölj täckning">
+    <select id="uiLanguage" class="tbtn" aria-label="Idioma" data-i18n-aria-label="language.label" title="Idioma" data-i18n-title="language.label">
+      <option value="es">Español</option><option value="en">English</option><option value="sv">Svenska</option>
+    </select>
+    <button class="tbtn" id="btnHeat" title="Visa/dölj täckning" data-i18n-title="toolbar.toggleCoverage">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18" opacity=".5"/></svg>
-      Täckning
+      <span data-i18n="toolbar.coverage">Täckning</span>
     </button>
     <button class="tbtn" id="btnTrace">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
@@ -228,7 +231,7 @@
     <button class="tbtn" id="btnLoad" data-i18n="toolbar.openProject">Öppna</button>
     <div class="seg" style="margin-left:2px">
       <button id="btnPng">PNG</button>
-      <button id="btnGltf">3D-scen</button>
+      <button id="btnGltf" data-i18n="toolbar.scene">3D-scen</button>
     </div>
     <input type="file" id="fileLoad" accept=".json,application/json">
   </div>
@@ -238,18 +241,18 @@
     <!-- LEFT -->
     <div class="col" id="left">
       <div class="grp">
-        <h3>Verktyg</h3>
+        <h3 data-i18n="section.tools">Verktyg</h3>
         <div class="tools" id="tools"></div>
       </div>
       <div class="grp">
-        <h3>Våningar</h3>
+        <h3 data-i18n="section.floors">Våningar</h3>
         <div id="floorList"></div>
-        <button class="addfloor" id="addFloor">+ Lägg till våning</button>
+        <button class="addfloor" id="addFloor" data-i18n="floor.add">+ Lägg till våning</button>
       </div>
       <div class="grp" style="flex:1">
-        <h3>Material — väggar</h3>
+        <h3 data-i18n="section.materials">Material — väggar</h3>
         <div id="matList"></div>
-        <button class="addfloor" id="addMat" style="margin-top:8px">+ Nytt material</button>
+        <button class="addfloor" id="addMat" style="margin-top:8px" data-i18n="material.add">+ Nytt material</button>
       </div>
     </div>
 
@@ -258,16 +261,18 @@
       <canvas id="canvas2d"></canvas>
       <div id="view3d"></div>
       <div class="stage-hud">
-        <div class="chip" id="chipFloor">Plan —</div>
-        <div class="chip" id="chipTool">Verktyg —</div>
+        <div class="chip" id="chipFloor" data-i18n="chip.floor" data-i18n-params='{"name":"—"}'>Plan —</div>
+        <div class="chip" id="chipTool" data-i18n="chip.tool" data-i18n-params='{"name":"—"}'>Verktyg —</div>
       </div>
-      <div class="nav3dhint" id="nav3dhint">drag &middot; rotera<br>scroll &middot; zoom<br>höger&middot;drag &middot; panorera</div>
+      <div class="nav3dhint" id="nav3dhint" data-i18n="view.navigation">drag · rotera
+scroll · zoom
+höger·drag · panorera</div>
       <div id="coords">—</div>
       <div id="legend">
-        <div class="lt">Signal (RSSI)</div>
+        <div class="lt" data-i18n="coverage.signal">Signal (RSSI)</div>
         <div class="bar" id="legendBar"></div>
         <div class="scale"><span>-90 dBm</span><span>-65</span><span>-40</span></div>
-        <div id="covReadout" style="margin-top:7px;font-family:var(--mono);font-size:11px;color:var(--muted)">Täckning: —</div>
+        <div id="covReadout" style="margin-top:7px;font-family:var(--mono);font-size:11px;color:var(--muted)"><span data-i18n="coverage.empty">Täckning: —</span></div>
       </div>
       <div id="toast"></div>
       <div id="calibBar"></div>
@@ -277,52 +282,52 @@
     <!-- RIGHT -->
     <div class="col" id="right">
       <div class="grp" id="propPanel">
-        <h3 id="propTitle">Egenskaper</h3>
-        <div id="propBody"><div class="empty">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den.</div></div>
+        <h3 id="propTitle" data-i18n="properties.title">Egenskaper</h3>
+        <div id="propBody"><div class="empty" data-i18n="properties.empty">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den.</div></div>
       </div>
       <div class="grp" id="planPanel">
-        <h3>Aktivt plan</h3>
-        <div class="field"><label>Bredd (X)</label>
+        <h3 data-i18n="section.activeFloor">Aktivt plan</h3>
+        <div class="field"><label data-i18n="floor.width">Bredd (X)</label>
           <div class="slider"><input type="range" id="planW" min="4" max="60" step="0.5"><span class="val" id="planWV">—</span></div></div>
-        <div class="field"><label>Djup (Y)</label>
+        <div class="field"><label data-i18n="floor.depth">Djup (Y)</label>
           <div class="slider"><input type="range" id="planD" min="4" max="60" step="0.5"><span class="val" id="planDV">—</span></div></div>
-        <div class="field"><label>Takhöjd</label>
+        <div class="field"><label data-i18n="floor.ceiling">Takhöjd</label>
           <div class="slider"><input type="range" id="planH" min="2" max="6" step="0.1"><span class="val" id="planHV">—</span></div></div>
-        <div class="hint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
+        <div class="hint" data-i18n="floor.sizeHint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
       </div>
       <div class="grp" id="coveragePanel">
-        <h3>Täckning &amp; visning</h3>
-        <div class="field"><label>Visad storhet</label><div class="pillrow" id="heatViewPills"></div></div>
-        <div class="field"><label>Tröskel för täckning</label>
+        <h3 data-i18n="section.coverage">Täckning &amp; visning</h3>
+        <div class="field"><label data-i18n="coverage.metric">Visad storhet</label><div class="pillrow" id="heatViewPills"></div></div>
+        <div class="field"><label data-i18n="coverage.threshold">Tröskel för täckning</label>
           <div class="slider"><input type="range" id="covThr" min="-90" max="-40" step="1" value="-67"><span class="val" id="covThrV">-67 dBm</span></div></div>
-        <div class="field"><label><input type="checkbox" id="showFail"> Markera områden under tröskel</label></div>
-        <div class="field"><label><input type="checkbox" id="indoorOnly" checked> Räkna bara inomhus (härled från väggar)</label></div>
-        <div class="hint" id="covHint">Täckningsgrad visas i förklaringsrutan nere till vänster.</div>
+        <div class="field"><label><input type="checkbox" id="showFail"> <span data-i18n="coverage.markBelow">Markera områden under tröskel</span></label></div>
+        <div class="field"><label><input type="checkbox" id="indoorOnly" checked> <span data-i18n="coverage.indoorOnly">Räkna bara inomhus (härled från väggar)</span></label></div>
+        <div class="hint" id="covHint"><span data-i18n="coverage.hint">Täckningsgrad visas i förklaringsrutan nere till vänster.</span></div>
       </div>
       <div class="grp" id="autoPanel">
-        <h3>Automatik</h3>
-        <button class="tbtn" id="btnAutoChan" style="width:100%;justify-content:center;margin-bottom:8px">Auto-kanalplan</button>
-        <button class="tbtn" id="btnAutoPlace" style="width:100%;justify-content:center">Auto-placera AP:er…</button>
-        <div class="hint" style="margin-top:8px">Kanalplanen minimerar samkanalsstörning. Auto-placering fyller på AP:er tills måltäckningen nås.</div>
+        <h3 data-i18n="section.automatic">Automatik</h3>
+        <button class="tbtn" id="btnAutoChan" style="width:100%;justify-content:center;margin-bottom:8px" data-i18n="auto.channels">Auto-kanalplan</button>
+        <button class="tbtn" id="btnAutoPlace" style="width:100%;justify-content:center" data-i18n="auto.placeOpen">Auto-placera AP:er…</button>
+        <div class="hint" style="margin-top:8px" data-i18n="auto.hint">Kanalplanen minimerar samkanalsstörning. Auto-placering fyller på AP:er tills måltäckningen nås.</div>
       </div>
       <div class="grp">
-        <h3>Modell &amp; miljö</h3>
+        <h3 data-i18n="section.model">Modell &amp; miljö</h3>
         <div class="field">
-          <label>Path-loss-exponent (n)</label>
+          <label data-i18n="model.exponent">Path-loss-exponent (n)</label>
           <div class="slider"><input type="range" id="plExp" min="2" max="4.5" step="0.1" value="3"><span class="val" id="plExpV">3.0</span></div>
-          <div class="hint">2.0 fri sikt · 3.0 kontor · 4+ tät miljö</div>
+          <div class="hint" data-i18n="model.hint">2.0 fri sikt · 3.0 kontor · 4+ tät miljö</div>
         </div>
         <div class="field">
-          <label>Bjälklag mellan plan (dämpning)</label>
+          <label data-i18n="model.slab">Bjälklag mellan plan (dämpning)</label>
           <div class="slider"><input type="range" id="slabDb" min="0" max="35" step="1" value="16"><span class="val" id="slabDbV">16 dB</span></div>
         </div>
         <div class="field">
-          <label>Frekvensband (raster)</label>
+          <label data-i18n="model.band">Frekvensband (raster)</label>
           <div class="pillrow" id="bandPills"></div>
         </div>
       </div>
       <div class="grp">
-        <h3>Sammanställning</h3>
+        <h3 data-i18n="section.summary">Sammanställning</h3>
         <div id="stats"></div>
       </div>
     </div>
@@ -337,9 +342,501 @@
 
 // ---------- UI language (independent of project state) ----------
 const translations = {
-  es: { 'toolbar.saveProject':'Guardar proyecto', 'toolbar.openProject':'Abrir proyecto' },
-  en: { 'toolbar.saveProject':'Save project', 'toolbar.openProject':'Open project' },
-  sv: { 'toolbar.saveProject':'Spara projekt', 'toolbar.openProject':'Öppna' },
+  "es": {
+    "app.title": "RF Planner — Simulador de cobertura WiFi",
+    "app.tagline": "cobertura wifi",
+    "language.label": "Idioma",
+    "view.plan": "Plano 2D",
+    "view.scene": "Vista 3D",
+    "toolbar.undo": "Deshacer (Ctrl/Cmd+Z)",
+    "toolbar.redo": "Rehacer (Ctrl/Cmd+Shift+Z)",
+    "toolbar.toggleCoverage": "Mostrar/ocultar cobertura",
+    "toolbar.coverage": "Cobertura",
+    "toolbar.saveProject": "Guardar proyecto",
+    "toolbar.openProject": "Abrir proyecto",
+    "toolbar.scene": "Escena 3D",
+    "section.tools": "Herramientas",
+    "section.floors": "Plantas",
+    "floor.add": "+ Añadir planta",
+    "section.materials": "Materiales — paredes",
+    "material.add": "+ Nuevo material",
+    "view.navigation": "arrastrar · girar\nrueda · zoom\nbotón derecho + arrastrar · desplazar",
+    "coverage.signal": "Señal (RSSI)",
+    "coverage.empty": "Cobertura: —",
+    "properties.title": "Propiedades",
+    "properties.empty": "Selecciona un punto de acceso, una pared o una imagen de fondo para editarlo.",
+    "section.activeFloor": "Planta activa",
+    "floor.width": "Anchura (X)",
+    "floor.depth": "Profundidad (Y)",
+    "floor.ceiling": "Altura del techo",
+    "floor.sizeHint": "El tamaño define la superficie, el marco de la cuadrícula y el área de la malla de cobertura. Las paredes fuera del marco amplían el área automáticamente.",
+    "section.coverage": "Cobertura y visualización",
+    "coverage.metric": "Magnitud mostrada",
+    "coverage.threshold": "Umbral de cobertura",
+    "coverage.markBelow": "Marcar áreas por debajo del umbral",
+    "coverage.indoorOnly": "Contar solo interiores (deducidos de las paredes)",
+    "coverage.hint": "El porcentaje de cobertura aparece en la leyenda inferior izquierda.",
+    "section.automatic": "Automatización",
+    "auto.channels": "Asignar canales automáticamente",
+    "auto.placeOpen": "Colocar AP automáticamente…",
+    "auto.hint": "La asignación de canales minimiza la interferencia cocanal. La colocación automática añade AP hasta alcanzar la cobertura objetivo.",
+    "section.model": "Modelo y entorno",
+    "model.exponent": "Exponente de pérdida de propagación (n)",
+    "model.hint": "2.0 línea de visión · 3.0 oficina · 4+ entorno denso",
+    "model.slab": "Forjado entre plantas (atenuación)",
+    "model.band": "Banda de frecuencia (malla)",
+    "section.summary": "Resumen",
+    "tool.select": "Seleccionar",
+    "tool.wall": "Pared",
+    "tool.ap": "Punto de acceso",
+    "tool.bg": "Plano",
+    "tool.erase": "Borrar",
+    "tool.zone": "Zona de exclusión",
+    "tool.measure": "Medir",
+    "floor.level": "Nivel",
+    "floor.togglePlan": "Mostrar/ocultar plano",
+    "floor.duplicate": "Duplicar planta",
+    "common.remove": "Eliminar",
+    "material.color": "Color",
+    "properties.selectionHint": "Selecciona un punto de acceso, una pared o una imagen de fondo para editarlo. Arrastra un rectángulo en un área vacía para seleccionar varias paredes, o usa Shift+clic para añadirlas individualmente.",
+    "wall.selectAll": "Seleccionar todas las paredes de la planta",
+    "wall.cleanup": "Unir paredes superpuestas",
+    "ap.name": "Nombre",
+    "ap.bands": "Bandas de frecuencia (selección múltiple)",
+    "ap.power": "Potencia de transmisión",
+    "ap.mount": "Altura de montaje",
+    "ap.antenna": "Tipo de antena",
+    "antenna.omni": "Omnidireccional",
+    "antenna.sector": "Sector",
+    "antenna.patch": "Patch",
+    "ap.azimuth": "Azimut (dirección)",
+    "ap.tilt": "Inclinación hacia abajo",
+    "ap.gain": "Ganancia de antena",
+    "ap.remove": "Eliminar punto de acceso",
+    "wall.material": "Material",
+    "wall.length": "Longitud",
+    "wall.attenuation": "Atenuación",
+    "wall.remove": "Eliminar pared",
+    "wall.titlePlural": "Paredes",
+    "wall.selected": "Paredes seleccionadas",
+    "wall.totalLength": "Longitud total",
+    "wall.assignAll": "Asignar material a todas",
+    "wall.chooseMaterial": "Elige el material que deseas asignar…",
+    "bg.title": "Plano de fondo",
+    "bg.show": "Mostrar plano en esta planta",
+    "bg.scale": "Escala (metros por anchura de imagen)",
+    "bg.calibrate": "Calibrar escala…",
+    "bg.analyze": "Analizar plano → crear paredes…",
+    "bg.opacity": "Opacidad",
+    "bg.rotation": "Rotación",
+    "bg.lock": "Bloquear posición",
+    "bg.hint": "Consejo: usa Calibrar escala y haz clic en dos puntos cuya distancia conozcas (p. ej., una puerta ≈ 0,9 m) para ajustar la escala a la cuadrícula. Después dibuja las paredes sobre el plano.",
+    "bg.remove": "Eliminar plano",
+    "zone.title": "Zona de exclusión (sin AP)",
+    "zone.hint": "La colocación automática evita situar puntos de acceso dentro de esta zona. La zona sigue incluida en el cálculo de cobertura.",
+    "zone.width": "Anchura",
+    "zone.height": "Altura",
+    "zone.area": "Área",
+    "zone.widthMeters": "Anchura (m)",
+    "zone.heightMeters": "Altura (m)",
+    "zone.remove": "Eliminar zona de exclusión",
+    "stats.aps": "Puntos de acceso",
+    "stats.walls": "Paredes (total)",
+    "stats.wallMeters": "Metros de pared",
+    "stats.floorAps": "AP en la planta",
+    "calibration.title": "Calibrar",
+    "calibration.first": "Haz clic en el primer punto de una distancia conocida.",
+    "calibration.second": "Haz clic en el segundo punto.",
+    "calibration.distance": "Distancia real:",
+    "calibration.meters": "metros",
+    "common.cancel": "Cancelar",
+    "common.apply": "Aplicar",
+    "analysis.title": "Analizar plano",
+    "analysis.threshold": "Umbral",
+    "analysis.minLength": "Longitud mínima",
+    "analysis.invert": "Invertir (paredes claras)",
+    "analysis.diagonal": "Incluir paredes diagonales (Hough)",
+    "analysis.add": "Añadir paredes",
+    "analysis.calculating": "calculando…",
+    "auto.title": "Colocar AP automáticamente",
+    "auto.target": "Cobertura objetivo",
+    "auto.max": "Cantidad máxima",
+    "auto.run": "Colocar",
+    "coverage.leaked": "⚠︎ No se pudo delimitar el interior. ¿Están completamente cerradas las paredes exteriores? Por ahora se cuenta toda la superficie.",
+    "coverage.indoorHint": "La cobertura se calcula solo en el interior (deducido de las paredes).",
+    "trace.progress": "Ray tracing — calculando propagación…",
+    "error.lastFloor": "Se requiere al menos una planta.",
+    "error.noBackground": "Añade primero un plano de fondo.",
+    "error.distance": "Introduce una distancia válida en metros.",
+    "error.analysisImage": "No se pudo leer la imagen para analizarla.",
+    "auto.channelsDone": "Asignación de canales actualizada.",
+    "auto.progress": "Calculando colocación…",
+    "auto.noImprovement": "No se encontró ninguna mejora.",
+    "wall.noCleanup": "No hay paredes que unir.",
+    "project.saved": "Proyecto guardado (JSON).",
+    "project.opened": "Proyecto abierto.",
+    "error.invalidFile": "Archivo no válido",
+    "error.noHeatExport": "No hay un mapa de cobertura que exportar. Calcula primero la cobertura.",
+    "export.pngDone": "PNG exportado (1600px).",
+    "export.sceneDone": "Escena 3D exportada: rf-scen.gltf + metadatos.",
+    "bg.added": "Plano añadido. Ajusta la escala en el panel derecho.",
+    "export.model": "modelo",
+    "coverage.stat": "Cobertura ≥ {threshold} dBm",
+    "ap.channel": "Canal ({band})",
+    "chip.tool": "Herramienta {name}",
+    "chip.floor": "Planta {name}",
+    "wall.removeMany": "Eliminar {count} paredes seleccionadas",
+    "wall.removeMany.one": "Eliminar {count} pared seleccionada",
+    "wall.assigned": "Se ha asignado un nuevo material a {count} paredes.",
+    "wall.assigned.one": "Se ha asignado un nuevo material a {count} pared.",
+    "calibration.done": "Escala calibrada — {distance} m.",
+    "analysis.found": "Se encontraron {count} paredes",
+    "analysis.found.one": "Se encontró {count} pared",
+    "analysis.addCount": "Añadir {count} paredes",
+    "analysis.addCount.one": "Añadir {count} pared",
+    "analysis.created": "Se crearon {count} paredes a partir del plano.",
+    "analysis.created.one": "Se creó {count} pared a partir del plano.",
+    "auto.context": "{band} · umbral {threshold} dBm",
+    "auto.contextZones": "{band} · umbral {threshold} dBm · evita {count} zonas de exclusión",
+    "auto.contextZones.one": "{band} · umbral {threshold} dBm · evita {count} zona de exclusión",
+    "auto.placed": "{count} AP colocados · cobertura ~{coverage}%",
+    "auto.placed.one": "{count} AP colocado · cobertura ~{coverage}%",
+    "wall.cleaned": "Paredes tras unir: {before} → {after}.",
+    "error.readFile": "No se pudo leer el archivo: {error}",
+    "export.caption": "Cobertura RF · {name} · {band} · {mode}",
+    "metric.sinr": "SINR",
+    "metric.sinrDb": "SINR (dB)"
+  },
+  "en": {
+    "app.title": "RF Planner — WiFi coverage simulator",
+    "app.tagline": "wifi coverage",
+    "language.label": "Language",
+    "view.plan": "2D floor plan",
+    "view.scene": "3D view",
+    "toolbar.undo": "Undo (Ctrl/Cmd+Z)",
+    "toolbar.redo": "Redo (Ctrl/Cmd+Shift+Z)",
+    "toolbar.toggleCoverage": "Show/hide coverage",
+    "toolbar.coverage": "Coverage",
+    "toolbar.saveProject": "Save project",
+    "toolbar.openProject": "Open project",
+    "toolbar.scene": "3D scene",
+    "section.tools": "Tools",
+    "section.floors": "Floors",
+    "floor.add": "+ Add floor",
+    "section.materials": "Materials — walls",
+    "material.add": "+ New material",
+    "view.navigation": "drag · rotate\nscroll · zoom\nright-drag · pan",
+    "coverage.signal": "Signal (RSSI)",
+    "coverage.empty": "Coverage: —",
+    "properties.title": "Properties",
+    "properties.empty": "Select an access point, wall or background image to edit it.",
+    "section.activeFloor": "Active floor",
+    "floor.width": "Width (X)",
+    "floor.depth": "Depth (Y)",
+    "floor.ceiling": "Ceiling height",
+    "floor.sizeHint": "The size sets the floor area, grid boundary and coverage grid area. Walls outside the boundary automatically extend the area.",
+    "section.coverage": "Coverage & display",
+    "coverage.metric": "Displayed metric",
+    "coverage.threshold": "Coverage threshold",
+    "coverage.markBelow": "Highlight areas below the threshold",
+    "coverage.indoorOnly": "Count indoor areas only (derived from walls)",
+    "coverage.hint": "Coverage percentage is shown in the legend at the bottom left.",
+    "section.automatic": "Automation",
+    "auto.channels": "Auto channel plan",
+    "auto.placeOpen": "Auto-place APs…",
+    "auto.hint": "The channel plan minimizes co-channel interference. Auto-placement adds APs until the target coverage is reached.",
+    "section.model": "Model & environment",
+    "model.exponent": "Path-loss exponent (n)",
+    "model.hint": "2.0 line of sight · 3.0 office · 4+ dense environment",
+    "model.slab": "Inter-floor slab (attenuation)",
+    "model.band": "Frequency band (grid)",
+    "section.summary": "Summary",
+    "tool.select": "Select",
+    "tool.wall": "Wall",
+    "tool.ap": "Access point",
+    "tool.bg": "Floor plan",
+    "tool.erase": "Erase",
+    "tool.zone": "Exclusion zone",
+    "tool.measure": "Measure",
+    "floor.level": "Level",
+    "floor.togglePlan": "Show/hide floor plan",
+    "floor.duplicate": "Duplicate floor",
+    "common.remove": "Remove",
+    "material.color": "Color",
+    "properties.selectionHint": "Select an access point, wall or background image to edit it. Drag a box in an empty area to select multiple walls, or Shift+click to add individual walls.",
+    "wall.selectAll": "Select all walls on this floor",
+    "wall.cleanup": "Clean up walls (merge)",
+    "ap.name": "Name",
+    "ap.bands": "Frequency bands (multiple selection)",
+    "ap.power": "Transmit power",
+    "ap.mount": "Mounting height",
+    "ap.antenna": "Antenna type",
+    "antenna.omni": "Omnidirectional",
+    "antenna.sector": "Sector",
+    "antenna.patch": "Patch",
+    "ap.azimuth": "Azimuth (direction)",
+    "ap.tilt": "Downtilt",
+    "ap.gain": "Antenna gain",
+    "ap.remove": "Remove access point",
+    "wall.material": "Material",
+    "wall.length": "Length",
+    "wall.attenuation": "Attenuation",
+    "wall.remove": "Remove wall",
+    "wall.titlePlural": "Walls",
+    "wall.selected": "Selected walls",
+    "wall.totalLength": "Total length",
+    "wall.assignAll": "Assign material to all",
+    "wall.chooseMaterial": "Choose material to assign…",
+    "bg.title": "Background floor plan",
+    "bg.show": "Show floor plan on this floor",
+    "bg.scale": "Scale (meters per image width)",
+    "bg.calibrate": "Calibrate scale…",
+    "bg.analyze": "Analyze floor plan → create walls…",
+    "bg.opacity": "Opacity",
+    "bg.rotation": "Rotation",
+    "bg.lock": "Lock position",
+    "bg.hint": "Tip: use Calibrate scale and click two points with a known distance (e.g. a door ≈ 0,9 m) to match the grid scale. Then draw walls over the floor plan.",
+    "bg.remove": "Remove floor plan",
+    "zone.title": "Exclusion zone (no AP)",
+    "zone.hint": "Auto-placement avoids placing access points inside this area. The area is still included in the coverage calculation.",
+    "zone.width": "Width",
+    "zone.height": "Height",
+    "zone.area": "Area",
+    "zone.widthMeters": "Width (m)",
+    "zone.heightMeters": "Height (m)",
+    "zone.remove": "Remove exclusion zone",
+    "stats.aps": "Access points",
+    "stats.walls": "Walls (total)",
+    "stats.wallMeters": "Wall meters",
+    "stats.floorAps": "APs on this floor",
+    "calibration.title": "Calibrate",
+    "calibration.first": "Click the first point of a known distance.",
+    "calibration.second": "Click the second point.",
+    "calibration.distance": "Actual distance:",
+    "calibration.meters": "meters",
+    "common.cancel": "Cancel",
+    "common.apply": "Apply",
+    "analysis.title": "Analyze floor plan",
+    "analysis.threshold": "Threshold",
+    "analysis.minLength": "Minimum length",
+    "analysis.invert": "Invert (light walls)",
+    "analysis.diagonal": "Include diagonal walls (Hough)",
+    "analysis.add": "Add walls",
+    "analysis.calculating": "calculating…",
+    "auto.title": "Auto-place APs",
+    "auto.target": "Target coverage",
+    "auto.max": "Maximum count",
+    "auto.run": "Place",
+    "coverage.leaked": "⚠︎ Could not determine the indoor boundary — are the outer walls fully closed? Counting the entire area for now.",
+    "coverage.indoorHint": "Coverage counts only indoor areas (derived from walls).",
+    "trace.progress": "Ray tracing — calculating propagation…",
+    "error.lastFloor": "At least one floor is required.",
+    "error.noBackground": "Add a background floor plan first.",
+    "error.distance": "Enter a valid distance in meters.",
+    "error.analysisImage": "Could not read the image for analysis.",
+    "auto.channelsDone": "Channel plan updated.",
+    "auto.progress": "Calculating placement…",
+    "auto.noImprovement": "No improvement found.",
+    "wall.noCleanup": "No walls to clean up.",
+    "project.saved": "Project saved (JSON).",
+    "project.opened": "Project opened.",
+    "error.invalidFile": "Invalid file",
+    "error.noHeatExport": "No coverage map to export — calculate coverage first.",
+    "export.pngDone": "PNG exported (1600px).",
+    "export.sceneDone": "3D scene exported: rf-scen.gltf + metadata.",
+    "bg.added": "Floor plan added. Adjust the scale in the right panel.",
+    "export.model": "model",
+    "coverage.stat": "Coverage ≥ {threshold} dBm",
+    "ap.channel": "Channel ({band})",
+    "chip.tool": "Tool {name}",
+    "chip.floor": "Floor {name}",
+    "wall.removeMany": "Remove {count} selected walls",
+    "wall.removeMany.one": "Remove {count} selected wall",
+    "wall.assigned": "Assigned new material to {count} walls.",
+    "wall.assigned.one": "Assigned new material to {count} wall.",
+    "calibration.done": "Scale calibrated — {distance} m.",
+    "analysis.found": "Found {count} walls",
+    "analysis.found.one": "Found {count} wall",
+    "analysis.addCount": "Add {count} walls",
+    "analysis.addCount.one": "Add {count} wall",
+    "analysis.created": "Created {count} walls from the floor plan.",
+    "analysis.created.one": "Created {count} wall from the floor plan.",
+    "auto.context": "{band} · threshold {threshold} dBm",
+    "auto.contextZones": "{band} · threshold {threshold} dBm · avoids {count} exclusion zones",
+    "auto.contextZones.one": "{band} · threshold {threshold} dBm · avoids {count} exclusion zone",
+    "auto.placed": "{count} APs placed · coverage ~{coverage}%",
+    "auto.placed.one": "{count} AP placed · coverage ~{coverage}%",
+    "wall.cleaned": "Cleaned up walls: {before} → {after}.",
+    "error.readFile": "Could not read the file: {error}",
+    "export.caption": "RF coverage · {name} · {band} · {mode}",
+    "metric.sinr": "SINR",
+    "metric.sinrDb": "SINR (dB)"
+  },
+  "sv": {
+    "app.title": "RF Planner — WiFi-täckningssimulator",
+    "app.tagline": "wifi-täckning",
+    "language.label": "Språk",
+    "view.plan": "Planritning 2D",
+    "view.scene": "Vy 3D",
+    "toolbar.undo": "Ångra (Ctrl/Cmd+Z)",
+    "toolbar.redo": "Gör om (Ctrl/Cmd+Shift+Z)",
+    "toolbar.toggleCoverage": "Visa/dölj täckning",
+    "toolbar.coverage": "Täckning",
+    "toolbar.saveProject": "Spara projekt",
+    "toolbar.openProject": "Öppna",
+    "toolbar.scene": "3D-scen",
+    "section.tools": "Verktyg",
+    "section.floors": "Våningar",
+    "floor.add": "+ Lägg till våning",
+    "section.materials": "Material — väggar",
+    "material.add": "+ Nytt material",
+    "view.navigation": "drag · rotera\nscroll · zoom\nhöger·drag · panorera",
+    "coverage.signal": "Signal (RSSI)",
+    "coverage.empty": "Täckning: —",
+    "properties.title": "Egenskaper",
+    "properties.empty": "Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den.",
+    "section.activeFloor": "Aktivt plan",
+    "floor.width": "Bredd (X)",
+    "floor.depth": "Djup (Y)",
+    "floor.ceiling": "Takhöjd",
+    "floor.sizeHint": "Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.",
+    "section.coverage": "Täckning & visning",
+    "coverage.metric": "Visad storhet",
+    "coverage.threshold": "Tröskel för täckning",
+    "coverage.markBelow": "Markera områden under tröskel",
+    "coverage.indoorOnly": "Räkna bara inomhus (härled från väggar)",
+    "coverage.hint": "Täckningsgrad visas i förklaringsrutan nere till vänster.",
+    "section.automatic": "Automatik",
+    "auto.channels": "Auto-kanalplan",
+    "auto.placeOpen": "Auto-placera AP:er…",
+    "auto.hint": "Kanalplanen minimerar samkanalsstörning. Auto-placering fyller på AP:er tills måltäckningen nås.",
+    "section.model": "Modell & miljö",
+    "model.exponent": "Path-loss-exponent (n)",
+    "model.hint": "2.0 fri sikt · 3.0 kontor · 4+ tät miljö",
+    "model.slab": "Bjälklag mellan plan (dämpning)",
+    "model.band": "Frekvensband (raster)",
+    "section.summary": "Sammanställning",
+    "tool.select": "Markera",
+    "tool.wall": "Vägg",
+    "tool.ap": "Accesspunkt",
+    "tool.bg": "Ritning",
+    "tool.erase": "Radera",
+    "tool.zone": "Spärryta",
+    "tool.measure": "Mät",
+    "floor.level": "Nivå",
+    "floor.togglePlan": "Visa/dölj ritning",
+    "floor.duplicate": "Duplicera plan",
+    "common.remove": "Ta bort",
+    "material.color": "Färg",
+    "properties.selectionHint": "Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den. Dra en ruta i tom yta för att markera flera väggar, eller Shift+klicka för att lägga till enstaka.",
+    "wall.selectAll": "Markera alla väggar på planet",
+    "wall.cleanup": "Städa upp väggar (slå ihop)",
+    "ap.name": "Namn",
+    "ap.bands": "Frekvensband (flerval)",
+    "ap.power": "Sändareffekt",
+    "ap.mount": "Monteringshöjd",
+    "ap.antenna": "Antenntyp",
+    "antenna.omni": "Rundstrålande",
+    "antenna.sector": "Sektor",
+    "antenna.patch": "Patch",
+    "ap.azimuth": "Azimut (riktning)",
+    "ap.tilt": "Nedtilt",
+    "ap.gain": "Antennförstärkning",
+    "ap.remove": "Ta bort accesspunkt",
+    "wall.material": "Material",
+    "wall.length": "Längd",
+    "wall.attenuation": "Dämpning",
+    "wall.remove": "Ta bort vägg",
+    "wall.titlePlural": "Väggar",
+    "wall.selected": "Markerade väggar",
+    "wall.totalLength": "Total längd",
+    "wall.assignAll": "Sätt material på alla",
+    "wall.chooseMaterial": "Välj material att tilldela…",
+    "bg.title": "Bakgrundsritning",
+    "bg.show": "Visa ritning på detta plan",
+    "bg.scale": "Skala (meter per bildbredd)",
+    "bg.calibrate": "Kalibrera skala…",
+    "bg.analyze": "Analysera ritning → skapa väggar…",
+    "bg.opacity": "Opacitet",
+    "bg.rotation": "Rotation",
+    "bg.lock": "Lås position",
+    "bg.hint": "Tips: använd Kalibrera skala och klicka på två punkter med känt avstånd (t.ex. en dörr ≈ 0,9 m) för att få rätt skala mot rutnätet. Rita sedan väggar ovanpå ritningen.",
+    "bg.remove": "Ta bort ritning",
+    "zone.title": "Spärryta (ingen AP)",
+    "zone.hint": "Auto-placeringen undviker att placera accesspunkter inuti den här ytan. Området täcks fortfarande in i beräkningen.",
+    "zone.width": "Bredd",
+    "zone.height": "Höjd",
+    "zone.area": "Area",
+    "zone.widthMeters": "Bredd (m)",
+    "zone.heightMeters": "Höjd (m)",
+    "zone.remove": "Ta bort spärryta",
+    "stats.aps": "Accesspunkter",
+    "stats.walls": "Väggar (totalt)",
+    "stats.wallMeters": "Väggmeter",
+    "stats.floorAps": "AP på planet",
+    "calibration.title": "Kalibrera",
+    "calibration.first": "Klicka på första punkten med känt avstånd.",
+    "calibration.second": "Klicka på andra punkten.",
+    "calibration.distance": "Verkligt avstånd:",
+    "calibration.meters": "meter",
+    "common.cancel": "Avbryt",
+    "common.apply": "Använd",
+    "analysis.title": "Analysera ritning",
+    "analysis.threshold": "Tröskel",
+    "analysis.minLength": "Minlängd",
+    "analysis.invert": "Invertera (ljusa väggar)",
+    "analysis.diagonal": "Inkl. diagonala väggar (Hough)",
+    "analysis.add": "Lägg till väggar",
+    "analysis.calculating": "beräknar…",
+    "auto.title": "Auto-placera AP:er",
+    "auto.target": "Mål-täckning",
+    "auto.max": "Max antal",
+    "auto.run": "Placera",
+    "coverage.leaked": "⚠︎ Kunde inte avgränsa inomhus — är ytterväggarna helt slutna? Räknar hela ytan tills vidare.",
+    "coverage.indoorHint": "Täckning räknas bara på inomhusytan (härledd från väggarna).",
+    "trace.progress": "Ray tracing — beräknar utbredning…",
+    "error.lastFloor": "Minst en våning krävs.",
+    "error.noBackground": "Lägg till en bakgrundsritning först.",
+    "error.distance": "Ange ett giltigt avstånd i meter.",
+    "error.analysisImage": "Kunde inte läsa bilden för analys.",
+    "auto.channelsDone": "Kanalplan uppdaterad.",
+    "auto.progress": "Beräknar placering…",
+    "auto.noImprovement": "Ingen förbättring hittades.",
+    "wall.noCleanup": "Inga väggar att städa.",
+    "project.saved": "Projekt sparat (JSON).",
+    "project.opened": "Projekt öppnat.",
+    "error.invalidFile": "Ogiltig fil",
+    "error.noHeatExport": "Ingen täckningskarta att exportera — beräkna täckning först.",
+    "export.pngDone": "PNG exporterad (1600px).",
+    "export.sceneDone": "3D-scen exporterad: rf-scen.gltf + metadata.",
+    "bg.added": "Ritning tillagd. Justera skalan i panelen till höger.",
+    "export.model": "modell",
+    "coverage.stat": "Täckning ≥ {threshold} dBm",
+    "ap.channel": "Kanal ({band})",
+    "chip.tool": "Verktyg {name}",
+    "chip.floor": "Plan {name}",
+    "wall.removeMany": "Ta bort {count} markerade väggar",
+    "wall.removeMany.one": "Ta bort {count} markerad vägg",
+    "wall.assigned": "{count} väggar fick nytt material.",
+    "wall.assigned.one": "{count} vägg fick nytt material.",
+    "calibration.done": "Skala kalibrerad — {distance} m.",
+    "analysis.found": "Hittade {count} väggar",
+    "analysis.found.one": "Hittade {count} vägg",
+    "analysis.addCount": "Lägg till {count} väggar",
+    "analysis.addCount.one": "Lägg till {count} vägg",
+    "analysis.created": "{count} väggar skapade från ritningen.",
+    "analysis.created.one": "{count} vägg skapad från ritningen.",
+    "auto.context": "{band} · tröskel {threshold} dBm",
+    "auto.contextZones": "{band} · tröskel {threshold} dBm · undviker {count} spärrytor",
+    "auto.contextZones.one": "{band} · tröskel {threshold} dBm · undviker {count} spärryta",
+    "auto.placed": "{count} AP:er placerade · täckning ~{coverage}%",
+    "auto.placed.one": "{count} AP placerad · täckning ~{coverage}%",
+    "wall.cleaned": "Städade väggar: {before} → {after}.",
+    "error.readFile": "Kunde inte läsa filen: {error}",
+    "export.caption": "RF-täckning · {name} · {band} · {mode}",
+    "metric.sinr": "SINR",
+    "metric.sinrDb": "SINR (dB)"
+  }
 };
 const uiLanguageKey = 'wifiSimulator.uiLanguage';
 let uiLanguage = 'es';
@@ -351,16 +848,72 @@ try {
 
 function t(key, params = {}) {
   const messages = translations[uiLanguage];
+  if (params.count === 1 && Object.prototype.hasOwnProperty.call(messages, key+'.one')) key += '.one';
   const text = Object.prototype.hasOwnProperty.call(messages, key) ? messages[key]
     : Object.prototype.hasOwnProperty.call(translations.es, key) ? translations.es[key] : key;
   return text.replace(/\{(\w+)\}/g, (match, name) =>
-    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match);
+    Object.prototype.hasOwnProperty.call(params, name)
+      ? (params[name] && params[name].key ? t(params[name].key,params[name].params) : String(params[name])) : match);
 }
 
-document.documentElement.lang = uiLanguage;
-document.querySelectorAll('[data-i18n]').forEach(el => {
-  el.textContent = t(el.dataset.i18n);
-});
+// Mark only application-owned text. Names, values and event handlers remain untouched.
+function uiMessage(key, params = {}) { return {key, params}; }
+function uiError(key) {
+  const error=new Error(t(key));
+  error.uiMessage=uiMessage(key);
+  return error;
+}
+function uiText(key, params = {}) {
+  return `<span data-i18n="${escapeHtml(key)}" data-i18n-params="${escapeHtml(JSON.stringify(params))}">${escapeHtml(t(key,params))}</span>`;
+}
+function setUiText(el, key, params = {}) {
+  el.dataset.i18n=key;
+  el.dataset.i18nParams=JSON.stringify(params);
+  el.textContent=t(key,params);
+}
+function translateNodes(root = document) {
+  const selector='[data-i18n],[data-i18n-title],[data-i18n-placeholder],[data-i18n-aria-label]';
+  const nodes=[...(root.matches && root.matches(selector)?[root]:[]),...root.querySelectorAll(selector)];
+  nodes.forEach(el=>{
+    const params=JSON.parse(el.dataset.i18nParams||'{}');
+    if(el.dataset.i18n){
+      const text=t(el.dataset.i18n,params);
+      if(el.textContent!==text) el.textContent=text;
+    }
+    ['title','placeholder','aria-label'].forEach(attr=>{
+      const key=el.getAttribute('data-i18n-'+attr);
+      if(key) el.setAttribute(attr,t(key,params)+(attr==='title'&&el.dataset.shortcut?' ('+el.dataset.shortcut+')':''));
+    });
+  });
+}
+function refreshToolText(){
+  const entry=TOOLS.find(x=>x[0]===tool);
+  setUiText(document.getElementById('chipTool'),'chip.tool',{name:entry?t(entry[1]):'—'});
+}
+function refreshLanguage(){
+  document.documentElement.lang=uiLanguage;
+  document.title=t('app.title');
+  document.getElementById('uiLanguage').value=uiLanguage;
+  translateNodes();
+  refreshToolText();
+  // Drawing uses the existing heat canvas; no RF computation or UI reconstruction.
+  draw2d();
+}
+function setUiLanguage(language){
+  if(!Object.prototype.hasOwnProperty.call(translations,language)) return;
+  uiLanguage=language;
+  try { localStorage.setItem(uiLanguageKey,language); } catch (_) { /* Optional preference storage. */ }
+  refreshLanguage();
+}
+// New property/dialog markup is translated before the browser paints it. Only
+// explicitly marked elements are visited; text changes do not trigger rebuilds.
+new MutationObserver(records=>{
+  records.forEach(record=>record.addedNodes.forEach(node=>{
+    if(node.nodeType===1) translateNodes(node);
+  }));
+}).observe(document.body,{childList:true,subtree:true});
+document.documentElement.lang=uiLanguage;
+translateNodes();
 
 // ---------- small helpers ----------
 const $  = (s,r=document)=>r.querySelector(s);
@@ -417,13 +970,13 @@ let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} duri
 
 // ---------- TOOLS palette ----------
 const TOOLS = [
-  ['select','Markera','M','<path d="M5 3l6 14 2-5 5-2z"/>'],
-  ['wall','Vägg','V','<path d="M4 7l16 0M4 12l16 0M4 17l16 0" opacity=".3"/><path d="M3 5v14M21 5v14M3 5h18M3 19h18"/>'],
-  ['ap','Accesspunkt','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
-  ['bg','Ritning','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
-  ['erase','Radera','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
-  ['zone','Spärryta','Z','<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M6 18L18 6M11 18L18 11M6 13L13 6" opacity=".55"/>'],
-  ['measure','Mät','L','<path d="M3 8l13 13M3 8l5-5 13 13-5 5z"/><path d="M7 7l1.5 1.5M10 10l1.5 1.5M13 13l1.5 1.5"/>'],
+  ['select','tool.select','M','<path d="M5 3l6 14 2-5 5-2z"/>'],
+  ['wall','tool.wall','V','<path d="M4 7l16 0M4 12l16 0M4 17l16 0" opacity=".3"/><path d="M3 5v14M21 5v14M3 5h18M3 19h18"/>'],
+  ['ap','tool.ap','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
+  ['bg','tool.bg','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
+  ['erase','tool.erase','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
+  ['zone','tool.zone','Z','<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M6 18L18 6M11 18L18 11M6 13L13 6" opacity=".55"/>'],
+  ['measure','tool.measure','L','<path d="M3 8l13 13M3 8l5-5 13 13-5 5z"/><path d="M7 7l1.5 1.5M10 10l1.5 1.5M13 13l1.5 1.5"/>'],
 ];
 
 // ============================================================
@@ -530,7 +1083,7 @@ function draw2d(){
     const sel=selection&&selection.type==='zone'&&selection.id===z.id;
     const o=drawZoneRect(z.x1,z.y1,z.x2,z.y2,sel);
     ctx.fillStyle='rgba(235,120,128,.95)'; ctx.font='600 10px sans-serif';
-    ctx.fillText('Spärryta', o.x+5, o.y+13);
+    ctx.fillText(t('tool.zone'), o.x+5, o.y+13);
   });
   if(zoneDraft) drawZoneRect(zoneDraft.x0,zoneDraft.y0,zoneDraft.x1,zoneDraft.y1,true);
 
@@ -1077,20 +1630,20 @@ function coverageUpdate(){
     }
     covPct=tot?Math.round(ok/tot*100):0;
   } else covPct=null;
-  const el=$('#covReadout'); if(el) el.innerHTML = covPct==null?'Täckning: —':`≥ ${state.covThreshold} dBm: <b>${covPct}%</b>`;
-  const cs=$('#covStat'); if(cs) cs.innerHTML = `<span>Täckning ≥ ${state.covThreshold} dBm</span><b>${covPct==null?'—':covPct+'%'}</b>`;
+  const el=$('#covReadout'); if(el) el.innerHTML = covPct==null?uiText('coverage.empty'):`≥ ${state.covThreshold} dBm: <b>${covPct}%</b>`;
+  const cs=$('#covStat'); if(cs) cs.innerHTML = `<span>${uiText('coverage.stat',{threshold:state.covThreshold})}</span><b>${covPct==null?'—':covPct+'%'}</b>`;
   const hint=$('#covHint');
   if(hint){ const m=state.indoorOnly?getIndoorMask():null;
     hint.innerHTML = (m&&m.leaked)
-      ? '⚠︎ Kunde inte avgränsa inomhus — är ytterväggarna helt slutna? Räknar hela ytan tills vidare.'
-      : (state.indoorOnly?'Täckning räknas bara på inomhusytan (härledd från väggarna).':'Täckningsgrad visas i förklaringsrutan nere till vänster.'); }
+      ? uiText('coverage.leaked')
+      : (state.indoorOnly?uiText('coverage.indoorHint'):uiText('coverage.hint')); }
 }
 function buildHeatView(){
   const host=$('#heatViewPills'); if(!host)return; host.innerHTML='';
-  [['rssi','Signal (RSSI)'],['sinr','SINR']].forEach(([k,label])=>{
+  [['rssi','coverage.signal'],['sinr','metric.sinr']].forEach(([k,label])=>{
     const b=document.createElement('button'); b.className='pill'+(state.heatView===k?' active':'');
-    b.textContent=label; b.onclick=()=>{ state.heatView=k; buildHeatView();
-      const lt=$('#legend .lt'); if(lt)lt.textContent = k==='sinr'?'SINR (dB)':'Signal (RSSI)';
+    setUiText(b,label); b.onclick=()=>{ state.heatView=k; buildHeatView();
+      const lt=$('#legend .lt'); if(lt)setUiText(lt,k==='sinr'?'metric.sinrDb':'coverage.signal');
       buildLegend(); scheduleHeat(); };
     host.appendChild(b);
   });
@@ -1169,13 +1722,13 @@ function runRayTrace(onDone){
     }
   });
   const initial=rayQueue.length||1;
-  showToast(true,'Ray tracing — beräknar utbredning…',0);
+  showToast(true,uiMessage('trace.progress'),0);
   function step(){
     const t0=performance.now();
     while(rayQueue.length && performance.now()-t0<35){
       const ray=rayQueue.pop(); marchRay(ray, ray._w, ray._s, ray._t);
     }
-    showToast(true,'Ray tracing — beräknar utbredning…', clamp(1-rayQueue.length/(initial*1.6),0,0.99));
+    showToast(true,uiMessage('trace.progress'), clamp(1-rayQueue.length/(initial*1.6),0,0.99));
     if(rayQueue.length){ requestAnimationFrame(step); return; }
     const sm=smoothRSSI(best,cols,rows);
     heatGridRssi=sm; heatGridDisp=sm; heatMetric='rssi';
@@ -1348,7 +1901,7 @@ function refresh3dHeat(){
 function setTool(t){
   tool=t; draft=null;
   $$('#tools .tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
-  $('#chipTool').innerHTML='Verktyg <b>'+(TOOLS.find(x=>x[0]===t)||[,'—'])[1]+'</b>';
+  refreshToolText();
   cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
   if(t==='bg'){ $('#fileBg').click(); }
 }
@@ -1356,8 +1909,8 @@ function buildTools(){
   const host=$('#tools'); host.innerHTML='';
   TOOLS.forEach(([id,label,key,svg])=>{
     const b=document.createElement('button'); b.className='tool'; b.dataset.tool=id;
-    b.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${svg}</svg><span>${label}</span>`;
-    b.title=label+' ('+key+')';
+    b.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>${uiText(label)}`;
+    b.dataset.i18nTitle=label; b.dataset.shortcut=key; b.title=t(label)+' ('+key+')';
     b.onclick=()=>setTool(id);
     host.appendChild(b);
   });
@@ -1369,12 +1922,12 @@ function buildFloors(){
   for(let i=state.floors.length-1;i>=0;i--){
     const f=state.floors[i];
     const el=document.createElement('div'); el.className='floor'+(i===state.activeFloor?' active':'');
-    el.innerHTML=`<span class="drag" title="Nivå">⋮⋮</span>
+    el.innerHTML=`<span class="drag" title="Nivå" data-i18n-title="floor.level">⋮⋮</span>
       <span class="lvl">${i}</span>
       <input class="nm" value="${escapeHtml(f.name)}">
-      ${f.bg?`<button class="eye${f.bg.visible===false?' off':''}" title="Visa/dölj ritning">${f.bg.visible===false?'◌':'◉'}</button>`:''}
-      <button class="dup" title="Duplicera plan">⧉</button>
-      <button class="x" title="Ta bort">✕</button>`;
+      ${f.bg?`<button class="eye${f.bg.visible===false?' off':''}" title="Visa/dölj ritning" data-i18n-title="floor.togglePlan">${f.bg.visible===false?'◌':'◉'}</button>`:''}
+      <button class="dup" title="Duplicera plan" data-i18n-title="floor.duplicate">⧉</button>
+      <button class="x" title="Ta bort" data-i18n-title="common.remove">✕</button>`;
     el.onclick=(e)=>{ if(e.target.classList.contains('x')||e.target.classList.contains('nm')||e.target.classList.contains('eye')||e.target.classList.contains('dup'))return; setActiveFloor(i); };
     el.querySelector('.nm').onchange=(e)=>{ f.name=e.target.value; updateChips(); };
     el.querySelector('.x').onclick=(e)=>{ e.stopPropagation(); removeFloor(i); };
@@ -1411,7 +1964,7 @@ function syncFloorPanel(){
   $('#planH').value=f.height; $('#planHV').textContent=f.height.toFixed(1)+' m';
 }
 function removeFloor(i){
-  if(state.floors.length<=1){ showToast(true,'Minst en våning krävs.',null,1400); return; }
+  if(state.floors.length<=1){ showToast(true,uiMessage('error.lastFloor'),null,1400); return; }
   commit();
   state.floors.splice(i,1);
   state.activeFloor=clamp(state.activeFloor,0,state.floors.length-1);
@@ -1427,7 +1980,7 @@ function buildMaterials(){
       <input class="mn" value="${escapeHtml(m.name)}">
       <input class="db" type="number" value="${m.db}" min="0" max="60" step="0.5">
       <span class="unit">dB</span>
-      <button class="pick" title="Färg">▣</button>`;
+      <button class="pick" title="Färg" data-i18n-title="material.color">▣</button>`;
     el.onclick=(e)=>{ if(e.target.classList.contains('mn')||e.target.classList.contains('db'))return;
       if(e.target.classList.contains('pick')){ pickColor(m); return; }
       state.activeMat=m.id; buildMaterials(); };
@@ -1470,39 +2023,39 @@ function deleteSelection(){
 }
 function renderProp(){
   const body=$('#propBody'); const title=$('#propTitle');
-  if(!selection){ title.textContent='Egenskaper';
-    body.innerHTML='<div class="empty">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den. Dra en ruta i tom yta för att markera flera väggar, eller Shift+klicka för att lägga till enstaka.</div>'
-      +'<button class="tbtn" id="pSelAll" style="width:100%;justify-content:center;margin-top:8px">Markera alla väggar på planet</button>'
-      +'<button class="tbtn" id="pCleanup" style="width:100%;justify-content:center;margin-top:8px">Städa upp väggar (slå ihop)</button>';
+  if(!selection){ setUiText(title,'properties.title');
+    body.innerHTML='<div class="empty" data-i18n="properties.selectionHint">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den. Dra en ruta i tom yta för att markera flera väggar, eller Shift+klicka för att lägga till enstaka.</div>'
+      +'<button class="tbtn" id="pSelAll" style="width:100%;justify-content:center;margin-top:8px" data-i18n="wall.selectAll">Markera alla väggar på planet</button>'
+      +'<button class="tbtn" id="pCleanup" style="width:100%;justify-content:center;margin-top:8px" data-i18n="wall.cleanup">Städa upp väggar (slå ihop)</button>';
     $('#pSelAll').onclick=selectAllWalls;
     $('#pCleanup').onclick=cleanupWalls; return; }
   const f=floor();
   if(selection.type==='ap'){
     const ap=f.aps.find(a=>a.id===selection.id); if(!ap){select(null);return;}
-    title.textContent='Accesspunkt';
+    setUiText(title,'tool.ap');
     body.innerHTML=`
-      <div class="field"><label>Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
-      <div class="field"><label>Frekvensband (flerval)</label><div class="pillrow" id="pBands"></div></div>
-      <div class="field"><label>Sändareffekt</label>
+      <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
+      <div class="field"><label data-i18n="ap.bands">Frekvensband (flerval)</label><div class="pillrow" id="pBands"></div></div>
+      <div class="field"><label data-i18n="ap.power">Sändareffekt</label>
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
-      <div class="field"><label>Monteringshöjd</label>
+      <div class="field"><label data-i18n="ap.mount">Monteringshöjd</label>
         <div class="slider"><input id="pMt" type="range" min="0.5" max="${f.height.toFixed(1)}" step="0.1" value="${ap.mount||2.6}"><span class="val" id="pMtV">${(ap.mount||2.6).toFixed(1)} m</span></div></div>
-      <div class="field"><label>Antenntyp</label><select id="pAnt">
-        ${[['omni','Rundstrålande'],['sector','Sektor'],['patch','Patch']].map(([k,l])=>`<option value="${k}" ${ap.antenna.type===k?'selected':''}>${l}</option>`).join('')}
+      <div class="field"><label data-i18n="ap.antenna">Antenntyp</label><select id="pAnt">
+        ${[['omni','antenna.omni'],['sector','antenna.sector'],['patch','antenna.patch']].map(([k,l])=>`<option value="${k}" ${ap.antenna.type===k?'selected':''} data-i18n="${l}">${t(l)}</option>`).join('')}
       </select></div>
       <div id="pAntDir" style="${ap.antenna.type==='omni'?'display:none':''}">
-        <div class="field"><label>Azimut (riktning)</label>
+        <div class="field"><label data-i18n="ap.azimuth">Azimut (riktning)</label>
           <div class="slider"><input id="pAz" type="range" min="0" max="359" step="1" value="${ap.antenna.az||0}"><span class="val" id="pAzV">${ap.antenna.az||0}°</span></div></div>
-        <div class="field"><label>Nedtilt</label>
+        <div class="field"><label data-i18n="ap.tilt">Nedtilt</label>
           <div class="slider"><input id="pTilt" type="range" min="0" max="30" step="1" value="${ap.antenna.tilt||0}"><span class="val" id="pTiltV">${ap.antenna.tilt||0}°</span></div></div>
       </div>
-      <div class="field"><label>Antennförstärkning</label>
+      <div class="field"><label data-i18n="ap.gain">Antennförstärkning</label>
         <div class="slider"><input id="pGain" type="range" min="0" max="12" step="0.5" value="${ap.antenna.gain||3}"><span class="val" id="pGainV">${(ap.antenna.gain||3).toFixed(1)} dBi</span></div></div>
-      <div class="field"><label>Kanal (${BANDS[state.band].label})</label>
+      <div class="field"><label>${uiText('ap.channel',{band:BANDS[state.band].label})}</label>
         <select id="pChan">${channelOptions(state.band, (ap.channels&&ap.channels[state.band]))}</select></div>
       <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${ap.x.toFixed(2)}"></div>
         <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${ap.y.toFixed(2)}"></div></div>
-      <button class="delbtn" id="pDel">Ta bort accesspunkt</button>`;
+      <button class="delbtn" id="pDel" data-i18n="ap.remove">Ta bort accesspunkt</button>`;
     $('#pName').oninput=e=>{ap.name=e.target.value;draw2d();};
     const pb=$('#pBands');
     Object.entries(BANDS).forEach(([k,v])=>{
@@ -1526,55 +2079,55 @@ function renderProp(){
   }
   else if(selection.type==='wall'){
     const w=f.walls.find(x=>x.id===selection.id); if(!w){select(null);return;}
-    title.textContent='Vägg';
+    setUiText(title,'tool.wall');
     const len=dist(w.x1,w.y1,w.x2,w.y2);
     body.innerHTML=`
-      <div class="field"><label>Material</label><select id="pMat">
+      <div class="field"><label data-i18n="wall.material">Material</label><select id="pMat">
         ${state.materials.map(m=>`<option value="${m.id}" ${w.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
-      <div class="stat"><span>Längd</span><b>${len.toFixed(2)} m</b></div>
-      <div class="stat"><span>Dämpning</span><b>${matById(w.materialId).db} dB</b></div>
-      <button class="delbtn" id="pDel">Ta bort vägg</button>`;
+      <div class="stat"><span data-i18n="wall.length">Längd</span><b>${len.toFixed(2)} m</b></div>
+      <div class="stat"><span data-i18n="wall.attenuation">Dämpning</span><b>${matById(w.materialId).db} dB</b></div>
+      <button class="delbtn" id="pDel" data-i18n="wall.remove">Ta bort vägg</button>`;
     $('#pMat').onchange=e=>{w.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='walls'){
-    title.textContent='Väggar';
+    setUiText(title,'wall.titlePlural');
     const n=multiWalls.length;
     let totLen=0; f.walls.forEach(w=>{ if(multiWalls.includes(w.id)) totLen+=dist(w.x1,w.y1,w.x2,w.y2); });
     body.innerHTML=`
-      <div class="stat"><span>Markerade väggar</span><b>${n}</b></div>
-      <div class="stat"><span>Total längd</span><b>${totLen.toFixed(1)} m</b></div>
-      <div class="field" style="margin-top:10px"><label>Sätt material på alla</label>
+      <div class="stat"><span data-i18n="wall.selected">Markerade väggar</span><b>${n}</b></div>
+      <div class="stat"><span data-i18n="wall.totalLength">Total längd</span><b>${totLen.toFixed(1)} m</b></div>
+      <div class="field" style="margin-top:10px"><label data-i18n="wall.assignAll">Sätt material på alla</label>
         <select id="pMatMulti">
-          <option value="" selected disabled>Välj material att tilldela…</option>
+          <option value="" selected disabled data-i18n="wall.chooseMaterial">Välj material att tilldela…</option>
           ${state.materials.map(m=>`<option value="${m.id}">${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
         </select></div>
-      <button class="tbtn" id="pSelAll" style="width:100%;justify-content:center;margin-bottom:8px">Markera alla väggar på planet</button>
-      <button class="delbtn" id="pDelMulti">Ta bort ${n} markerade väggar</button>`;
+      <button class="tbtn" id="pSelAll" style="width:100%;justify-content:center;margin-bottom:8px" data-i18n="wall.selectAll">Markera alla väggar på planet</button>
+      <button class="delbtn" id="pDelMulti">${uiText('wall.removeMany',{count:n})}</button>`;
     $('#pMatMulti').onchange=e=>{ const id=e.target.value; if(!id)return;
       f.walls.forEach(w=>{ if(multiWalls.includes(w.id)) w.materialId=id; });
       scheduleHeat(); draw2d(); if(view==='3d')build3d();
-      showToast(true, n+' väggar fick nytt material.',null,1600); renderProp(); };
+      showToast(true, uiMessage('wall.assigned',{count:n}),null,1600); renderProp(); };
     $('#pSelAll').onclick=selectAllWalls;
     $('#pDelMulti').onclick=deleteSelection;
   }
   else if(selection.type==='bg'){
     const b=f.bg; if(!b){select(null);return;}
-    title.textContent='Bakgrundsritning';
+    setUiText(title,'bg.title');
     body.innerHTML=`
-      <div class="field"><label><input type="checkbox" id="pBgV" ${b.visible!==false?'checked':''}> Visa ritning på detta plan</label></div>
-      <div class="field"><label>Skala (meter per bildbredd)</label>
+      <div class="field"><label><input type="checkbox" id="pBgV" ${b.visible!==false?'checked':''}> <span data-i18n="bg.show">Visa ritning på detta plan</span></label></div>
+      <div class="field"><label data-i18n="bg.scale">Skala (meter per bildbredd)</label>
         <input id="pBgW" type="number" step="0.1" value="${(b.w*b.scale).toFixed(2)}"></div>
-      <button class="tbtn" id="pBgCal" style="width:100%;justify-content:center;margin-bottom:8px">Kalibrera skala…</button>
-      <button class="tbtn" id="pBgAnalyze" style="width:100%;justify-content:center;margin-bottom:11px">Analysera ritning → skapa väggar…</button>
-      <div class="field"><label>Opacitet</label>
+      <button class="tbtn" id="pBgCal" style="width:100%;justify-content:center;margin-bottom:8px" data-i18n="bg.calibrate">Kalibrera skala…</button>
+      <button class="tbtn" id="pBgAnalyze" style="width:100%;justify-content:center;margin-bottom:11px" data-i18n="bg.analyze">Analysera ritning → skapa väggar…</button>
+      <div class="field"><label data-i18n="bg.opacity">Opacitet</label>
         <div class="slider"><input id="pBgO" type="range" min="0.1" max="1" step="0.05" value="${b.opacity}"><span class="val" id="pBgOV">${Math.round(b.opacity*100)}%</span></div></div>
-      <div class="field"><label>Rotation</label>
+      <div class="field"><label data-i18n="bg.rotation">Rotation</label>
         <div class="slider"><input id="pBgR" type="range" min="0" max="360" step="1" value="${Math.round((b.rot||0)*180/Math.PI)}"><span class="val" id="pBgRV">${Math.round((b.rot||0)*180/Math.PI)}°</span></div></div>
-      <div class="field"><label><input type="checkbox" id="pBgL" ${b.locked?'checked':''}> Lås position</label></div>
-      <div class="hint">Tips: använd <b>Kalibrera skala</b> och klicka på två punkter med känt avstånd (t.ex. en dörr ≈ 0,9 m) för att få rätt skala mot rutnätet. Rita sedan väggar ovanpå ritningen.</div>
-      <button class="delbtn" id="pDel">Ta bort ritning</button>`;
+      <div class="field"><label><input type="checkbox" id="pBgL" ${b.locked?'checked':''}> <span data-i18n="bg.lock">Lås position</span></label></div>
+      <div class="hint" data-i18n="bg.hint">Tips: använd Kalibrera skala och klicka på två punkter med känt avstånd (t.ex. en dörr ≈ 0,9 m) för att få rätt skala mot rutnätet. Rita sedan väggar ovanpå ritningen.</div>
+      <button class="delbtn" id="pDel" data-i18n="bg.remove">Ta bort ritning</button>`;
     $('#pBgV').onchange=e=>{ commit(); b.visible=e.target.checked; draw2d(); if(view==='3d')build3d(); buildFloors(); };
     $('#pBgCal').onclick=startCalib;
     $('#pBgAnalyze').onclick=startAnalyze;
@@ -1586,16 +2139,16 @@ function renderProp(){
   }
   else if(selection.type==='zone'){
     const z=(f.zones||[]).find(q=>q.id===selection.id); if(!z){select(null);return;}
-    title.textContent='Spärryta (ingen AP)';
+    setUiText(title,'zone.title');
     const wm=Math.abs(z.x2-z.x1), hm=Math.abs(z.y2-z.y1);
     body.innerHTML=`
-      <div class="hint">Auto-placeringen undviker att placera accesspunkter inuti den här ytan. Området täcks fortfarande in i beräkningen.</div>
-      <div class="stat"><span>Bredd</span><b>${wm.toFixed(2)} m</b></div>
-      <div class="stat"><span>Höjd</span><b>${hm.toFixed(2)} m</b></div>
-      <div class="stat"><span>Area</span><b>${(wm*hm).toFixed(1)} m²</b></div>
-      <div class="row2"><div class="field"><label>Bredd (m)</label><input id="pZW" type="number" step="0.1" value="${wm.toFixed(2)}"></div>
-        <div class="field"><label>Höjd (m)</label><input id="pZH" type="number" step="0.1" value="${hm.toFixed(2)}"></div></div>
-      <button class="delbtn" id="pDel">Ta bort spärryta</button>`;
+      <div class="hint" data-i18n="zone.hint">Auto-placeringen undviker att placera accesspunkter inuti den här ytan. Området täcks fortfarande in i beräkningen.</div>
+      <div class="stat"><span data-i18n="zone.width">Bredd</span><b>${wm.toFixed(2)} m</b></div>
+      <div class="stat"><span data-i18n="zone.height">Höjd</span><b>${hm.toFixed(2)} m</b></div>
+      <div class="stat"><span data-i18n="zone.area">Area</span><b>${(wm*hm).toFixed(1)} m²</b></div>
+      <div class="row2"><div class="field"><label data-i18n="zone.widthMeters">Bredd (m)</label><input id="pZW" type="number" step="0.1" value="${wm.toFixed(2)}"></div>
+        <div class="field"><label data-i18n="zone.heightMeters">Höjd (m)</label><input id="pZH" type="number" step="0.1" value="${hm.toFixed(2)}"></div></div>
+      <button class="delbtn" id="pDel" data-i18n="zone.remove">Ta bort spärryta</button>`;
     $('#pZW').onchange=e=>{ const v=Math.max(0.3,+e.target.value); z.x2=Math.min(z.x1,z.x2)+v; z.x1=Math.min(z.x1,z.x2); draw2d(); };
     $('#pZH').onchange=e=>{ const v=Math.max(0.3,+e.target.value); z.y2=Math.min(z.y1,z.y2)+v; z.y1=Math.min(z.y1,z.y2); draw2d(); };
     $('#pDel').onclick=deleteSelection;
@@ -1607,16 +2160,16 @@ function refreshStats(){
   state.floors.forEach(f=>{walls+=f.walls.length;aps+=f.aps.length;f.walls.forEach(w=>len+=dist(w.x1,w.y1,w.x2,w.y2));});
   const cur=floor();
   host.innerHTML=`
-    <div class="stat"><span>Våningar</span><b>${state.floors.length}</b></div>
-    <div class="stat"><span>Accesspunkter</span><b>${aps}</b></div>
-    <div class="stat"><span>Väggar (totalt)</span><b>${walls}</b></div>
-    <div class="stat"><span>Väggmeter</span><b>${len.toFixed(1)} m</b></div>
-    <div class="stat"><span>Aktivt plan</span><b>${escapeHtml(cur.name)}</b></div>
-    <div class="stat"><span>AP på planet</span><b>${cur.aps.length}</b></div>
-    <div class="stat" id="covStat"><span>Täckning ≥ ${state.covThreshold} dBm</span><b>${covPct==null?'—':covPct+'%'}</b></div>`;
+    <div class="stat"><span data-i18n="section.floors">Våningar</span><b>${state.floors.length}</b></div>
+    <div class="stat"><span data-i18n="stats.aps">Accesspunkter</span><b>${aps}</b></div>
+    <div class="stat"><span data-i18n="stats.walls">Väggar (totalt)</span><b>${walls}</b></div>
+    <div class="stat"><span data-i18n="stats.wallMeters">Väggmeter</span><b>${len.toFixed(1)} m</b></div>
+    <div class="stat"><span data-i18n="section.activeFloor">Aktivt plan</span><b>${escapeHtml(cur.name)}</b></div>
+    <div class="stat"><span data-i18n="stats.floorAps">AP på planet</span><b>${cur.aps.length}</b></div>
+    <div class="stat" id="covStat"><span>${uiText('coverage.stat',{threshold:state.covThreshold})}</span><b>${covPct==null?'—':covPct+'%'}</b></div>`;
 }
 function updateChips(){
-  $('#chipFloor').innerHTML='Plan <b>'+escapeHtml(floor().name)+'</b>';
+  setUiText($('#chipFloor'),'chip.floor',{name:floor().name});
 }
 function escapeHtml(s){return (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function apBandLabel(ap){ return (ap.bands||[]).join('·')+' GHz'; }
@@ -1627,8 +2180,8 @@ function showToast(show,msg,progress,autoMs){
   const t=$('#toast'); clearTimeout(toastTimer);
   if(!show){ t.style.display='none'; return; }
   let html='';
-  if(progress===null||progress===undefined){ html=`<span>${escapeHtml(msg)}</span>`; }
-  else { html=`<span class="spin"></span><span>${escapeHtml(msg)}</span><progress max="1" value="${progress}"></progress>`; }
+  if(progress===null||progress===undefined){ html=`<span>${(msg&&msg.key?uiText(msg.key,msg.params):escapeHtml(msg))}</span>`; }
+  else { html=`<span class="spin"></span><span>${(msg&&msg.key?uiText(msg.key,msg.params):escapeHtml(msg))}</span><progress max="1" value="${progress}"></progress>`; }
   t.innerHTML=html; t.style.display='flex';
   if(autoMs){ toastTimer=setTimeout(()=>t.style.display='none',autoMs); }
 }
@@ -1636,7 +2189,7 @@ function showToast(show,msg,progress,autoMs){
 // ---------- scale calibration ----------
 function startCalib(){
   const f=floor();
-  if(!f.bg){ showToast(true,'Lägg till en bakgrundsritning först.',null,2200); return; }
+  if(!f.bg){ showToast(true,uiMessage('error.noBackground'),null,2200); return; }
   if(view!=='2d') setView('2d');
   if(f.bg.visible===false){ f.bg.visible=true; buildFloors(); }
   calibState={p1:null,p2:null,awaitDist:false};
@@ -1648,11 +2201,11 @@ function updateCalibBar(){
   if(!calibState){ el.style.display='none'; return; }
   el.style.display='flex';
   if(!calibState.p1)
-    el.innerHTML='<span class="ct">Kalibrera</span><span>Klicka på <b>första</b> punkten med känt avstånd.</span><button class="cx" id="calCancel">Avbryt</button>';
+    el.innerHTML='<span class="ct" data-i18n="calibration.title">Kalibrera</span><span data-i18n="calibration.first">Klicka på första punkten med känt avstånd.</span><button class="cx" id="calCancel" data-i18n="common.cancel">Avbryt</button>';
   else if(!calibState.p2)
-    el.innerHTML='<span class="ct">Kalibrera</span><span>Klicka på <b>andra</b> punkten.</span><button class="cx" id="calCancel">Avbryt</button>';
+    el.innerHTML='<span class="ct" data-i18n="calibration.title">Kalibrera</span><span data-i18n="calibration.second">Klicka på andra punkten.</span><button class="cx" id="calCancel" data-i18n="common.cancel">Avbryt</button>';
   else
-    el.innerHTML='<span class="ct">Kalibrera</span><span>Verkligt avstånd:</span><input id="calDist" type="number" step="0.01" min="0.01" placeholder="meter"><button class="cu" id="calApply">Använd</button><button class="cx" id="calCancel">Avbryt</button>';
+    el.innerHTML='<span class="ct" data-i18n="calibration.title">Kalibrera</span><span data-i18n="calibration.distance">Verkligt avstånd:</span><input id="calDist" type="number" step="0.01" min="0.01" placeholder="meter" data-i18n-placeholder="calibration.meters"><button class="cu" id="calApply" data-i18n="common.apply">Använd</button><button class="cx" id="calCancel" data-i18n="common.cancel">Avbryt</button>';
   const cc=$('#calCancel'); if(cc)cc.onclick=cancelCalib;
   const ca=$('#calApply'); if(ca)ca.onclick=()=>applyCalib(parseFloat($('#calDist').value));
   const ci=$('#calDist'); if(ci){ ci.focus(); ci.onkeydown=ev=>{ if(ev.key==='Enter')applyCalib(parseFloat(ci.value)); }; }
@@ -1661,7 +2214,7 @@ function applyCalib(dTarget){
   const f=floor(), b=f.bg;
   if(!b||!calibState||!calibState.p1||!calibState.p2){ cancelCalib(); return; }
   const dNow=dist(calibState.p1.x,calibState.p1.y,calibState.p2.x,calibState.p2.y);
-  if(!(dTarget>0)||dNow<1e-4){ showToast(true,'Ange ett giltigt avstånd i meter.',null,2200); return; }
+  if(!(dTarget>0)||dNow<1e-4){ showToast(true,uiMessage('error.distance'),null,2200); return; }
   const ratio=dTarget/dNow;
   commit();
   // resize the image around the first clicked point so it stays anchored
@@ -1670,13 +2223,13 @@ function applyCalib(dTarget){
   b.scale *= ratio;
   cancelCalib();
   scheduleHeat(); draw2d(); if(view==='3d')build3d(); renderProp();
-  showToast(true,'Skala kalibrerad — '+dTarget.toFixed(2)+' m.',null,1900);
+  showToast(true,uiMessage('calibration.done',{distance:dTarget.toFixed(2)}),null,1900);
 }
 
 // ---------- auto wall detection from background drawing ----------
 function startAnalyze(){
   const f=floor();
-  if(!f.bg||!f.bg._img){ showToast(true,'Lägg till en bakgrundsritning först.',null,2200); return; }
+  if(!f.bg||!f.bg._img){ showToast(true,uiMessage('error.noBackground'),null,2200); return; }
   if(view!=='2d') setView('2d');
   if(f.bg.visible===false){ f.bg.visible=true; buildFloors(); }
   const img=f.bg._img, maxDim=900;
@@ -1685,7 +2238,7 @@ function startAnalyze(){
   const oc=document.createElement('canvas'); oc.width=bw; oc.height=bh;
   const octx=oc.getContext('2d'); octx.drawImage(img,0,0,bw,bh);
   let id; try{ id=octx.getImageData(0,0,bw,bh); }
-  catch(err){ showToast(true,'Kunde inte läsa bilden för analys.',null,2600); return; }
+  catch(err){ showToast(true,uiMessage('error.analysisImage'),null,2600); return; }
   const gray=new Uint8ClampedArray(bw*bh);
   for(let i=0,p=0;i<gray.length;i++,p+=4){ gray[i]=(id.data[p]*0.299+id.data[p+1]*0.587+id.data[p+2]*0.114)|0; }
   analyzeState={ gray,bw,bh,sf, threshold:128, invert:false, minLen:0.6, hough:false, detected:[] };
@@ -1694,13 +2247,13 @@ function startAnalyze(){
 function openAnalyzePanel(){
   const el=$('#analyzePanel'); if(!el)return; el.style.display='flex';
   el.innerHTML=`
-    <div class="at">Analysera ritning</div>
-    <div class="arow"><label>Tröskel</label><input id="anThr" type="range" min="20" max="240" step="1" value="${analyzeState.threshold}"><span class="av" id="anThrV">${analyzeState.threshold}</span></div>
-    <div class="arow"><label>Minlängd</label><input id="anMin" type="range" min="0.2" max="3" step="0.1" value="${analyzeState.minLen}"><span class="av" id="anMinV">${analyzeState.minLen.toFixed(1)} m</span></div>
-    <div class="arow"><label><input type="checkbox" id="anInv" ${analyzeState.invert?'checked':''}> Invertera (ljusa väggar)</label></div>
-    <div class="arow"><label><input type="checkbox" id="anHough" ${analyzeState.hough?'checked':''}> Inkl. diagonala väggar (Hough)</label></div>
+    <div class="at" data-i18n="analysis.title">Analysera ritning</div>
+    <div class="arow"><label data-i18n="analysis.threshold">Tröskel</label><input id="anThr" type="range" min="20" max="240" step="1" value="${analyzeState.threshold}"><span class="av" id="anThrV">${analyzeState.threshold}</span></div>
+    <div class="arow"><label data-i18n="analysis.minLength">Minlängd</label><input id="anMin" type="range" min="0.2" max="3" step="0.1" value="${analyzeState.minLen}"><span class="av" id="anMinV">${analyzeState.minLen.toFixed(1)} m</span></div>
+    <div class="arow"><label><input type="checkbox" id="anInv" ${analyzeState.invert?'checked':''}> <span data-i18n="analysis.invert">Invertera (ljusa väggar)</span></label></div>
+    <div class="arow"><label><input type="checkbox" id="anHough" ${analyzeState.hough?'checked':''}> <span data-i18n="analysis.diagonal">Inkl. diagonala väggar (Hough)</span></label></div>
     <div class="acount" id="anCount">…</div>
-    <div class="abtns"><button class="au" id="anAdd">Lägg till väggar</button><button class="ax" id="anCancel">Avbryt</button></div>`;
+    <div class="abtns"><button class="au" id="anAdd" data-i18n="analysis.add">Lägg till väggar</button><button class="ax" id="anCancel" data-i18n="common.cancel">Avbryt</button></div>`;
   $('#anThr').oninput=e=>{ analyzeState.threshold=+e.target.value; $('#anThrV').textContent=e.target.value; detectAndPreview(); };
   $('#anMin').oninput=e=>{ analyzeState.minLen=+e.target.value; $('#anMinV').textContent=(+e.target.value).toFixed(1)+' m'; detectAndPreview(); };
   $('#anInv').onchange=e=>{ analyzeState.invert=e.target.checked; detectAndPreview(); };
@@ -1712,14 +2265,14 @@ let analyzeTimer=null;
 function detectAndPreview(){
   if(!analyzeState)return;
   clearTimeout(analyzeTimer);
-  const cEl=$('#anCount'); if(cEl)cEl.innerHTML='<span class="spin"></span>beräknar…';
+  const cEl=$('#anCount'); if(cEl)cEl.innerHTML='<span class="spin"></span>'+uiText('analysis.calculating');
   analyzeTimer=setTimeout(()=>{
     if(!analyzeState)return;
     analyzeState.detected=detectWallsRun(analyzeState);
     draw2d();
     const n=analyzeState.detected.length;
-    const c=$('#anCount'); if(c)c.innerHTML='Hittade <b>'+n+'</b> väggar';
-    const ab=$('#anAdd'); if(ab)ab.textContent='Lägg till '+n+' väggar';
+    const c=$('#anCount'); if(c)c.innerHTML=uiText('analysis.found',{count:n});
+    const ab=$('#anAdd'); if(ab)setUiText(ab,'analysis.addCount',{count:n});
   },70);
 }
 function detectWallsRun(as){
@@ -1794,7 +2347,7 @@ function commitAnalyze(){
   commit();
   analyzeState.detected.forEach(s=>{ f.walls.push({id:uid('wl'),x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,materialId:state.activeMat}); added++; });
   cancelAnalyze(); scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
-  showToast(true, added+' väggar skapade från ritningen.',null,2400);
+  showToast(true, uiMessage('analysis.created',{count:added}),null,2400);
 }
 function cancelAnalyze(){ analyzeState=null; const el=$('#analyzePanel'); if(el)el.style.display='none'; draw2d(); }
 
@@ -1817,23 +2370,23 @@ function autoChannelPlan(){
       o.ap.channels[band]=bestC;
     });
   });
-  scheduleHeat(); renderProp(); showToast(true,'Kanalplan uppdaterad.',null,1800);
+  scheduleHeat(); renderProp(); showToast(true,uiMessage('auto.channelsDone'),null,1800);
 }
 
 // ---------- auto-place APs ----------
 function openAutoPlace(){
   let el=$('#autoDlg');
   if(!el){ el=document.createElement('div'); el.id='autoDlg'; $('#stage').appendChild(el); }
-  el.innerHTML=`<div class="at">Auto-placera AP:er</div>
-    <div class="arow"><label>Mål-täckning</label><input id="apTarget" type="range" min="50" max="100" step="1" value="95"><span class="av" id="apTargetV">95%</span></div>
-    <div class="arow"><label>Max antal</label><input id="apMax" type="number" min="1" max="40" value="8" style="width:58px;background:#0e141c;border:1px solid var(--line);border-radius:5px;color:var(--ink);padding:5px"></div>
-    <div class="acount">${BANDS[state.band].label} · tröskel ${state.covThreshold} dBm${(floor().zones&&floor().zones.length)?` · undviker ${floor().zones.length} spärryta(or)`:''}</div>
-    <div class="abtns"><button class="au" id="apRun">Placera</button><button class="ax" id="apCancel">Avbryt</button></div>`;
+  el.innerHTML=`<div class="at" data-i18n="auto.title">Auto-placera AP:er</div>
+    <div class="arow"><label data-i18n="auto.target">Mål-täckning</label><input id="apTarget" type="range" min="50" max="100" step="1" value="95"><span class="av" id="apTargetV">95%</span></div>
+    <div class="arow"><label data-i18n="auto.max">Max antal</label><input id="apMax" type="number" min="1" max="40" value="8" style="width:58px;background:#0e141c;border:1px solid var(--line);border-radius:5px;color:var(--ink);padding:5px"></div>
+    <div class="acount">${uiText((floor().zones&&floor().zones.length)?'auto.contextZones':'auto.context',{band:BANDS[state.band].label,threshold:state.covThreshold,count:(floor().zones||[]).length})}</div>
+    <div class="abtns"><button class="au" id="apRun" data-i18n="auto.run">Placera</button><button class="ax" id="apCancel" data-i18n="common.cancel">Avbryt</button></div>`;
   el.style.display='flex';
   $('#apTarget').oninput=e=>$('#apTargetV').textContent=e.target.value+'%';
   $('#apCancel').onclick=()=>{el.style.display='none';};
   $('#apRun').onclick=()=>{ const t=+$('#apTarget').value, m=+$('#apMax').value; el.style.display='none';
-    showToast(true,'Beräknar placering…',null); setTimeout(()=>autoPlaceAPs(t,m),50); };
+    showToast(true,uiMessage('auto.progress'),null); setTimeout(()=>autoPlaceAPs(t,m),50); };
 }
 function autoPlaceAPs(target, maxAP){
   commit();
@@ -1866,7 +2419,7 @@ function autoPlaceAPs(target, maxAP){
   }
   placed.forEach(ap=>f.aps.push(ap));
   scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
-  showToast(true, added?`${added} AP:er placerade · täckning ~${Math.round(cov*100)}%`:'Ingen förbättring hittades.',null,2800);
+  showToast(true, added?uiMessage('auto.placed',{count:added,coverage:Math.round(cov*100)}):uiMessage('auto.noImprovement'),null,2800);
 }
 
 // ---------- cleanup near-collinear walls ----------
@@ -1899,12 +2452,12 @@ function mergeCollinear(walls, angTol, offTol){
   return rem;
 }
 function cleanupWalls(){
-  const f=floor(); if(!f.walls.length){ showToast(true,'Inga väggar att städa.',null,1600); return; }
+  const f=floor(); if(!f.walls.length){ showToast(true,uiMessage('wall.noCleanup'),null,1600); return; }
   commit(); const before=f.walls.length;
   f.walls=mergeCollinear(f.walls,6,0.2);
   multiWalls=[]; selection=null;
   scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d(); renderProp();
-  showToast(true,'Städade väggar: '+before+' → '+f.walls.length+'.',null,2400);
+  showToast(true,uiMessage('wall.cleaned',{before,after:f.walls.length}),null,2400);
 }
 
 // ---------- Hough line detection (diagonals) ----------
@@ -1996,14 +2549,14 @@ function serialize(){
 function saveProject(){
   const data=JSON.stringify(serialize(),null,2);
   download(new Blob([data],{type:'application/json'}), 'rf-projekt.json');
-  showToast(true,'Projekt sparat (JSON).',null,1600);
+  showToast(true,uiMessage('project.saved'),null,1600);
 }
 function loadProject(file){
   const fr=new FileReader();
   fr.onload=()=>{
     try{
       const s=JSON.parse(fr.result);
-      if(!s.floors) throw new Error('Ogiltig fil');
+      if(!s.floors) throw uiError('error.invalidFile');
       state=s; tool='select';
       // migrate older projects
       if(s.covThreshold==null)s.covThreshold=-67;
@@ -2017,8 +2570,8 @@ function loadProject(file){
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
       bootUI(); scheduleHeat();
-      showToast(true,'Projekt öppnat.',null,1500);
-    }catch(err){ showToast(true,'Kunde inte läsa filen: '+err.message,null,2600); }
+      showToast(true,uiMessage('project.opened'),null,1500);
+    }catch(err){ showToast(true,uiMessage('error.readFile',{error:err.uiMessage||err.message}),null,2600); }
   };
   fr.readAsText(file);
 }
@@ -2029,7 +2582,7 @@ function download(blob,name){
 
 // ---- high-res PNG of active floor heatmap ----
 function exportPNG(){
-  if(!heatCanvas||!heatMeta){ showToast(true,'Ingen täckningskarta att exportera — beräkna täckning först.',null,2400); return; }
+  if(!heatCanvas||!heatMeta){ showToast(true,uiMessage('error.noHeatExport'),null,2400); return; }
   const f=floor(); const b=heatMeta;
   const PX=1600; const aspect=(b.maxy-b.miny)/(b.maxx-b.minx);
   const W=PX, H=Math.round(PX*aspect);
@@ -2053,7 +2606,7 @@ function exportPNG(){
   // title + legend
   g.fillStyle='rgba(13,17,23,.8)';g.fillRect(0,0,W,46);
   g.fillStyle='#cdd7e3';g.font='bold 22px sans-serif';
-  g.fillText('RF-täckning · '+f.name+' · '+BANDS[state.band].label+' · '+(heatMode==='trace'?'ray tracing':'modell'),16,30);
+  g.fillText(t('export.caption',{name:f.name,band:BANDS[state.band].label,mode:heatMode==='trace'?'Ray tracing':t('export.model')}),16,30);
   // legend bar
   const lw=300,lh=14,lx=W-lw-20,ly=H-34;
   const grad=g.createLinearGradient(lx,0,lx+lw,0);
@@ -2061,7 +2614,7 @@ function exportPNG(){
   g.fillStyle=grad;g.fillRect(lx,ly,lw,lh);
   g.fillStyle='#cdd7e3';g.font='12px monospace';
   g.fillText('-90 dBm',lx,ly-5); g.fillText('-40',lx+lw-26,ly-5);
-  c.toBlob(bl=>{ download(bl,'rf-tackning-'+f.name.replace(/\s+/g,'_')+'.png'); showToast(true,'PNG exporterad (1600px).',null,1700); },'image/png');
+  c.toBlob(bl=>{ download(bl,'rf-tackning-'+f.name.replace(/\s+/g,'_')+'.png'); showToast(true,uiMessage('export.pngDone'),null,1700); },'image/png');
 }
 
 // ---- glTF scene export (hand-built, embedded buffer) ----
@@ -2090,7 +2643,7 @@ function exportGLTF(){
       aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})) })) };
   download(new Blob([JSON.stringify(meta,null,2)],{type:'application/json'}),'rf-scen-metadata.json');
-  showToast(true,'3D-scen exporterad: rf-scen.gltf + metadata.',null,2200);
+  showToast(true,uiMessage('export.sceneDone'),null,2200);
 }
 function hexToRgb(hex){const c=hex.replace('#','');return [parseInt(c.substr(0,2),16)/255,parseInt(c.substr(2,2),16)/255,parseInt(c.substr(4,2),16)/255];}
 
@@ -2175,7 +2728,7 @@ function setupBgInput(){
         f.bg={ data:fr.result, w:im.naturalWidth, h:im.naturalHeight, scale,
                x:-im.naturalWidth*scale/2, y:-im.naturalHeight*scale/2, rot:0, opacity:0.7, locked:false, visible:true, _img:im };
         select('bg'); setTool('select'); draw2d(); if(view==='3d')build3d(); buildFloors();
-        showToast(true,'Ritning tillagd. Justera skalan i panelen till höger.',null,2600);
+        showToast(true,uiMessage('bg.added'),null,2600);
       };
       im.src=fr.result;
     };
@@ -2200,6 +2753,8 @@ function bootUI(){
 }
 
 function wireGlobals(){
+  $('#uiLanguage').value=uiLanguage;
+  $('#uiLanguage').onchange=e=>setUiLanguage(e.target.value);
   $$('#viewseg button').forEach(b=>b.onclick=()=>setView(b.dataset.view));
   $('#btnUndo').onclick=undo;
   $('#btnRedo').onclick=redo;
