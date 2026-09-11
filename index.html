@@ -230,7 +230,8 @@
     <button class="tbtn" id="btnSave" data-i18n="toolbar.saveProject">Spara projekt</button>
     <button class="tbtn" id="btnLoad" data-i18n="toolbar.openProject">Öppna</button>
     <div class="seg" style="margin-left:2px">
-      <button id="btnPng">PNG</button>
+      <button id="btnPng" data-i18n="export.rfMap">Mapa RF</button>
+      <button id="btnPlanPng" data-i18n="export.floorPlan">Plano</button>
       <button id="btnGltf" data-i18n="toolbar.scene">3D-scen</button>
     </div>
     <input type="file" id="fileLoad" accept=".json,application/json">
@@ -503,7 +504,10 @@ const translations = {
     "project.opened": "Proyecto abierto.",
     "error.invalidFile": "Archivo no válido",
     "error.noHeatExport": "No hay un mapa de cobertura que exportar. Calcula primero la cobertura.",
+    "export.rfMap": "Exportar mapa RF",
+    "export.floorPlan": "Exportar plano",
     "export.pngDone": "PNG exportado (1600px).",
+    "export.planDone": "Plano exportado (1600px).",
     "export.sceneDone": "Escena 3D exportada: rf-scen.gltf + metadatos.",
     "bg.added": "Plano añadido. Ajusta la escala en el panel derecho.",
     "export.model": "modelo",
@@ -694,7 +698,10 @@ const translations = {
     "project.opened": "Project opened.",
     "error.invalidFile": "Invalid file",
     "error.noHeatExport": "No coverage map to export — calculate coverage first.",
+    "export.rfMap": "Export RF map",
+    "export.floorPlan": "Export floor plan",
     "export.pngDone": "PNG exported (1600px).",
+    "export.planDone": "Floor plan exported (1600px).",
     "export.sceneDone": "3D scene exported: rf-scen.gltf + metadata.",
     "bg.added": "Floor plan added. Adjust the scale in the right panel.",
     "export.model": "model",
@@ -885,7 +892,10 @@ const translations = {
     "project.opened": "Projekt öppnat.",
     "error.invalidFile": "Ogiltig fil",
     "error.noHeatExport": "Ingen täckningskarta att exportera — beräkna täckning först.",
+    "export.rfMap": "Exportera RF-karta",
+    "export.floorPlan": "Exportera planritning",
     "export.pngDone": "PNG exporterad (1600px).",
+    "export.planDone": "Planritning exporterad (1600px).",
     "export.sceneDone": "3D-scen exporterad: rf-scen.gltf + metadata.",
     "bg.added": "Ritning tillagd. Justera skalan i panelen till höger.",
     "export.model": "modell",
@@ -3028,6 +3038,51 @@ function download(blob,name){
   a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 
+function planExportBounds(f){
+  const b=floorBounds(f);
+  (f.labels||[]).forEach(lb=>{
+    const pad=Math.max(1,(lb.size||18)/18);
+    b.minx=Math.min(b.minx,lb.x-pad); b.maxx=Math.max(b.maxx,lb.x+pad*4);
+    b.miny=Math.min(b.miny,lb.y-pad); b.maxy=Math.max(b.maxy,lb.y+pad);
+  });
+  return b;
+}
+function drawCleanPlan(g,f,b,W,H){
+  const wx2p=x=>(x-b.minx)/(b.maxx-b.minx)*W, wy2p=y=>(y-b.miny)/(b.maxy-b.miny)*H;
+  const sx=W/(b.maxx-b.minx), sy=H/(b.maxy-b.miny);
+  g.fillStyle='#f8fafc'; g.fillRect(0,0,W,H);
+  if(f.bg&&f.bg._img&&f.bg.visible!==false){
+    g.save();
+    g.globalAlpha=f.bg.opacity==null?0.7:f.bg.opacity;
+    g.translate(wx2p(f.bg.x),wy2p(f.bg.y));
+    g.rotate(f.bg.rot||0);
+    g.drawImage(f.bg._img,0,0,f.bg.w*f.bg.scale*sx,f.bg.h*f.bg.scale*sy);
+    g.restore();
+  }
+  f.walls.forEach(w=>{ const m=matById(w.materialId);
+    g.strokeStyle=m.color; g.lineWidth=5; g.lineCap='round';
+    g.beginPath(); g.moveTo(wx2p(w.x1),wy2p(w.y1)); g.lineTo(wx2p(w.x2),wy2p(w.y2)); g.stroke();
+    g.strokeStyle=shade(m.color,-0.25); g.lineWidth=2;
+    g.beginPath(); g.moveTo(wx2p(w.x1),wy2p(w.y1)); g.lineTo(wx2p(w.x2),wy2p(w.y2)); g.stroke(); });
+  (f.pillars||[]).forEach(p=>{ const m=matById(p.materialId);
+    const rx=(p.diameter||0.6)/2*sx, ry=(p.diameter||0.6)/2*sy;
+    g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
+    g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
+  f.aps.forEach(ap=>{
+    g.fillStyle='#0d9488'; g.beginPath(); g.arc(wx2p(ap.x),wy2p(ap.y),9,0,Math.PI*2); g.fill();
+    g.strokeStyle='#053b36'; g.lineWidth=3; g.stroke();
+    g.fillStyle='#0f172a'; g.font='bold 20px sans-serif'; g.fillText(ap.name,wx2p(ap.x)+13,wy2p(ap.y)-10);
+  });
+  (f.labels||[]).forEach(lb=>{
+    const size=clamp(lb.size||18,8,96)*(W/1200);
+    g.save(); g.translate(wx2p(lb.x),wy2p(lb.y)); g.rotate((lb.rotation||0)*Math.PI/180);
+    g.font=`bold ${size}px sans-serif`; g.textBaseline='middle';
+    g.strokeStyle='rgba(248,250,252,.9)'; g.lineWidth=Math.max(2,size*0.14);
+    g.fillStyle='#0f172a'; g.strokeText(lb.text||'Label',0,0); g.fillText(lb.text||'Label',0,0);
+    g.restore();
+  });
+}
+
 // ---- high-res PNG of active floor heatmap ----
 function exportPNG(){
   if(!heatCanvas||!heatMeta){ showToast(true,uiMessage('error.noHeatExport'),null,2400); return; }
@@ -3077,6 +3132,16 @@ function exportPNG(){
   g.fillStyle='#cdd7e3';g.font='12px monospace';
   g.fillText('-90 dBm',lx,ly-5); g.fillText('-40',lx+lw-26,ly-5);
   c.toBlob(bl=>{ download(bl,'rf-tackning-'+f.name.replace(/\s+/g,'_')+'.png'); showToast(true,uiMessage('export.pngDone'),null,1700); },'image/png');
+}
+
+function exportFloorPlanPNG(){
+  const f=floor(); const b=planExportBounds(f);
+  const PX=1600; const aspect=(b.maxy-b.miny)/(b.maxx-b.minx);
+  const W=PX, H=Math.max(1,Math.round(PX*aspect));
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  drawCleanPlan(g,f,b,W,H);
+  c.toBlob(bl=>{ download(bl,'floor-plan-'+f.name.replace(/\s+/g,'_')+'.png'); showToast(true,uiMessage('export.planDone'),null,1700); },'image/png');
 }
 
 // ---- glTF scene export (hand-built, embedded buffer) ----
@@ -3252,6 +3317,7 @@ function wireGlobals(){
   $('#btnLoad').onclick=()=>$('#fileLoad').click();
   $('#fileLoad').onchange=e=>{ if(e.target.files[0])loadProject(e.target.files[0]); e.target.value=''; };
   $('#btnPng').onclick=exportPNG;
+  $('#btnPlanPng').onclick=exportFloorPlanPNG;
   $('#btnGltf').onclick=exportGLTF;
   $('#plExp').oninput=e=>{ state.plExp=+e.target.value; $('#plExpV').textContent=state.plExp.toFixed(1); scheduleHeat(); };
   $('#slabDb').oninput=e=>{ state.slabDb=+e.target.value; $('#slabDbV').textContent=state.slabDb+' dB'; scheduleHeat(); };
