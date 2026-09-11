@@ -418,6 +418,7 @@ const translations = {
     "wall.angleDegrees": "Ángulo (°)",
     "wall.angleHint": "0° apunta hacia +X; los ángulos positivos giran hacia +Y.",
     "wall.snapTitle": "Ajuste de paredes",
+    "wall.snapMaster": "Activar ajustes",
     "wall.endpointSnap": "Ajuste a extremos",
     "wall.endpointSnapPx": "Distancia",
     "wall.orthoSnap": "Ajuste ortogonal",
@@ -594,6 +595,7 @@ const translations = {
     "wall.angleDegrees": "Angle (°)",
     "wall.angleHint": "0° points toward +X; positive angles rotate toward +Y.",
     "wall.snapTitle": "Wall snapping",
+    "wall.snapMaster": "Enable snapping",
     "wall.endpointSnap": "Endpoint snapping",
     "wall.endpointSnapPx": "Distance",
     "wall.orthoSnap": "Orthogonal snapping",
@@ -770,6 +772,7 @@ const translations = {
     "wall.angleDegrees": "Vinkel (°)",
     "wall.angleHint": "0° pekar mot +X; positiva vinklar roterar mot +Y.",
     "wall.snapTitle": "Väggsnäppning",
+    "wall.snapMaster": "Aktivera snäppning",
     "wall.endpointSnap": "Snäpp till ändpunkter",
     "wall.endpointSnapPx": "Avstånd",
     "wall.orthoSnap": "Ortogonal snäppning",
@@ -949,18 +952,22 @@ document.documentElement.lang=uiLanguage;
 translateNodes();
 
 const wallSnapStoragePrefix = 'wifiSimulator.';
+const WALL_GEOMETRY_SNAP_STEP = 0.05;
 const wallSnapPrefs = {
+  enabled: true,
   endpointSnap: true,
-  endpointDistance: 10,
+  endpointDistance: 6,
   orthoSnap: true,
-  orthoTolerance: 5,
+  orthoTolerance: 3,
 };
 function loadWallSnapPrefs(){
   try{
+    const all=localStorage.getItem(wallSnapStoragePrefix+'wallSnappingEnabled');
     const on=localStorage.getItem(wallSnapStoragePrefix+'wallSnapEnabled');
     const px=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallSnapDistance'));
     const oo=localStorage.getItem(wallSnapStoragePrefix+'wallOrthoSnapEnabled');
     const deg=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallOrthoTolerance'));
+    if(all!==null) wallSnapPrefs.enabled = all !== 'false';
     if(on!==null) wallSnapPrefs.endpointSnap = on !== 'false';
     if(Number.isFinite(px)) wallSnapPrefs.endpointDistance = clamp(px, 1, 40);
     if(oo!==null) wallSnapPrefs.orthoSnap = oo !== 'false';
@@ -1369,14 +1376,21 @@ function selectAllWalls(){
 function nearestEndpointSnap(wx,wy,excludeWallId){
   if(!wallSnapPrefs.endpointSnap) return null;
   let best=null, bd=wallSnapPrefs.endpointDistance;
+  const q=W2S(wx,wy);
   floor().walls.forEach(w=>{
     if(w.id===excludeWallId) return;
     [[w.x1,w.y1],[w.x2,w.y2]].forEach(([x,y])=>{
-      const p=W2S(x,y), q=W2S(wx,wy), d=Math.hypot(q.x-p.x,q.y-p.y);
+      const p=W2S(x,y), d=Math.hypot(q.x-p.x,q.y-p.y);
       if(d<bd){bd=d;best={x,y};}
     });
   });
   return best;
+}
+function snapToWallGeometryGrid(wx,wy){
+  return {
+    x:Math.round(wx/WALL_GEOMETRY_SNAP_STEP)*WALL_GEOMETRY_SNAP_STEP,
+    y:Math.round(wy/WALL_GEOMETRY_SNAP_STEP)*WALL_GEOMETRY_SNAP_STEP
+  };
 }
 function applyOrthoSnap(pt,fixed){
   if(!fixed || !wallSnapPrefs.orthoSnap) return pt;
@@ -1387,16 +1401,17 @@ function applyOrthoSnap(pt,fixed){
   let best=targets[0], bd=Infinity;
   targets.forEach(a=>{ const d=Math.abs(((ang-a+540)%360)-180); if(d<bd){bd=d;best=a;} });
   if(bd>wallSnapPrefs.orthoTolerance) return pt;
-  const rad=best*Math.PI/180;
-  return {x:fixed.x+Math.cos(rad)*len, y:fixed.y+Math.sin(rad)*len};
+  if(best===0 || best===180) return {x:pt.x,y:fixed.y};
+  return {x:fixed.x,y:pt.y};
 }
 function snapWallPoint(wx,wy,opts={}){
-  if(!opts.altKey){
+  if(opts.altKey || !wallSnapPrefs.enabled) return {x:wx,y:wy};
+  let pt=opts.grid===false ? {x:wx,y:wy} : snapToWallGeometryGrid(wx,wy);
+  if(opts.ortho!==false) pt=applyOrthoSnap(pt,opts.fixed);
+  if(opts.endpoint!==false){
     const endpoint=nearestEndpointSnap(wx,wy,opts.excludeWallId);
     if(endpoint) return endpoint;
   }
-  let pt=opts.grid===false ? {x:wx,y:wy} : {x:Math.round(wx*4)/4, y:Math.round(wy*4)/4};
-  if(!opts.altKey) pt=applyOrthoSnap(pt,opts.fixed);
   return pt;
 }
 
@@ -1451,9 +1466,12 @@ cv.addEventListener('pointerdown',e=>{
     commit(); f.aps.push(ap); select('ap',ap.id); scheduleHeat(); refreshStats();
   }
   else if(tool==='wall'){
-    const s=snapWallPoint(w.x,w.y,{altKey:e.altKey});
-    if(!draft){ draft={x1:s.x,y1:s.y,x2:s.x,y2:s.y}; }
+    if(!draft){
+      const s=snapWallPoint(w.x,w.y,{altKey:e.altKey});
+      draft={x1:s.x,y1:s.y,x2:s.x,y2:s.y};
+    }
     else{
+      const s=snapWallPoint(w.x,w.y,{fixed:{x:draft.x1,y:draft.y1},altKey:e.altKey});
       commit();
       floor().walls.push({id:uid('wl'),x1:draft.x1,y1:draft.y1,x2:s.x,y2:s.y,materialId:state.activeMat});
       draft={x1:s.x,y1:s.y,x2:s.x,y2:s.y}; // chain
@@ -1496,7 +1514,7 @@ window.addEventListener('pointermove',e=>{
           const fixed=dragging.end==='a'
             ? {x:dragging.start.x2,y:dragging.start.y2}
             : {x:dragging.start.x1,y:dragging.start.y1};
-          const s=snapWallPoint(w.x,w.y,{fixed,excludeWallId:wl.id,altKey:e.altKey,grid:false});
+          const s=snapWallPoint(w.x,w.y,{fixed,excludeWallId:wl.id,altKey:e.altKey});
           if(dragging.end==='a'){ wl.x1=s.x; wl.y1=s.y; wl.x2=dragging.start.x2; wl.y2=dragging.start.y2; }
           else { wl.x1=dragging.start.x1; wl.y1=dragging.start.y1; wl.x2=s.x; wl.y2=s.y; }
         }
@@ -1510,7 +1528,11 @@ window.addEventListener('pointermove',e=>{
         if(movedPx>=4 || dragging.moved){
           if(!dragging.committed){ commit(); dragging.committed=true; }
           dragging.moved=true;
-          const dx=w.x-dragging.startWx, dy=w.y-dragging.startWy;
+          let dx=w.x-dragging.startWx, dy=w.y-dragging.startWy;
+          if(!e.altKey && wallSnapPrefs.enabled){
+            dx=Math.round(dx/WALL_GEOMETRY_SNAP_STEP)*WALL_GEOMETRY_SNAP_STEP;
+            dy=Math.round(dy/WALL_GEOMETRY_SNAP_STEP)*WALL_GEOMETRY_SNAP_STEP;
+          }
           wl.x1=dragging.start.x1+dx; wl.y1=dragging.start.y1+dy;
           wl.x2=dragging.start.x2+dx; wl.y2=dragging.start.y2+dy;
         }
@@ -2192,6 +2214,7 @@ function deleteSelection(){
 }
 function wallSnapControlsHtml(){
   return `<div class="field" data-editor-pref="wall-snap" style="margin-top:10px"><label>${t('wall.snapTitle')}</label>
+    <div class="field"><label><input type="checkbox" id="pSnapMaster" ${wallSnapPrefs.enabled?'checked':''}> ${uiText('wall.snapMaster')}</label></div>
     <div class="field"><label><input type="checkbox" id="pSnapOn" ${wallSnapPrefs.endpointSnap?'checked':''}> ${t('wall.endpointSnap')}</label>
       <label>${t('wall.endpointSnapPx')}</label>
       <div class="slider"><input id="pSnapDist" type="range" min="1" max="40" step="1" value="${wallSnapPrefs.endpointDistance}"><span class="val" id="pSnapDistV">${wallSnapPrefs.endpointDistance.toFixed(0)} px</span></div></div>
@@ -2201,8 +2224,9 @@ function wallSnapControlsHtml(){
   </div>`;
 }
 function wireWallSnapControls(){
-  const snapOn=$('#pSnapOn'), snapDist=$('#pSnapDist'), orthoOn=$('#pOrthoOn'), orthoTol=$('#pOrthoTol');
+  const snapMaster=$('#pSnapMaster'), snapOn=$('#pSnapOn'), snapDist=$('#pSnapDist'), orthoOn=$('#pOrthoOn'), orthoTol=$('#pOrthoTol');
   if(!snapOn) return;
+  snapMaster.onchange=e=>{ wallSnapPrefs.enabled=e.target.checked; saveWallSnapPref('wallSnappingEnabled',wallSnapPrefs.enabled); };
   snapOn.onchange=e=>{ wallSnapPrefs.endpointSnap=e.target.checked; saveWallSnapPref('wallSnapEnabled',wallSnapPrefs.endpointSnap); };
   snapDist.oninput=e=>{ wallSnapPrefs.endpointDistance=+e.target.value; $('#pSnapDistV').textContent=wallSnapPrefs.endpointDistance.toFixed(0)+' px'; saveWallSnapPref('wallSnapDistance',wallSnapPrefs.endpointDistance); };
   orthoOn.onchange=e=>{ wallSnapPrefs.orthoSnap=e.target.checked; saveWallSnapPref('wallOrthoSnapEnabled',wallSnapPrefs.orthoSnap); };
