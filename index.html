@@ -405,6 +405,8 @@ const translations = {
     "wall.selectAll": "Seleccionar todas las paredes de la planta",
     "wall.cleanup": "Unir paredes superpuestas",
     "ap.name": "Nombre",
+    "ap.manufacturer": "Fabricante",
+    "ap.model": "Modelo",
     "ap.bands": "Bandas de frecuencia (selección múltiple)",
     "ap.power": "Potencia de transmisión",
     "ap.mount": "Altura de montaje",
@@ -599,6 +601,8 @@ const translations = {
     "wall.selectAll": "Select all walls on this floor",
     "wall.cleanup": "Clean up walls (merge)",
     "ap.name": "Name",
+    "ap.manufacturer": "Manufacturer",
+    "ap.model": "Model",
     "ap.bands": "Frequency bands (multiple selection)",
     "ap.power": "Transmit power",
     "ap.mount": "Mounting height",
@@ -793,6 +797,8 @@ const translations = {
     "wall.selectAll": "Markera alla väggar på planet",
     "wall.cleanup": "Städa upp väggar (slå ihop)",
     "ap.name": "Namn",
+    "ap.manufacturer": "Tillverkare",
+    "ap.model": "Modell",
     "ap.bands": "Frekvensband (flerval)",
     "ap.power": "Sändareffekt",
     "ap.mount": "Monteringshöjd",
@@ -1084,6 +1090,7 @@ function freshState(){
 function defaultChannels(){ return {'2.4':1,'5':36,'6':37}; }
 function makeAP(x,y,name){
   return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:2.6,
+          manufacturer:'', model:'',
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
 
@@ -2430,6 +2437,8 @@ function renderProp(){
     setUiText(title,'tool.ap');
     body.innerHTML=`
       <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
+      <div class="row2"><div class="field"><label data-i18n="ap.manufacturer">Tillverkare</label><input id="pManufacturer" type="text" value="${escapeHtml(ap.manufacturer||'')}"></div>
+        <div class="field"><label data-i18n="ap.model">Modell</label><input id="pModel" type="text" value="${escapeHtml(ap.model||'')}"></div></div>
       <div class="field"><label data-i18n="ap.bands">Frekvensband (flerval)</label><div class="pillrow" id="pBands"></div></div>
       <div class="field"><label data-i18n="ap.power">Sändareffekt</label>
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
@@ -2452,6 +2461,8 @@ function renderProp(){
         <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${ap.y.toFixed(2)}"></div></div>
       <button class="delbtn" id="pDel" data-i18n="ap.remove">Ta bort accesspunkt</button>`;
     $('#pName').oninput=e=>{ap.name=e.target.value;draw2d();};
+    $('#pManufacturer').oninput=e=>{ap.manufacturer=e.target.value;};
+    $('#pModel').oninput=e=>{ap.model=e.target.value;};
     const pb=$('#pBands');
     Object.entries(BANDS).forEach(([k,v])=>{
       const on=ap.bands.includes(k);
@@ -3071,7 +3082,9 @@ function drawCleanPlan(g,f,b,W,H){
   f.aps.forEach(ap=>{
     g.fillStyle='#0d9488'; g.beginPath(); g.arc(wx2p(ap.x),wy2p(ap.y),9,0,Math.PI*2); g.fill();
     g.strokeStyle='#053b36'; g.lineWidth=3; g.stroke();
-    g.fillStyle='#0f172a'; g.font='bold 20px sans-serif'; g.fillText(ap.name,wx2p(ap.x)+13,wy2p(ap.y)-10);
+    g.fillStyle='#0f172a'; g.font='bold 20px sans-serif'; g.fillText(ap.name,wx2p(ap.x)+13,wy2p(ap.y)-12);
+    const meta=[ap.manufacturer,ap.model].filter(Boolean).join(' ');
+    if(meta){ g.font='14px sans-serif'; g.fillText(meta,wx2p(ap.x)+13,wy2p(ap.y)+8); }
   });
   (f.labels||[]).forEach(lb=>{
     const size=clamp(lb.size||18,8,96)*(W/1200);
