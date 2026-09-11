@@ -388,6 +388,7 @@ const translations = {
     "section.summary": "Resumen",
     "tool.select": "Seleccionar",
     "tool.wall": "Pared",
+    "tool.pillar": "Pilar",
     "tool.ap": "Punto de acceso",
     "tool.bg": "Plano",
     "tool.erase": "Borrar",
@@ -434,6 +435,11 @@ const translations = {
     "wall.totalLength": "Longitud total",
     "wall.assignAll": "Asignar material a todas",
     "wall.chooseMaterial": "Elige el material que deseas asignar…",
+    "pillar.title": "Pilar RF",
+    "pillar.diameter": "Diámetro (m)",
+    "pillar.material": "Material",
+    "pillar.attenuation": "Atenuación",
+    "pillar.remove": "Eliminar pilar",
     "bg.title": "Plano de fondo",
     "bg.show": "Mostrar plano en esta planta",
     "bg.scale": "Escala (metros por anchura de imagen)",
@@ -454,6 +460,7 @@ const translations = {
     "zone.remove": "Eliminar zona de exclusión",
     "stats.aps": "Puntos de acceso",
     "stats.walls": "Paredes (total)",
+    "stats.pillars": "Pilares RF",
     "stats.wallMeters": "Metros de pared",
     "stats.floorAps": "AP en la planta",
     "calibration.title": "Calibrar",
@@ -477,6 +484,7 @@ const translations = {
     "coverage.leaked": "⚠︎ No se pudo delimitar el interior. ¿Están completamente cerradas las paredes exteriores? Por ahora se cuenta toda la superficie.",
     "coverage.indoorHint": "La cobertura se calcula solo en el interior (deducido de las paredes).",
     "trace.progress": "Ray tracing — calculando propagación…",
+    "trace.pillarsWarning": "Ray tracing — calculando propagación… Los pilares RF no se incluyen todavía; el mapa solo considera paredes.",
     "error.lastFloor": "Se requiere al menos una planta.",
     "error.noBackground": "Añade primero un plano de fondo.",
     "error.distance": "Introduce una distancia válida en metros.",
@@ -565,6 +573,7 @@ const translations = {
     "section.summary": "Summary",
     "tool.select": "Select",
     "tool.wall": "Wall",
+    "tool.pillar": "Pillar",
     "tool.ap": "Access point",
     "tool.bg": "Floor plan",
     "tool.erase": "Erase",
@@ -611,6 +620,11 @@ const translations = {
     "wall.totalLength": "Total length",
     "wall.assignAll": "Assign material to all",
     "wall.chooseMaterial": "Choose material to assign…",
+    "pillar.title": "RF pillar",
+    "pillar.diameter": "Diameter (m)",
+    "pillar.material": "Material",
+    "pillar.attenuation": "Attenuation",
+    "pillar.remove": "Remove pillar",
     "bg.title": "Background floor plan",
     "bg.show": "Show floor plan on this floor",
     "bg.scale": "Scale (meters per image width)",
@@ -631,6 +645,7 @@ const translations = {
     "zone.remove": "Remove exclusion zone",
     "stats.aps": "Access points",
     "stats.walls": "Walls (total)",
+    "stats.pillars": "RF pillars",
     "stats.wallMeters": "Wall meters",
     "stats.floorAps": "APs on this floor",
     "calibration.title": "Calibrate",
@@ -654,6 +669,7 @@ const translations = {
     "coverage.leaked": "⚠︎ Could not determine the indoor boundary — are the outer walls fully closed? Counting the entire area for now.",
     "coverage.indoorHint": "Coverage counts only indoor areas (derived from walls).",
     "trace.progress": "Ray tracing — calculating propagation…",
+    "trace.pillarsWarning": "Ray tracing — calculating propagation… RF pillars are not included yet; this map only considers walls.",
     "error.lastFloor": "At least one floor is required.",
     "error.noBackground": "Add a background floor plan first.",
     "error.distance": "Enter a valid distance in meters.",
@@ -742,6 +758,7 @@ const translations = {
     "section.summary": "Sammanställning",
     "tool.select": "Markera",
     "tool.wall": "Vägg",
+    "tool.pillar": "Pelare",
     "tool.ap": "Accesspunkt",
     "tool.bg": "Ritning",
     "tool.erase": "Radera",
@@ -788,6 +805,11 @@ const translations = {
     "wall.totalLength": "Total längd",
     "wall.assignAll": "Sätt material på alla",
     "wall.chooseMaterial": "Välj material att tilldela…",
+    "pillar.title": "RF-pelare",
+    "pillar.diameter": "Diameter (m)",
+    "pillar.material": "Material",
+    "pillar.attenuation": "Dämpning",
+    "pillar.remove": "Ta bort pelare",
     "bg.title": "Bakgrundsritning",
     "bg.show": "Visa ritning på detta plan",
     "bg.scale": "Skala (meter per bildbredd)",
@@ -808,6 +830,7 @@ const translations = {
     "zone.remove": "Ta bort spärryta",
     "stats.aps": "Accesspunkter",
     "stats.walls": "Väggar (totalt)",
+    "stats.pillars": "RF-pelare",
     "stats.wallMeters": "Väggmeter",
     "stats.floorAps": "AP på planet",
     "calibration.title": "Kalibrera",
@@ -831,6 +854,7 @@ const translations = {
     "coverage.leaked": "⚠︎ Kunde inte avgränsa inomhus — är ytterväggarna helt slutna? Räknar hela ytan tills vidare.",
     "coverage.indoorHint": "Täckning räknas bara på inomhusytan (härledd från väggarna).",
     "trace.progress": "Ray tracing — beräknar utbredning…",
+    "trace.pillarsWarning": "Ray tracing — beräknar utbredning… RF-pelare ingår inte ännu; kartan tar bara hänsyn till väggar.",
     "error.lastFloor": "Minst en våning krävs.",
     "error.noBackground": "Lägg till en bakgrundsritning först.",
     "error.distance": "Ange ett giltigt avstånd i meter.",
@@ -1017,7 +1041,7 @@ const DEFAULT_MATERIALS = [
 let state;
 function freshFloor(name, idx){
   return { id:uid('flr'), name:name||('Plan '+(idx+1)), height:3.0, w:20, d:14,
-           walls:[], aps:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
+           walls:[], pillars:[], aps:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
 }
 function freshState(){
   const mats = DEFAULT_MATERIALS.map(m=>({...m}));
@@ -1035,10 +1059,10 @@ function makeAP(x,y,name){
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
 
-let tool='select';      // select | wall | ap | bg | erase | measure
+let tool='select';      // select | wall | pillar | ap | bg | erase | measure
 let view='2d';
 let showHeat=true;
-let selection=null;     // {type:'ap'|'wall'|'bg', id?} 
+let selection=null;     // {type:'ap'|'wall'|'pillar'|'bg', id?}
 let heatMode='simple';  // 'simple' | 'trace'
 let calibState=null;    // {p1,p2,awaitDist} during background-image scale calibration
 let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} during auto wall detection
@@ -1047,6 +1071,7 @@ let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} duri
 const TOOLS = [
   ['select','tool.select','M','<path d="M5 3l6 14 2-5 5-2z"/>'],
   ['wall','tool.wall','V','<path d="M4 7l16 0M4 12l16 0M4 17l16 0" opacity=".3"/><path d="M3 5v14M21 5v14M3 5h18M3 19h18"/>'],
+  ['pillar','tool.pillar','P','<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity=".55"/>'],
   ['ap','tool.ap','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
   ['bg','tool.bg','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
   ['erase','tool.erase','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
@@ -1098,6 +1123,7 @@ function floorBounds(f){
   let minx=-W/2,maxx=W/2,miny=-D/2,maxy=D/2;
   const acc=(x,y)=>{minx=Math.min(minx,x);miny=Math.min(miny,y);maxx=Math.max(maxx,x);maxy=Math.max(maxy,y);};
   f.walls.forEach(w=>{acc(w.x1,w.y1);acc(w.x2,w.y2);});
+  (f.pillars||[]).forEach(p=>{ const r=(p.diameter||0.6)/2; acc(p.x-r,p.y-r); acc(p.x+r,p.y+r); });
   f.aps.forEach(a=>acc(a.x,a.y));
   if(f.bg){ acc(f.bg.x,f.bg.y); acc(f.bg.x+f.bg.w*f.bg.scale, f.bg.y+f.bg.h*f.bg.scale); }
   const pad=1.0;
@@ -1175,6 +1201,22 @@ function draw2d(){
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
   });
   drawWallEndpointHandles();
+
+  // RF pillars
+  (f.pillars||[]).forEach(pl=>{
+    const p=W2S(pl.x,pl.y);
+    const m=matById(pl.materialId);
+    const r=Math.max(0.05,(pl.diameter||0.6)/2)*camera.zoom;
+    const selP=selection&&selection.type==='pillar'&&selection.id===pl.id;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle=hexToRgba(m.color, selP?0.48:0.32); ctx.fill();
+    ctx.lineWidth=selP?3:2;
+    ctx.strokeStyle=selP?'#7aa2ff':shade(m.color,-0.25); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2,r*0.22),0,Math.PI*2);
+    ctx.fillStyle=selP?'#7aa2ff':m.color; ctx.fill();
+    ctx.restore();
+  });
 
   // wall draft preview
   if(draft){
@@ -1288,11 +1330,24 @@ function shade(hex,amt){
   b=clamp(Math.round(b+(amt<0?b:255-b)*amt),0,255);
   return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
 }
+function hexToRgba(hex,a){
+  const c=hex.replace('#','');
+  const r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 
 // ----- hit testing -----
 function pickAP(wx,wy){
   const f=floor(); const tol=12/camera.zoom;
   for(let i=f.aps.length-1;i>=0;i--){ if(dist(wx,wy,f.aps[i].x,f.aps[i].y)<tol) return f.aps[i]; }
+  return null;
+}
+function pickPillar(wx,wy){
+  const f=floor(); const ps=f.pillars||[];
+  for(let i=ps.length-1;i>=0;i--){
+    const p=ps[i];
+    if(dist(wx,wy,p.x,p.y)<=Math.max((p.diameter||0.6)/2, 10/camera.zoom)) return p;
+  }
   return null;
 }
 function distToSeg(px,py,x1,y1,x2,y2){
@@ -1348,6 +1403,7 @@ function inAnyZone(wx,wy, f){
 function eraseAt(wx,wy){
   const f=floor(); let changed=false;
   const ap=pickAP(wx,wy); if(ap){ f.aps=f.aps.filter(a=>a!==ap); changed=true; }
+  const pl=pickPillar(wx,wy); if(pl){ f.pillars=(f.pillars||[]).filter(x=>x!==pl); changed=true; }
   const wl=pickWall(wx,wy); if(wl){ f.walls=f.walls.filter(x=>x!==wl); multiWalls=multiWalls.filter(id=>id!==wl.id); changed=true; }
   const z=pickZone(wx,wy); if(z){ f.zones=f.zones.filter(q=>q!==z); changed=true; }
   if(changed){ scheduleHeat(); refreshStats(); draw2d(); }
@@ -1444,6 +1500,8 @@ cv.addEventListener('pointerdown',e=>{
     }
     const ap=pickAP(w.x,w.y);
     if(ap){ select('ap',ap.id); commit(); dragging={type:'ap',id:ap.id,ox:w.x-ap.x,oy:w.y-ap.y}; return; }
+    const pl=pickPillar(w.x,w.y);
+    if(pl){ select('pillar',pl.id); commit(); dragging={type:'pillar',id:pl.id,ox:w.x-pl.x,oy:w.y-pl.y}; return; }
     const wl=pickWall(w.x,w.y);
     if(wl){
       if(selection && selection.type==='wall' && selection.id===wl.id && !multiWalls.length){
@@ -1464,6 +1522,12 @@ cv.addEventListener('pointerdown',e=>{
     const f=floor();
     const ap=makeAP(Math.round(w.x*4)/4, Math.round(w.y*4)/4, 'AP-'+(f.aps.length+1));
     commit(); f.aps.push(ap); select('ap',ap.id); scheduleHeat(); refreshStats();
+  }
+  else if(tool==='pillar'){
+    const f=floor();
+    if(!f.pillars)f.pillars=[];
+    const pl={id:uid('plr'),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,diameter:0.6,materialId:state.activeMat};
+    commit(); f.pillars.push(pl); select('pillar',pl.id); scheduleHeat(); refreshStats(); if(view==='3d')build3d();
   }
   else if(tool==='wall'){
     if(!draft){
@@ -1501,6 +1565,7 @@ window.addEventListener('pointermove',e=>{
   if(dragging){
     const f=floor();
     if(dragging.type==='ap'){ const ap=f.aps.find(a=>a.id===dragging.id); if(ap){ap.x=Math.round((w.x-dragging.ox)*4)/4;ap.y=Math.round((w.y-dragging.oy)*4)/4;} }
+    else if(dragging.type==='pillar'){ const pl=(f.pillars||[]).find(p=>p.id===dragging.id); if(pl){pl.x=Math.round((w.x-dragging.ox)*4)/4;pl.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='bg'){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; }
     else if(dragging.type==='zone'){ const z=(f.zones||[]).find(q=>q.id===dragging.id);
       if(z){ const wd=Math.abs(z.x2-z.x1), hd=Math.abs(z.y2-z.y1); const nx=w.x-dragging.ox, ny=w.y-dragging.oy; z.x1=nx; z.y1=ny; z.x2=nx+wd; z.y2=ny+hd; } }
@@ -1556,10 +1621,11 @@ window.addEventListener('pointerup',e=>{
     draw2d(); mouse.down=false; return;
   }
   if(dragging){
+    const draggedType=dragging.type;
     const needsGeometryUpdate=(dragging.type==='wall-endpoint'||dragging.type==='wall-body') && dragging.moved;
     dragging=null;
     if(needsGeometryUpdate){ geometryChanged(); renderProp(); }
-    else { refreshStats(); renderProp(); }
+    else { refreshStats(); renderProp(); if((draggedType==='pillar'||draggedType==='ap')&&view==='3d')build3d(); }
   }
   if(erasing){ erasing=false; }
   if(boxing){
@@ -1590,7 +1656,7 @@ window.addEventListener('keydown',e=>{
   if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
   if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; measureLine=null; select(null); draw2d(); }
-  const map={m:'select',v:'wall',a:'ap',r:'bg',e:'erase',z:'zone',l:'measure'};
+  const map={m:'select',v:'wall',p:'pillar',a:'ap',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
 });
@@ -1610,12 +1676,27 @@ function wallLossOnFloor(f, ax,ay,bx,by){
   }
   return loss;
 }
+function pillarLossOnFloor(f, ax,ay,bx,by){
+  let loss=0;
+  for(const p of (f.pillars||[])){
+    if(segmentIntersectsCircle(ax,ay,bx,by, p.x,p.y,(p.diameter||0.6)/2)) loss += matById(p.materialId).db;
+  }
+  return loss;
+}
 function segIntersect(ax,ay,bx,by,cx,cy,dx,dy){
   const d=(bx-ax)*(dy-cy)-(by-ay)*(dx-cx);
   if(Math.abs(d)<1e-9)return false;
   const t=((cx-ax)*(dy-cy)-(cy-ay)*(dx-cx))/d;
   const u=((cx-ax)*(by-ay)-(cy-ay)*(bx-ax))/d;
   return t>=0&&t<=1&&u>=0&&u<=1;
+}
+function segmentIntersectsCircle(ax,ay,bx,by,cx,cy,r){
+  const dx=bx-ax, dy=by-ay;
+  const l2=dx*dx+dy*dy;
+  if(l2<1e-12) return dist(ax,ay,cx,cy)<=r;
+  const t=clamp(((cx-ax)*dx+(cy-ay)*dy)/l2,0,1);
+  const px=ax+t*dx, py=ay+t*dy;
+  return dist(px,py,cx,cy)<=r;
 }
 
 // ---------- antenna pattern ----------
@@ -1649,7 +1730,11 @@ function rssiFromAP(ap, af, px,py, tf, mhz){
   const d3 = Math.max(0.5, Math.hypot(dh,dz));
   let pl = fsplAt1m(mhz) + 10*state.plExp*Math.log10(d3);
   pl += wallLossOnFloor(state.floors[af], ap.x,ap.y, px,py);
-  if(tf!==af) pl += wallLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
+  pl += pillarLossOnFloor(state.floors[af], ap.x,ap.y, px,py);
+  if(tf!==af){
+    pl += wallLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
+    pl += pillarLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
+  }
   pl += Math.abs(tf-af)*state.slabDb;
   return ap.txPower + antennaGain(ap,px,py,apz,evz) - pl; // dBm
 }
@@ -1850,6 +1935,7 @@ function scheduleHeat(){
 //  ADVANCED RAY TRACING  (ray-launching: transmission + reflection)
 // ============================================================
 function runRayTrace(onDone){
+  const traceMessage=uiMessage(state.floors.some(f=>(f.pillars||[]).length)?'trace.pillarsWarning':'trace.progress');
   const f=floor(); const b=floorBounds(f);
   const cell=0.16;
   const cols=clamp(Math.ceil((b.maxx-b.minx)/cell),16,460), rows=clamp(Math.ceil((b.maxy-b.miny)/cell),16,460);
@@ -1913,13 +1999,13 @@ function runRayTrace(onDone){
     }
   });
   const initial=rayQueue.length||1;
-  showToast(true,uiMessage('trace.progress'),0);
+  showToast(true,traceMessage,0);
   function step(){
     const t0=performance.now();
     while(rayQueue.length && performance.now()-t0<35){
       const ray=rayQueue.pop(); marchRay(ray, ray._w, ray._s, ray._t);
     }
-    showToast(true,uiMessage('trace.progress'), clamp(1-rayQueue.length/(initial*1.6),0,0.99));
+    showToast(true,traceMessage, clamp(1-rayQueue.length/(initial*1.6),0,0.99));
     if(rayQueue.length){ requestAnimationFrame(step); return; }
     const sm=smoothRSSI(best,cols,rows);
     heatGridRssi=sm; heatGridDisp=sm; heatMetric='rssi';
@@ -2049,6 +2135,19 @@ function build3d(){
       fl.add(mesh);
     });
 
+    // RF pillars
+    (f.pillars||[]).forEach(p=>{
+      const m=matById(p.materialId);
+      const h=Math.max(0.5,f.height-0.2);
+      const r=Math.max(0.03,(p.diameter||0.6)/2);
+      const geo=new THREE.CylinderGeometry(r,r,h,32);
+      const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
+        transparent:true,opacity:(0.72)*dim+0.18,roughness:.78,metalness:m.db>20?0.45:0.04});
+      const mesh=new THREE.Mesh(geo,mat);
+      mesh.position.set(p.x-cx, h/2, p.y-cz);
+      fl.add(mesh);
+    });
+
     // APs
     f.aps.forEach(ap=>{
       const g=new THREE.SphereGeometry(0.16,16,16);
@@ -2093,7 +2192,7 @@ function setTool(t){
   tool=t; draft=null;
   $$('#tools .tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   refreshToolText();
-  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
+  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
   if(t==='bg'){ $('#fileBg').click(); }
 }
 function buildTools(){
@@ -2135,6 +2234,7 @@ function duplicateFloor(i){
   const copy=JSON.parse(JSON.stringify(src,(k,v)=>k==='_img'?undefined:v));
   copy.id=uid('flr'); copy.name=src.name+' (kopia)';
   copy.walls.forEach(w=>w.id=uid('wl'));
+  (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
   copy.aps.forEach(a=>a.id=uid('ap'));
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
   if(copy.bg && src.bg && src.bg._img) copy.bg._img=src.bg._img;
@@ -2208,6 +2308,7 @@ function deleteSelection(){
   if(!selection)return; const f=floor();
   if(selection.type==='ap') f.aps=f.aps.filter(a=>a.id!==selection.id);
   else if(selection.type==='wall') f.walls=f.walls.filter(w=>w.id!==selection.id);
+  else if(selection.type==='pillar') f.pillars=(f.pillars||[]).filter(p=>p.id!==selection.id);
   else if(selection.type==='zone') f.zones=(f.zones||[]).filter(z=>z.id!==selection.id);
   else if(selection.type==='bg') f.bg=null;
   selection=null; scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d();
@@ -2288,6 +2389,26 @@ function renderProp(){
     $('#pChan').onchange=e=>{ if(!ap.channels)ap.channels=defaultChannels(); ap.channels[state.band]=+e.target.value; scheduleHeat(); };
     $('#pX').onchange=e=>{ap.x=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
     $('#pY').onchange=e=>{ap.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
+    $('#pDel').onclick=deleteSelection;
+  }
+  else if(selection.type==='pillar'){
+    const p=(f.pillars||[]).find(x=>x.id===selection.id); if(!p){select(null);return;}
+    setUiText(title,'pillar.title');
+    body.innerHTML=`
+      <div class="field"><label>${t('pillar.material')}</label><select id="pMat">
+        ${state.materials.map(m=>`<option value="${m.id}" ${p.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
+      </select></div>
+      <div class="field"><label>${t('pillar.diameter')}</label><input id="pPillarDia" type="number" step="0.05" min="0.05" value="${(p.diameter||0.6).toFixed(2)}"></div>
+      <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${p.x.toFixed(2)}"></div>
+        <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${p.y.toFixed(2)}"></div></div>
+      <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(p.materialId).db} dB</b></div>
+      <button class="delbtn" id="pDel">${t('pillar.remove')}</button>`;
+    $('#pMat').onchange=e=>{p.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
+    $('#pPillarDia').onchange=e=>{ const v=parseFloat(e.target.value);
+      if(!(v>0)){ e.target.value=(p.diameter||0.6).toFixed(2); return; }
+      p.diameter=v; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
+    $('#pX').onchange=e=>{p.x=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
+    $('#pY').onchange=e=>{p.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='wall'){
@@ -2392,13 +2513,14 @@ function renderProp(){
 }
 
 function refreshStats(){
-  const host=$('#stats'); let walls=0,aps=0,len=0;
-  state.floors.forEach(f=>{walls+=f.walls.length;aps+=f.aps.length;f.walls.forEach(w=>len+=dist(w.x1,w.y1,w.x2,w.y2));});
+  const host=$('#stats'); let walls=0,pillars=0,aps=0,len=0;
+  state.floors.forEach(f=>{walls+=f.walls.length;pillars+=(f.pillars||[]).length;aps+=f.aps.length;f.walls.forEach(w=>len+=dist(w.x1,w.y1,w.x2,w.y2));});
   const cur=floor();
   host.innerHTML=`
     <div class="stat"><span data-i18n="section.floors">Våningar</span><b>${state.floors.length}</b></div>
     <div class="stat"><span data-i18n="stats.aps">Accesspunkter</span><b>${aps}</b></div>
     <div class="stat"><span data-i18n="stats.walls">Väggar (totalt)</span><b>${walls}</b></div>
+    <div class="stat"><span data-i18n="stats.pillars">RF-pelare</span><b>${pillars}</b></div>
     <div class="stat"><span data-i18n="stats.wallMeters">Väggmeter</span><b>${len.toFixed(1)} m</b></div>
     <div class="stat"><span data-i18n="section.activeFloor">Aktivt plan</span><b>${escapeHtml(cur.name)}</b></div>
     <div class="stat"><span data-i18n="stats.floorAps">AP på planet</span><b>${cur.aps.length}</b></div>
@@ -2766,7 +2888,7 @@ function commitThrottled(){ const t=performance.now(); if(t-_commitThrottle<450)
 function restoreState(json){
   state=JSON.parse(json);
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; _indoor=null;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
@@ -2801,7 +2923,7 @@ function loadProject(file){
       if(s.noiseFloor==null)s.noiseFloor=-95;
       if(s.indoorOnly==null)s.indoorOnly=true;
       _indoor=null;
-      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
+      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
         f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
@@ -2834,6 +2956,11 @@ function exportPNG(){
   f.walls.forEach(w=>{ const m=matById(w.materialId);
     g.strokeStyle=m.color;g.lineWidth=4;g.lineCap='round';
     g.beginPath();g.moveTo(wx2p(w.x1),wy2p(w.y1));g.lineTo(wx2p(w.x2),wy2p(w.y2));g.stroke();});
+  // pillars
+  (f.pillars||[]).forEach(p=>{ const m=matById(p.materialId);
+    const rx=(p.diameter||0.6)/2/(b.maxx-b.minx)*W, ry=(p.diameter||0.6)/2/(b.maxy-b.miny)*H;
+    g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
+    g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
   // APs
   f.aps.forEach(ap=>{ if(!ap.bands.includes(state.band))return;
     g.fillStyle='#34d6c4';g.beginPath();g.arc(wx2p(ap.x),wy2p(ap.y),8,0,7);g.fill();
@@ -2865,6 +2992,10 @@ function exportGLTF(){
       const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
       builder.addBox(len,h,0.12, mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
     });
+    (f.pillars||[]).forEach(p=>{
+      const m=matById(p.materialId); const h=Math.max(0.5,f.height-0.2);
+      builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color), 'pillar_'+m.name);
+    });
     f.aps.forEach(ap=>{
       builder.addBox(0.3,0.3,0.3, ap.x, elev+(ap.mount||2.6), ap.y, 0, [0.2,0.84,0.77], 'AP_'+ap.name);
     });
@@ -2877,7 +3008,8 @@ function exportGLTF(){
     materials:state.materials.map(m=>({name:m.name,attenuation_dB:m.db})),
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
       aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),bands:a.bands,txPower_dBm:a.txPower})),
-      walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})) })) };
+      walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
+      pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})) })) };
   download(new Blob([JSON.stringify(meta,null,2)],{type:'application/json'}),'rf-scen-metadata.json');
   showToast(true,uiMessage('export.sceneDone'),null,2200);
 }
@@ -2903,6 +3035,23 @@ GltfBuilder.prototype.addBox=function(sx,sy,sz, tx,ty,tz, ry, rgb, name){
   const faces=[[0,1,2,0,2,3],[4,6,5,4,7,6],[0,4,5,0,5,1],[2,6,7,2,7,3],[1,5,6,1,6,2],[0,3,7,0,7,4]];
   faces.forEach(f=>f.forEach(v=>this.idx.push(base+v)));
   this.vcount+=8;
+};
+GltfBuilder.prototype.addCylinder=function(r,h, tx,ty,tz, rgb, name){
+  const seg=32, base=this.vcount;
+  this.pos.push(tx,ty+h/2,tz, tx,ty-h/2,tz);
+  this.nrm.push(0,1,0, 0,-1,0);
+  this.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
+  for(let i=0;i<seg;i++){
+    const a=i/seg*Math.PI*2, x=Math.cos(a)*r, z=Math.sin(a)*r;
+    this.pos.push(tx+x,ty+h/2,tz+z, tx+x,ty-h/2,tz+z);
+    this.nrm.push(x/r,0,z/r, x/r,0,z/r);
+    this.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
+  }
+  for(let i=0;i<seg;i++){
+    const j=(i+1)%seg, top=base+2+i*2, bot=top+1, ntop=base+2+j*2, nbot=ntop+1;
+    this.idx.push(base,top,ntop, base+1,nbot,bot, top,bot,nbot, top,nbot,ntop);
+  }
+  this.vcount+=2+seg*2;
 };
 GltfBuilder.prototype.finish=function(){
   const pos=new Float32Array(this.pos), nrm=new Float32Array(this.nrm),
