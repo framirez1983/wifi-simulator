@@ -224,8 +224,8 @@
       Ray tracing
     </button>
     <div style="width:1px;height:24px;background:var(--line)"></div>
-    <button class="tbtn" id="btnSave">Spara projekt</button>
-    <button class="tbtn" id="btnLoad">Öppna</button>
+    <button class="tbtn" id="btnSave" data-i18n="toolbar.saveProject">Spara projekt</button>
+    <button class="tbtn" id="btnLoad" data-i18n="toolbar.openProject">Öppna</button>
     <div class="seg" style="margin-left:2px">
       <button id="btnPng">PNG</button>
       <button id="btnGltf">3D-scen</button>
@@ -334,6 +334,33 @@
    Single-file app logic. No build step. THREE r128 from CDN.
    ============================================================ */
 'use strict';
+
+// ---------- UI language (independent of project state) ----------
+const translations = {
+  es: { 'toolbar.saveProject':'Guardar proyecto', 'toolbar.openProject':'Abrir proyecto' },
+  en: { 'toolbar.saveProject':'Save project', 'toolbar.openProject':'Open project' },
+  sv: { 'toolbar.saveProject':'Spara projekt', 'toolbar.openProject':'Öppna' },
+};
+const uiLanguageKey = 'wifiSimulator.uiLanguage';
+let uiLanguage = 'es';
+try {
+  const storedLanguage = localStorage.getItem(uiLanguageKey);
+  if (['es','en','sv'].includes(storedLanguage)) uiLanguage = storedLanguage;
+  localStorage.setItem(uiLanguageKey, uiLanguage);
+} catch (_) { /* Storage may be unavailable; keep the selected language. */ }
+
+function t(key, params = {}) {
+  const messages = translations[uiLanguage];
+  const text = Object.prototype.hasOwnProperty.call(messages, key) ? messages[key]
+    : Object.prototype.hasOwnProperty.call(translations.es, key) ? translations.es[key] : key;
+  return text.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match);
+}
+
+document.documentElement.lang = uiLanguage;
+document.querySelectorAll('[data-i18n]').forEach(el => {
+  el.textContent = t(el.dataset.i18n);
+});
 
 // ---------- small helpers ----------
 const $  = (s,r=document)=>r.querySelector(s);
