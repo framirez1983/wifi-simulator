@@ -307,6 +307,13 @@ höger·drag · panorera</div>
           <div class="slider"><input type="range" id="covThr" min="-90" max="-40" step="1" value="-67"><span class="val" id="covThrV">-67 dBm</span></div></div>
         <div class="field"><label><input type="checkbox" id="showFail"> <span data-i18n="coverage.markBelow">Markera områden under tröskel</span></label></div>
         <div class="field"><label><input type="checkbox" id="indoorOnly" checked> <span data-i18n="coverage.indoorOnly">Räkna bara inomhus (härled från väggar)</span></label></div>
+        <div class="field">
+          <label data-i18n="compare.title">RF-scenarier</label>
+          <button class="tbtn" id="btnScenarioA" style="width:100%;justify-content:center;margin-bottom:6px" data-i18n="compare.captureA">Spara som scenario A</button>
+          <button class="tbtn" id="btnScenarioCompare" style="width:100%;justify-content:center;margin-bottom:6px" data-i18n="compare.compareB">Jämför aktuell som B</button>
+          <button class="tbtn" id="btnScenarioClear" style="width:100%;justify-content:center" data-i18n="compare.clear">Rensa jämförelse</button>
+        </div>
+        <div class="hint" id="scenarioCompare"><span data-i18n="compare.empty">Spara scenario A och jämför efter ändringar.</span></div>
         <div class="hint" id="covHint"><span data-i18n="coverage.hint">Täckningsgrad visas i förklaringsrutan nere till vänster.</span></div>
       </div>
       <div class="grp" id="autoPanel">
@@ -389,6 +396,14 @@ const translations = {
     "coverage.markBelow": "Marcar áreas por debajo del umbral",
     "coverage.indoorOnly": "Contar solo interiores (deducidos de las paredes)",
     "coverage.hint": "El porcentaje de cobertura aparece en la leyenda inferior izquierda.",
+    "compare.title": "Escenarios RF",
+    "compare.captureA": "Guardar como escenario A",
+    "compare.compareB": "Comparar actual como B",
+    "compare.clear": "Limpiar comparación",
+    "compare.empty": "Guarda el escenario A y compara después de los cambios.",
+    "compare.captured": "Escenario A guardado.",
+    "compare.needA": "Guarda primero el escenario A.",
+    "compare.summary": "A → B · RSSI útil {aOk}% → {bOk}% ({dOk}) · Área fallida {aFail} → {bFail} m² ({dFail}) · SINR útil {aSinr}% → {bSinr}% ({dSinr}) · AP {aAp} → {bAp} ({dAp})",
     "section.automatic": "Automatización",
     "auto.channels": "Asignar canales automáticamente",
     "auto.placeOpen": "Colocar AP automáticamente…",
@@ -623,6 +638,14 @@ const translations = {
     "coverage.markBelow": "Highlight areas below the threshold",
     "coverage.indoorOnly": "Count indoor areas only (derived from walls)",
     "coverage.hint": "Coverage percentage is shown in the legend at the bottom left.",
+    "compare.title": "RF scenarios",
+    "compare.captureA": "Capture as Scenario A",
+    "compare.compareB": "Compare current as B",
+    "compare.clear": "Clear comparison",
+    "compare.empty": "Capture Scenario A, then compare after changes.",
+    "compare.captured": "Scenario A captured.",
+    "compare.needA": "Capture Scenario A first.",
+    "compare.summary": "A → B · useful RSSI {aOk}% → {bOk}% ({dOk}) · failing area {aFail} → {bFail} m² ({dFail}) · useful SINR {aSinr}% → {bSinr}% ({dSinr}) · APs {aAp} → {bAp} ({dAp})",
     "section.automatic": "Automation",
     "auto.channels": "Auto channel plan",
     "auto.placeOpen": "Auto-place APs…",
@@ -857,6 +880,14 @@ const translations = {
     "coverage.markBelow": "Markera områden under tröskel",
     "coverage.indoorOnly": "Räkna bara inomhus (härled från väggar)",
     "coverage.hint": "Täckningsgrad visas i förklaringsrutan nere till vänster.",
+    "compare.title": "RF-scenarier",
+    "compare.captureA": "Spara som scenario A",
+    "compare.compareB": "Jämför aktuell som B",
+    "compare.clear": "Rensa jämförelse",
+    "compare.empty": "Spara scenario A och jämför efter ändringar.",
+    "compare.captured": "Scenario A sparat.",
+    "compare.needA": "Spara scenario A först.",
+    "compare.summary": "A → B · användbar RSSI {aOk}% → {bOk}% ({dOk}) · underkänd yta {aFail} → {bFail} m² ({dFail}) · användbar SINR {aSinr}% → {bSinr}% ({dSinr}) · AP {aAp} → {bAp} ({dAp})",
     "section.automatic": "Automatik",
     "auto.channels": "Auto-kanalplan",
     "auto.placeOpen": "Auto-placera AP:er…",
@@ -1112,6 +1143,7 @@ function refreshLanguage(){
   document.getElementById('uiLanguage').value=uiLanguage;
   translateNodes();
   buildEditorSettings();
+  renderScenarioCompare();
   refreshToolText();
   // Drawing uses the existing heat canvas; no RF computation or UI reconstruction.
   draw2d();
@@ -2360,6 +2392,7 @@ function isIndoor(wx,wy){
 }
 
 let covPct=null;
+let scenarioA=null, scenarioCompare=null;
 function coverageUpdate(){
   if(heatGridRssi && heatMeta){
     const {cols,rows,minx,miny,maxx,maxy}=heatMeta; const f=floor(); let tot=0,ok=0;
@@ -2378,6 +2411,57 @@ function coverageUpdate(){
     hint.innerHTML = (m&&m.leaked)
       ? uiText('coverage.leaked')
       : (state.indoorOnly?uiText('coverage.indoorHint'):uiText('coverage.hint')); }
+}
+function rfScenarioMetrics(){
+  const f=floor(), b=floorBounds(f), {cols,rows}=gridDims(b), mhz=BANDS[state.band].mhz;
+  const cellArea=(b.maxx-b.minx)/cols*(b.maxy-b.miny)/rows;
+  let total=0, rssiOk=0, sinrOk=0;
+  for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){
+    const wx=b.minx+(i+0.5)/cols*(b.maxx-b.minx), wy=b.miny+(j+0.5)/rows*(b.maxy-b.miny);
+    if(!isIndoor(wx,wy)) continue;
+    if(inAnyZone(wx,wy,f)) continue;
+    const r=bestRSSI(wx,wy,state.activeFloor,mhz);
+    if(r<=-120||r===-Infinity) continue;
+    total++;
+    if(r>=state.covThreshold) rssiOk++;
+    const s=sinrAt(wx,wy,state.activeFloor,mhz);
+    if(s>=20) sinrOk++;
+  }
+  const apCount=state.floors.reduce((n,fl)=>n+fl.aps.length,0);
+  const totalArea=total*cellArea, failArea=(total-rssiOk)*cellArea;
+  return {
+    floorId:f.id, floorName:f.name, threshold:state.covThreshold, apCount,
+    totalArea, failArea,
+    rssiPct:total?Math.round(rssiOk/total*100):0,
+    sinrPct:total?Math.round(sinrOk/total*100):0
+  };
+}
+function fmtSigned(n,suffix=''){
+  const v=Math.round(n*10)/10;
+  return (v>0?'+':'')+v.toFixed(Math.abs(v)<10&&v!==Math.round(v)?1:0)+suffix;
+}
+function renderScenarioCompare(){
+  const el=$('#scenarioCompare'); if(!el)return;
+  if(scenarioCompare){
+    const a=scenarioCompare.a, b=scenarioCompare.b;
+    el.textContent=t('compare.summary',{
+      aOk:a.rssiPct,bOk:b.rssiPct,dOk:fmtSigned(b.rssiPct-a.rssiPct,'%'),
+      aFail:a.failArea.toFixed(1),bFail:b.failArea.toFixed(1),dFail:fmtSigned(b.failArea-a.failArea,' m²'),
+      aSinr:a.sinrPct,bSinr:b.sinrPct,dSinr:fmtSigned(b.sinrPct-a.sinrPct,'%'),
+      aAp:a.apCount,bAp:b.apCount,dAp:fmtSigned(b.apCount-a.apCount)
+    });
+  } else if(scenarioA) el.textContent=t('compare.captured');
+  else el.textContent=t('compare.empty');
+}
+function captureScenarioA(){
+  scenarioA=rfScenarioMetrics(); scenarioCompare=null; renderScenarioCompare();
+}
+function compareScenarioB(){
+  if(!scenarioA){ showToast(true,uiMessage('compare.needA'),null,1800); renderScenarioCompare(); return; }
+  scenarioCompare={a:scenarioA,b:rfScenarioMetrics()}; renderScenarioCompare();
+}
+function clearScenarioCompare(){
+  scenarioA=null; scenarioCompare=null; renderScenarioCompare();
 }
 function buildHeatView(){
   const host=$('#heatViewPills'); if(!host)return; host.innerHTML='';
@@ -3519,7 +3603,7 @@ function loadProject(file){
     try{
       const s=JSON.parse(fr.result);
       if(!s.floors) throw uiError('error.invalidFile');
-      state=s; tool='select';
+      state=s; tool='select'; scenarioA=null; scenarioCompare=null;
       // migrate older projects
       if(s.covThreshold==null)s.covThreshold=-67;
       if(s.showFail==null)s.showFail=false;
@@ -3859,6 +3943,7 @@ function bootUI(){
   $('#covThr').value=state.covThreshold; $('#covThrV').textContent=state.covThreshold+' dBm';
   $('#showFail').checked=state.showFail;
   $('#indoorOnly').checked=state.indoorOnly!==false;
+  renderScenarioCompare();
   updateUndoBtns();
   draw2d();
 }
@@ -3890,6 +3975,9 @@ function wireGlobals(){
   $('#covThr').oninput=e=>{ state.covThreshold=+e.target.value; $('#covThrV').textContent=state.covThreshold+' dBm'; repaintHeat(); refreshStats(); };
   $('#showFail').onchange=e=>{ state.showFail=e.target.checked; repaintHeat(); };
   $('#indoorOnly').onchange=e=>{ state.indoorOnly=e.target.checked; _indoor=null; coverageUpdate(); refreshStats(); };
+  $('#btnScenarioA').onclick=captureScenarioA;
+  $('#btnScenarioCompare').onclick=compareScenarioB;
+  $('#btnScenarioClear').onclick=clearScenarioCompare;
   $('#btnAutoChan').onclick=autoChannelPlan;
   $('#btnAutoPlace').onclick=openAutoPlace;
   // commit (undo) for property/material/floor edits
