@@ -556,7 +556,7 @@ const translations = {
     "coverage.leaked": "⚠︎ No se pudo delimitar el interior. ¿Están completamente cerradas las paredes exteriores? Por ahora se cuenta toda la superficie.",
     "coverage.indoorHint": "La cobertura se calcula solo en el interior (deducido de las paredes).",
     "trace.progress": "Ray tracing — calculando propagación…",
-    "trace.pillarsWarning": "Ray tracing — calculando propagación… Los pilares RF no se incluyen todavía; el mapa solo considera paredes.",
+    "trace.pillarsWarning": "Ray tracing — calculando propagación… Los pilares RF se tratan como obstáculos de transmisión; sin reflexiones cilíndricas.",
     "error.lastFloor": "Se requiere al menos una planta.",
     "error.noBackground": "Añade primero un plano de fondo.",
     "error.distance": "Introduce una distancia válida en metros.",
@@ -800,7 +800,7 @@ const translations = {
     "coverage.leaked": "⚠︎ Could not determine the indoor boundary — are the outer walls fully closed? Counting the entire area for now.",
     "coverage.indoorHint": "Coverage counts only indoor areas (derived from walls).",
     "trace.progress": "Ray tracing — calculating propagation…",
-    "trace.pillarsWarning": "Ray tracing — calculating propagation… RF pillars are not included yet; this map only considers walls.",
+    "trace.pillarsWarning": "Ray tracing — calculating propagation… RF pillars are modeled as transmission obstacles; cylindrical reflections are not included.",
     "error.lastFloor": "At least one floor is required.",
     "error.noBackground": "Add a background floor plan first.",
     "error.distance": "Enter a valid distance in meters.",
@@ -1044,7 +1044,7 @@ const translations = {
     "coverage.leaked": "⚠︎ Kunde inte avgränsa inomhus — är ytterväggarna helt slutna? Räknar hela ytan tills vidare.",
     "coverage.indoorHint": "Täckning räknas bara på inomhusytan (härledd från väggarna).",
     "trace.progress": "Ray tracing — beräknar utbredning…",
-    "trace.pillarsWarning": "Ray tracing — beräknar utbredning… RF-pelare ingår inte ännu; kartan tar bara hänsyn till väggar.",
+    "trace.pillarsWarning": "Ray tracing — beräknar utbredning… RF-pelare modelleras som transmissionshinder; cylindriska reflektioner ingår inte.",
     "error.lastFloor": "Minst en våning krävs.",
     "error.noBackground": "Lägg till en bakgrundsritning först.",
     "error.distance": "Ange ett giltigt avstånd i meter.",
@@ -2596,6 +2596,38 @@ function runRayTrace(onDone){
     const t=((cx-ax)*s2-(cy-ay)*s1)/den, u=((cx-ax)*r2-(cy-ay)*r1)/den;
     return (t>=0&&t<=1&&u>=0&&u<=1)? t : -1;
   }
+  function rayZAt(ray, px,py){
+    return floorElevation(state.activeFloor)+receiverHeight();
+  }
+  function rayCircleDistanceRange(x,y,dx,dy,cx,cy,r){
+    const fx=x-cx, fy=y-cy;
+    const b=2*(fx*dx+fy*dy);
+    const c=fx*fx+fy*fy-r*r;
+    const disc=b*b-4*c;
+    if(disc<0) return null;
+    const s=Math.sqrt(Math.max(0,disc));
+    const t1=(-b-s)/2, t2=(-b+s)/2;
+    const enter=Math.max(0,Math.min(t1,t2)), exit=Math.max(t1,t2);
+    return exit>=0 ? [enter,exit] : null;
+  }
+  function pillarHitInStep(ray, ax,ay,bx,by){
+    let best=null;
+    for(const p of (state.floors[state.activeFloor].pillars||[])){
+      const range=rayCircleDistanceRange(ax,ay,ray.dx,ray.dy,p.x,p.y,(p.diameter||0.6)/2);
+      if(!range) continue;
+      const enterD=range[0], exitD=range[1];
+      if(enterD>stepM || exitD<1e-6) continue;
+      const ex=ax+ray.dx*enterD, ey=ay+ray.dy*enterD;
+      const xx=ax+ray.dx*exitD, xy=ay+ray.dy*exitD;
+      if(p.height!=null){
+        const z1=rayZAt(ray,ex,ey), z2=rayZAt(ray,xx,xy);
+        if(Math.min(z1,z2)>floorElevation(state.activeFloor)+Math.max(0,p.height)) continue;
+      }
+      const enterT=enterD/stepM;
+      if(!best || enterT<best.t) best={pillar:p,t:enterT,enterD,exitD,x:ex,y:ey,exitX:xx,exitY:xy};
+    }
+    return best;
+  }
   function marchRay(ray, walls, sameFloor, tx){
     let {x,y,dx,dy,dB,dist:dst,inter,refl}=ray; let steps=0;
     const slabAt=(px,py)=>{
@@ -2608,6 +2640,16 @@ function runRayTrace(onDone){
       const nx=x+dx*stepM, ny=y+dy*stepM;
       let hitW=null, hitT=2;
       if(sameFloor){ for(const w of walls){ const tt=segCrossT(x,y,nx,ny,w.x1,w.y1,w.x2,w.y2); if(tt>=0&&tt<hitT){hitT=tt;hitW=w;} } }
+      const hitP=pillarHitInStep(ray,x,y,nx,ny);
+      if(hitP && (!hitW || hitP.t<hitT)){
+        const entryDist=dst+hitP.enterD;
+        depositCell(hitP.x,hitP.y, tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,entryDist))+dB+slabAt(hitP.x,hitP.y)));
+        dB+=matById(hitP.pillar.materialId).db; inter++;
+        dst+=hitP.exitD;
+        x=hitP.exitX+dx*1e-3; y=hitP.exitY+dy*1e-3;
+        dst+=1e-3; steps++;
+        continue;
+      }
       if(hitW){
         const hx=x+(nx-x)*hitT, hy=y+(ny-y)*hitT;
         dst+=Math.hypot(hx-x,hy-y);
