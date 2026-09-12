@@ -421,6 +421,9 @@ const translations = {
     "ap.bands": "Bandas de frecuencia (selección múltiple)",
     "ap.power": "Potencia de transmisión",
     "ap.mount": "Altura de montaje",
+    "ap.mountType": "Tipo de montaje",
+    "ap.mountCeiling": "Techo",
+    "ap.mountWall": "Pared",
     "ap.antenna": "Tipo de antena",
     "antenna.omni": "Omnidireccional",
     "antenna.sector": "Sector",
@@ -651,6 +654,9 @@ const translations = {
     "ap.bands": "Frequency bands (multiple selection)",
     "ap.power": "Transmit power",
     "ap.mount": "Mounting height",
+    "ap.mountType": "Mount type",
+    "ap.mountCeiling": "Ceiling",
+    "ap.mountWall": "Wall",
     "ap.antenna": "Antenna type",
     "antenna.omni": "Omnidirectional",
     "antenna.sector": "Sector",
@@ -881,6 +887,9 @@ const translations = {
     "ap.bands": "Frekvensband (flerval)",
     "ap.power": "Sändareffekt",
     "ap.mount": "Monteringshöjd",
+    "ap.mountType": "Monteringstyp",
+    "ap.mountCeiling": "Tak",
+    "ap.mountWall": "Vägg",
     "ap.antenna": "Antenntyp",
     "antenna.omni": "Rundstrålande",
     "antenna.sector": "Sektor",
@@ -1212,7 +1221,7 @@ function freshState(){
 }
 function defaultChannels(){ return {'2.4':1,'5':36,'6':37}; }
 function makeAP(x,y,name){
-  return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:2.6,
+  return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:2.6, mountType:'ceiling',
           manufacturer:'', model:'',
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
@@ -1444,8 +1453,9 @@ function draw2d(){
     const p=W2S(ap.x,ap.y);
     const sel = selection&&selection.type==='ap'&&selection.id===ap.id;
     const ant=ap.antenna||{type:'omni'};
-    if(ant.type!=='omni'){
-      const bw=(ant.type==='sector'?120:65)*Math.PI/180;
+    const wallMount=apMountType(ap)==='wall';
+    if(ant.type!=='omni'||wallMount){
+      const bw=(ant.type==='sector'?120:(ant.type==='patch'?65:180))*Math.PI/180;
       const a0=(ant.az||0)*Math.PI/180, R=46;
       ctx.fillStyle=sel?'rgba(122,162,255,.18)':'rgba(52,214,196,.16)';
       ctx.strokeStyle=sel?'rgba(122,162,255,.5)':'rgba(52,214,196,.45)';ctx.lineWidth=1.2;
@@ -2139,23 +2149,29 @@ function segmentCircleIntersectionRange(ax,ay,bx,by,cx,cy,r){
 
 // ---------- antenna pattern ----------
 function angDiff(a,b){ return ((a-b)%360+540)%360-180; }
+function apMountType(ap){ return ap.mountType==='wall' ? 'wall' : 'ceiling'; }
 function antennaAzGain(ap, angDeg){
   const a=ap.antenna||{type:'omni',az:0,gain:3};
-  if(a.type==='omni') return a.gain||0;
-  const bw = a.type==='sector'?120:65;
+  if(a.type==='omni' && apMountType(ap)!=='wall') return a.gain||0;
+  const bw = a.type==='sector'?120:(a.type==='patch'?65:180);
   const off=Math.abs(angDiff(angDeg, a.az||0));
-  return (a.gain||0) - Math.min(12*Math.pow(off/(bw/2),2), 28);
+  const cap = a.type==='omni' ? 12 : 28;
+  const scale = a.type==='omni' ? 9 : 12;
+  return (a.gain||0) - Math.min(scale*Math.pow(off/(bw/2),2), cap);
 }
 function antennaGain(ap, px,py, apz,evz){
   const a=ap.antenna||{type:'omni',az:0,tilt:0,gain:3};
-  if(a.type==='omni') return a.gain||0;
+  const mountType=apMountType(ap);
+  if(a.type==='omni' && mountType==='ceiling') return a.gain||0;
   const angDeg=Math.atan2(py-ap.y, px-ap.x)*180/Math.PI;
   let g=antennaAzGain(ap, angDeg);
   const horiz=Math.max(0.1, dist(ap.x,ap.y,px,py));
   const elTo=Math.atan2(evz-apz, horiz)*180/Math.PI;   // deg (negative = below AP)
-  const elBw=a.type==='patch'?40:34;
+  const elBw=mountType==='wall' ? (a.type==='patch'?65:(a.type==='sector'?75:90)) : (a.type==='patch'?40:34);
   const elOff=Math.abs(elTo - (-(a.tilt||0)));         // downtilt aims beam downward
-  g -= Math.min(12*Math.pow(elOff/(elBw/2),2), 20);
+  const elCap=mountType==='wall' && a.type==='omni' ? 10 : 20;
+  const elScale=mountType==='wall' && a.type==='omni' ? 8 : 12;
+  g -= Math.min(elScale*Math.pow(elOff/(elBw/2),2), elCap);
   return g;
 }
 
@@ -2812,6 +2828,8 @@ function renderProp(){
   if(selection.type==='ap'){
     const ap=f.aps.find(a=>a.id===selection.id); if(!ap){select(null);return;}
     setUiText(title,'tool.ap');
+    const mountType=apMountType(ap);
+    const showDirection=mountType==='wall'||ap.antenna.type!=='omni';
     body.innerHTML=`
       <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
       <div class="row2"><div class="field"><label data-i18n="ap.manufacturer">Tillverkare</label><input id="pManufacturer" type="text" value="${escapeHtml(ap.manufacturer||'')}"></div>
@@ -2825,10 +2843,14 @@ function renderProp(){
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
       <div class="field"><label data-i18n="ap.mount">Monteringshöjd</label>
         <div class="slider"><input id="pMt" type="range" min="0.5" max="${f.height.toFixed(1)}" step="0.1" value="${ap.mount||2.6}"><span class="val" id="pMtV">${(ap.mount||2.6).toFixed(1)} m</span></div></div>
+      <div class="field"><label data-i18n="ap.mountType">Monteringstyp</label><select id="pMountType">
+        <option value="ceiling" ${mountType==='ceiling'?'selected':''} data-i18n="ap.mountCeiling">${t('ap.mountCeiling')}</option>
+        <option value="wall" ${mountType==='wall'?'selected':''} data-i18n="ap.mountWall">${t('ap.mountWall')}</option>
+      </select></div>
       <div class="field"><label data-i18n="ap.antenna">Antenntyp</label><select id="pAnt">
         ${[['omni','antenna.omni'],['sector','antenna.sector'],['patch','antenna.patch']].map(([k,l])=>`<option value="${k}" ${ap.antenna.type===k?'selected':''} data-i18n="${l}">${t(l)}</option>`).join('')}
       </select></div>
-      <div id="pAntDir" style="${ap.antenna.type==='omni'?'display:none':''}">
+      <div id="pAntDir" style="${showDirection?'':'display:none'}">
         <div class="field"><label data-i18n="ap.azimuth">Azimut (riktning)</label>
           <div class="slider"><input id="pAz" type="range" min="0" max="359" step="1" value="${ap.antenna.az||0}"><span class="val" id="pAzV">${ap.antenna.az||0}°</span></div></div>
         <div class="field"><label data-i18n="ap.tilt">Nedtilt</label>
@@ -2856,6 +2878,7 @@ function renderProp(){
     });
     $('#pTx').oninput=e=>{ap.txPower=+e.target.value;$('#pTxV').textContent=ap.txPower+' dBm';scheduleHeat();draw2d();};
     $('#pMt').oninput=e=>{ap.mount=+e.target.value;$('#pMtV').textContent=(+e.target.value).toFixed(1)+' m';scheduleHeat();if(view==='3d')build3d();};
+    $('#pMountType').onchange=e=>{commit();ap.mountType=e.target.value==='wall'?'wall':'ceiling';scheduleHeat();draw2d();renderProp();};
     $('#pAnt').onchange=e=>{ap.antenna.type=e.target.value;scheduleHeat();draw2d();renderProp();};
     $('#pAz').oninput=e=>{ap.antenna.az=+e.target.value;$('#pAzV').textContent=e.target.value+'°';scheduleHeat();draw2d();};
     $('#pTilt').oninput=e=>{ap.antenna.tilt=+e.target.value;$('#pTiltV').textContent=e.target.value+'°';scheduleHeat();};
@@ -3457,7 +3480,7 @@ function commitThrottled(){ const t=performance.now(); if(t-_commitThrottle<450)
 function restoreState(json){
   state=JSON.parse(json);
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; _indoor=null;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
@@ -3492,8 +3515,8 @@ function loadProject(file){
       if(s.noiseFloor==null)s.noiseFloor=-95;
       if(s.indoorOnly==null)s.indoorOnly=true;
       _indoor=null;
-      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
-        f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.channels)a.channels=defaultChannels(); }); });
+      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
+        f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.mountType)a.mountType='ceiling'; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
       bootUI(); scheduleHeat();
@@ -3695,7 +3718,7 @@ function exportGLTF(){
     plExp:state.plExp, slabDb:state.slabDb,
     materials:state.materials.map(m=>({name:m.name,attenuation_dB:m.db})),
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
-      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),bands:a.bands,txPower_dBm:a.txPower})),
+      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),mountType:apMountType(a),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
       pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,height:p.height,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
       openings:(f.openings||[]).map(o=>({name:o.name,points:o.points})) })) };
