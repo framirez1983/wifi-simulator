@@ -432,6 +432,9 @@ const translations = {
     "wall.lengthMeters": "Longitud (m)",
     "wall.angleDegrees": "Ángulo (°)",
     "wall.angleHint": "0° apunta hacia +X; los ángulos positivos giran hacia +Y.",
+    "wall.heightMode": "Altura RF",
+    "wall.fullHeight": "Altura completa",
+    "wall.heightMeters": "Altura (m)",
     "wall.snapTitle": "Ajuste de paredes",
     "wall.snapMaster": "Activar ajustes",
     "wall.endpointSnap": "Ajuste a extremos",
@@ -650,6 +653,9 @@ const translations = {
     "wall.lengthMeters": "Length (m)",
     "wall.angleDegrees": "Angle (°)",
     "wall.angleHint": "0° points toward +X; positive angles rotate toward +Y.",
+    "wall.heightMode": "RF height",
+    "wall.fullHeight": "Full height",
+    "wall.heightMeters": "Height (m)",
     "wall.snapTitle": "Wall snapping",
     "wall.snapMaster": "Enable snapping",
     "wall.endpointSnap": "Endpoint snapping",
@@ -868,6 +874,9 @@ const translations = {
     "wall.lengthMeters": "Längd (m)",
     "wall.angleDegrees": "Vinkel (°)",
     "wall.angleHint": "0° pekar mot +X; positiva vinklar roterar mot +Y.",
+    "wall.heightMode": "RF-höjd",
+    "wall.fullHeight": "Full höjd",
+    "wall.heightMeters": "Höjd (m)",
     "wall.snapTitle": "Väggsnäppning",
     "wall.snapMaster": "Aktivera snäppning",
     "wall.endpointSnap": "Snäpp till ändpunkter",
@@ -1955,10 +1964,16 @@ function fsplAt1m(mhz){ return 20*Math.log10(mhz) - 27.55; } // dB at 1 m
 function floorElevation(idx){ let e=0; for(let i=0;i<idx;i++) e+=state.floors[i].height; return e; }
 
 // number of wall crossings of segment a-b on floor f, summed attenuation
-function wallLossOnFloor(f, ax,ay,bx,by){
+function wallLossOnFloor(f, ax,ay,bx,by, az=null,bz=null, floorIdx=null){
   let loss=0;
   for(const w of f.walls){
-    if(segIntersect(ax,ay,bx,by, w.x1,w.y1,w.x2,w.y2)) loss += matById(w.materialId).db;
+    const t=segIntersectT(ax,ay,bx,by, w.x1,w.y1,w.x2,w.y2);
+    if(t<0) continue;
+    if(w.height!=null && az!=null && bz!=null && floorIdx!=null){
+      const z=az+(bz-az)*t;
+      if(z>floorElevation(floorIdx)+Math.max(0,w.height)) continue;
+    }
+    loss += matById(w.materialId).db;
   }
   return loss;
 }
@@ -1970,11 +1985,14 @@ function pillarLossOnFloor(f, ax,ay,bx,by){
   return loss;
 }
 function segIntersect(ax,ay,bx,by,cx,cy,dx,dy){
+  return segIntersectT(ax,ay,bx,by,cx,cy,dx,dy)>=0;
+}
+function segIntersectT(ax,ay,bx,by,cx,cy,dx,dy){
   const d=(bx-ax)*(dy-cy)-(by-ay)*(dx-cx);
-  if(Math.abs(d)<1e-9)return false;
+  if(Math.abs(d)<1e-9)return -1;
   const t=((cx-ax)*(dy-cy)-(cy-ay)*(dx-cx))/d;
   const u=((cx-ax)*(by-ay)-(cy-ay)*(bx-ax))/d;
-  return t>=0&&t<=1&&u>=0&&u<=1;
+  return (t>=0&&t<=1&&u>=0&&u<=1)?t:-1;
 }
 function segmentIntersectsCircle(ax,ay,bx,by,cx,cy,r){
   const dx=bx-ax, dy=by-ay;
@@ -2015,10 +2033,10 @@ function rssiFromAP(ap, af, px,py, tf, mhz){
   const dz = Math.abs(apz-evz);
   const d3 = Math.max(0.5, Math.hypot(dh,dz));
   let pl = fsplAt1m(mhz) + 10*state.plExp*Math.log10(d3);
-  pl += wallLossOnFloor(state.floors[af], ap.x,ap.y, px,py);
+  pl += wallLossOnFloor(state.floors[af], ap.x,ap.y, px,py, apz,evz, af);
   pl += pillarLossOnFloor(state.floors[af], ap.x,ap.y, px,py);
   if(tf!==af){
-    pl += wallLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
+    pl += wallLossOnFloor(state.floors[tf], ap.x,ap.y, px,py, apz,evz, tf)*0.5;
     pl += pillarLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
   }
   pl += Math.abs(tf-af)*state.slabDb;
@@ -2410,7 +2428,7 @@ function build3d(){
     f.walls.forEach(w=>{
       const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
       const m=matById(w.materialId);
-      const h=Math.max(0.5,f.height-0.2);
+      const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
       const geo=new THREE.BoxGeometry(len,h,0.12);
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
         transparent:true,opacity:(0.78)*dim+0.18,roughness:.8,metalness:m.db>20?0.5:0.05});
@@ -2790,6 +2808,10 @@ function renderProp(){
       </select></div>
       <div class="row2"><div class="field"><label>${t('wall.lengthMeters')}</label><input id="pWallLen" type="number" step="0.01" min="0.01" value="${len.toFixed(2)}"></div>
         <div class="field"><label>${t('wall.angleDegrees')}</label><input id="pWallAng" type="number" step="0.1" value="${angle.toFixed(1)}"></div></div>
+      <div class="field"><label>${t('wall.heightMode')}</label>
+        <label><input type="checkbox" id="pWallFullHeight" ${w.height==null?'checked':''}> ${t('wall.fullHeight')}</label></div>
+      <div class="field" id="pWallHeightField" style="${w.height==null?'display:none':''}"><label>${t('wall.heightMeters')}</label>
+        <input id="pWallHeight" type="number" step="0.1" min="0" value="${(w.height==null?f.height:w.height).toFixed(2)}"></div>
       <div class="hint">${t('wall.angleHint')}</div>
       <div class="stat"><span>${t('wall.attenuation')}</span><b>${matById(w.materialId).db} dB</b></div>
       <button class="tbtn" id="pStraighten" style="width:100%;justify-content:center;margin:8px 0">${t('wall.straighten')}</button>
@@ -2805,6 +2827,18 @@ function renderProp(){
       const v=parseFloat(e.target.value);
       if(!Number.isFinite(v)){ e.target.value=normAngleDeg(wallAngleDeg(w)).toFixed(1); showToast(true,t('wall.invalidAngle'),null,1600); return; }
       commit(); setWallFromLengthAngle(w,wallLen(w),v); geometryChanged(); renderProp();
+    };
+    $('#pWallFullHeight').onchange=e=>{
+      commit();
+      if(e.target.checked) delete w.height;
+      else w.height=Math.min(f.height,1.2);
+      geometryChanged(); renderProp();
+    };
+    const wallHeightInput=$('#pWallHeight');
+    if(wallHeightInput) wallHeightInput.onchange=e=>{
+      const v=parseFloat(e.target.value);
+      if(!Number.isFinite(v)||v<0){ e.target.value=(w.height||0).toFixed(2); return; }
+      commit(); w.height=v; geometryChanged(); renderProp();
     };
     $('#pStraighten').onclick=()=>{
       const a=normAngleDeg(wallAngleDeg(w));
@@ -3456,7 +3490,7 @@ function exportGLTF(){
     const elev=floorElevation(idx);
     f.walls.forEach(w=>{
       const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
-      const m=matById(w.materialId); const h=Math.max(0.5,f.height-0.2);
+      const m=matById(w.materialId); const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
       const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
       const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
       builder.addBox(len,h,0.12, mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
@@ -3477,7 +3511,7 @@ function exportGLTF(){
     materials:state.materials.map(m=>({name:m.name,attenuation_dB:m.db})),
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
       aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),bands:a.bands,txPower_dBm:a.txPower})),
-      walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
+      walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
       pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})) })) };
   download(new Blob([JSON.stringify(meta,null,2)],{type:'application/json'}),'rf-scen-metadata.json');
   showToast(true,uiMessage('export.sceneDone'),null,2200);
