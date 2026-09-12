@@ -456,6 +456,9 @@ const translations = {
     "pillar.title": "Pilar RF",
     "pillar.diameter": "Diámetro (m)",
     "pillar.material": "Material",
+    "pillar.heightMode": "Altura RF",
+    "pillar.fullHeight": "Altura completa",
+    "pillar.heightMeters": "Altura (m)",
     "pillar.attenuation": "Atenuación",
     "pillar.remove": "Eliminar pilar",
     "label.title": "Etiqueta",
@@ -683,6 +686,9 @@ const translations = {
     "pillar.title": "RF pillar",
     "pillar.diameter": "Diameter (m)",
     "pillar.material": "Material",
+    "pillar.heightMode": "RF height",
+    "pillar.fullHeight": "Full height",
+    "pillar.heightMeters": "Height (m)",
     "pillar.attenuation": "Attenuation",
     "pillar.remove": "Remove pillar",
     "label.title": "Label",
@@ -910,6 +916,9 @@ const translations = {
     "pillar.title": "RF-pelare",
     "pillar.diameter": "Diameter (m)",
     "pillar.material": "Material",
+    "pillar.heightMode": "RF-höjd",
+    "pillar.fullHeight": "Full höjd",
+    "pillar.heightMeters": "Höjd (m)",
     "pillar.attenuation": "Dämpning",
     "pillar.remove": "Ta bort pelare",
     "label.title": "Etikett",
@@ -2083,10 +2092,16 @@ function wallLossOnFloor(f, ax,ay,bx,by, az=null,bz=null, floorIdx=null){
   }
   return loss;
 }
-function pillarLossOnFloor(f, ax,ay,bx,by){
+function pillarLossOnFloor(f, ax,ay,bx,by, az=null,bz=null, floorIdx=null){
   let loss=0;
   for(const p of (f.pillars||[])){
-    if(segmentIntersectsCircle(ax,ay,bx,by, p.x,p.y,(p.diameter||0.6)/2)) loss += matById(p.materialId).db;
+    const range=segmentCircleIntersectionRange(ax,ay,bx,by, p.x,p.y,(p.diameter||0.6)/2);
+    if(!range) continue;
+    if(p.height!=null && az!=null && bz!=null && floorIdx!=null){
+      const z1=az+(bz-az)*range[0], z2=az+(bz-az)*range[1];
+      if(Math.min(z1,z2)>floorElevation(floorIdx)+Math.max(0,p.height)) continue;
+    }
+    loss += matById(p.materialId).db;
   }
   return loss;
 }
@@ -2101,12 +2116,25 @@ function segIntersectT(ax,ay,bx,by,cx,cy,dx,dy){
   return (t>=0&&t<=1&&u>=0&&u<=1)?t:-1;
 }
 function segmentIntersectsCircle(ax,ay,bx,by,cx,cy,r){
+  return segmentCircleIntersectionT(ax,ay,bx,by,cx,cy,r)>=0;
+}
+function segmentCircleIntersectionT(ax,ay,bx,by,cx,cy,r){
+  const range=segmentCircleIntersectionRange(ax,ay,bx,by,cx,cy,r);
+  return range ? range[0] : -1;
+}
+function segmentCircleIntersectionRange(ax,ay,bx,by,cx,cy,r){
   const dx=bx-ax, dy=by-ay;
   const l2=dx*dx+dy*dy;
-  if(l2<1e-12) return dist(ax,ay,cx,cy)<=r;
-  const t=clamp(((cx-ax)*dx+(cy-ay)*dy)/l2,0,1);
-  const px=ax+t*dx, py=ay+t*dy;
-  return dist(px,py,cx,cy)<=r;
+  if(l2<1e-12) return dist(ax,ay,cx,cy)<=r ? [0,0] : null;
+  const fx=ax-cx, fy=ay-cy;
+  const b=2*(fx*dx+fy*dy);
+  const c=fx*fx+fy*fy-r*r;
+  const disc=b*b-4*l2*c;
+  if(disc<0) return null;
+  const s=Math.sqrt(Math.max(0,disc));
+  const t1=(-b-s)/(2*l2), t2=(-b+s)/(2*l2);
+  const lo=Math.max(0,Math.min(t1,t2)), hi=Math.min(1,Math.max(t1,t2));
+  return lo<=hi ? [lo,hi] : null;
 }
 
 // ---------- antenna pattern ----------
@@ -2140,10 +2168,10 @@ function rssiFromAP(ap, af, px,py, tf, mhz){
   const d3 = Math.max(0.5, Math.hypot(dh,dz));
   let pl = fsplAt1m(mhz) + 10*state.plExp*Math.log10(d3);
   pl += wallLossOnFloor(state.floors[af], ap.x,ap.y, px,py, apz,evz, af);
-  pl += pillarLossOnFloor(state.floors[af], ap.x,ap.y, px,py);
+  pl += pillarLossOnFloor(state.floors[af], ap.x,ap.y, px,py, apz,evz, af);
   if(tf!==af){
     pl += wallLossOnFloor(state.floors[tf], ap.x,ap.y, px,py, apz,evz, tf)*0.5;
-    pl += pillarLossOnFloor(state.floors[tf], ap.x,ap.y, px,py)*0.5;
+    pl += pillarLossOnFloor(state.floors[tf], ap.x,ap.y, px,py, apz,evz, tf)*0.5;
   }
   pl += slabLossBetweenPoints(ap.x,ap.y,apz,af,px,py,evz,tf);
   return ap.txPower + antennaGain(ap,px,py,apz,evz) - pl; // dBm
@@ -2553,7 +2581,7 @@ function build3d(){
     // RF pillars
     (f.pillars||[]).forEach(p=>{
       const m=matById(p.materialId);
-      const h=Math.max(0.5,f.height-0.2);
+      const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
       const r=Math.max(0.03,(p.diameter||0.6)/2);
       const geo=new THREE.CylinderGeometry(r,r,h,32);
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
@@ -2909,16 +2937,31 @@ function renderProp(){
         ${state.materials.map(m=>`<option value="${m.id}" ${p.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
       <div class="field"><label>${t('pillar.diameter')}</label><input id="pPillarDia" type="number" step="0.05" min="0.05" value="${(p.diameter||0.6).toFixed(2)}"></div>
+      <div class="field"><label>${t('pillar.heightMode')}</label>
+        <label><input type="checkbox" id="pPillarFullHeight" ${p.height==null?'checked':''}> ${t('pillar.fullHeight')}</label></div>
+      <div class="field" id="pPillarHeightField" style="${p.height==null?'display:none':''}"><label>${t('pillar.heightMeters')}</label>
+        <input id="pPillarHeight" type="number" step="0.1" min="0" value="${(p.height==null?f.height:p.height).toFixed(2)}"></div>
       <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${p.x.toFixed(2)}"></div>
         <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${p.y.toFixed(2)}"></div></div>
       <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(p.materialId).db} dB</b></div>
       <button class="delbtn" id="pDel">${t('pillar.remove')}</button>`;
-    $('#pMat').onchange=e=>{p.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
+    $('#pMat').onchange=e=>{commit();p.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
     $('#pPillarDia').onchange=e=>{ const v=parseFloat(e.target.value);
       if(!(v>0)){ e.target.value=(p.diameter||0.6).toFixed(2); return; }
-      p.diameter=v; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
-    $('#pX').onchange=e=>{p.x=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
-    $('#pY').onchange=e=>{p.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
+      commit(); p.diameter=v; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
+    $('#pPillarFullHeight').onchange=e=>{
+      commit();
+      if(e.target.checked) delete p.height;
+      else p.height=Math.min(f.height,1.2);
+      scheduleHeat(); draw2d(); if(view==='3d')build3d(); renderProp();
+    };
+    $('#pPillarHeight').onchange=e=>{
+      const v=parseFloat(e.target.value);
+      if(!Number.isFinite(v)||v<0){ e.target.value=(p.height||0).toFixed(2); return; }
+      commit(); p.height=v; scheduleHeat(); draw2d(); if(view==='3d')build3d(); renderProp();
+    };
+    $('#pX').onchange=e=>{commit();p.x=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
+    $('#pY').onchange=e=>{commit();p.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='wall'){
@@ -3638,7 +3681,7 @@ function exportGLTF(){
       builder.addBox(len,h,0.12, mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
     });
     (f.pillars||[]).forEach(p=>{
-      const m=matById(p.materialId); const h=Math.max(0.5,f.height-0.2);
+      const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
       builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color), 'pillar_'+m.name);
     });
     f.aps.forEach(ap=>{
@@ -3654,7 +3697,7 @@ function exportGLTF(){
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
       aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
-      pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
+      pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,height:p.height,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
       openings:(f.openings||[]).map(o=>({name:o.name,points:o.points})) })) };
   download(new Blob([JSON.stringify(meta,null,2)],{type:'application/json'}),'rf-scen-metadata.json');
   showToast(true,uiMessage('export.sceneDone'),null,2200);
