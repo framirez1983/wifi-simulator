@@ -444,6 +444,8 @@ const translations = {
     "ap.mountType": "Tipo de montaje",
     "ap.mountCeiling": "Techo",
     "ap.mountWall": "Pared",
+    "ap.rfEnabled": "Incluir en RF",
+    "ap.rfSolo": "Solo temporal",
     "ap.antenna": "Tipo de antena",
     "antenna.omni": "Omnidireccional",
     "antenna.sector": "Sector",
@@ -686,6 +688,8 @@ const translations = {
     "ap.mountType": "Mount type",
     "ap.mountCeiling": "Ceiling",
     "ap.mountWall": "Wall",
+    "ap.rfEnabled": "Include in RF",
+    "ap.rfSolo": "Temporary solo",
     "ap.antenna": "Antenna type",
     "antenna.omni": "Omnidirectional",
     "antenna.sector": "Sector",
@@ -928,6 +932,8 @@ const translations = {
     "ap.mountType": "Monteringstyp",
     "ap.mountCeiling": "Tak",
     "ap.mountWall": "Vägg",
+    "ap.rfEnabled": "Inkludera i RF",
+    "ap.rfSolo": "Tillfälligt solo",
     "ap.antenna": "Antenntyp",
     "antenna.omni": "Rundstrålande",
     "antenna.sector": "Sektor",
@@ -1264,6 +1270,7 @@ function freshState(){
 function defaultChannels(){ return {'2.4':1,'5':36,'6':37}; }
 function makeAP(x,y,name){
   return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:2.6, mountType:'ceiling',
+          rfEnabled:true,
           manufacturer:'', model:'',
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
 }
@@ -1277,6 +1284,7 @@ let calibState=null;    // {p1,p2,awaitDist} during background-image scale calib
 let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} during auto wall detection
 let cableDraft=null;    // {rackId} while creating a cable route
 let openingDraft=null;  // [{x,y}, ...] while drawing a slab opening polygon
+let soloApId=null;      // temporary editor-only RF solo mode
 
 // ---------- TOOLS palette ----------
 const TOOLS = [
@@ -1508,8 +1516,12 @@ function draw2d(){
       for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(p.x,p.y,5+i*6,-Math.PI*0.85,-Math.PI*0.15);ctx.stroke();}
     }
     ctx.beginPath();ctx.arc(p.x,p.y,7,0,7);
-    ctx.fillStyle=sel?'#7aa2ff':'#34d6c4';ctx.fill();
+    ctx.fillStyle=!apRfEnabled(ap)?'#6b7280':(soloApId===ap.id?'#f4a83a':(sel?'#7aa2ff':'#34d6c4'));ctx.fill();
     ctx.lineWidth=2;ctx.strokeStyle='#04201d';ctx.stroke();
+    if(!apRfEnabled(ap)){
+      ctx.strokeStyle='#0b0f15';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(p.x-5,p.y-5);ctx.lineTo(p.x+5,p.y+5);ctx.moveTo(p.x+5,p.y-5);ctx.lineTo(p.x-5,p.y+5);ctx.stroke();
+    }
     ctx.fillStyle=sel?'#7aa2ff':'#bfeee8';ctx.font='600 11px '+'sans-serif';
     ctx.fillText(ap.name, p.x+12, p.y-8);
     ctx.fillStyle='#7d8a9c';ctx.font='10px monospace';
@@ -2094,17 +2106,88 @@ function insideBg(wx,wy){
   return wx>=b.x && wy>=b.y && wx<=b.x+b.w*b.scale && wy<=b.y+b.h*b.scale;
 }
 
+let nudgeGestureActive=false, nudgeGestureTimer=null;
+function isEditingTarget(el){
+  if(!el) return false;
+  const tag=(el.tagName||'').toUpperCase();
+  return tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA'||el.isContentEditable;
+}
+function beginNudgeGesture(){
+  if(!nudgeGestureActive){ commit(); nudgeGestureActive=true; }
+  clearTimeout(nudgeGestureTimer);
+  nudgeGestureTimer=setTimeout(()=>{ nudgeGestureActive=false; }, 350);
+}
+function endNudgeGesture(){
+  nudgeGestureActive=false; clearTimeout(nudgeGestureTimer); nudgeGestureTimer=null;
+}
+function moveBy(obj,dx,dy){ obj.x=Math.round((obj.x+dx)*1000)/1000; obj.y=Math.round((obj.y+dy)*1000)/1000; }
+function nudgeSelection(dx,dy){
+  if(!selection) return false;
+  const f=floor(); let rf=false, threeD=false, coverageOnly=false, moved=false;
+  if(selection.type==='ap'){
+    const ap=f.aps.find(a=>a.id===selection.id); if(!ap)return false;
+    beginNudgeGesture();
+    moveBy(ap,dx,dy); rf=true; threeD=true; moved=true;
+  } else if(selection.type==='pillar'){
+    const p=(f.pillars||[]).find(x=>x.id===selection.id); if(!p)return false;
+    beginNudgeGesture();
+    moveBy(p,dx,dy); rf=true; threeD=true; moved=true;
+  } else if(selection.type==='rack'){
+    const r=(f.racks||[]).find(x=>x.id===selection.id); if(!r)return false;
+    beginNudgeGesture();
+    moveBy(r,dx,dy); moved=true;
+  } else if(selection.type==='label'){
+    const l=(f.labels||[]).find(x=>x.id===selection.id); if(!l)return false;
+    beginNudgeGesture();
+    moveBy(l,dx,dy); moved=true;
+  } else if(selection.type==='opening'){
+    const op=(f.openings||[]).find(x=>x.id===selection.id); if(!op)return false;
+    beginNudgeGesture();
+    op.points.forEach(p=>moveBy(p,dx,dy)); rf=true; moved=true;
+  } else if(selection.type==='wall'){
+    const w=f.walls.find(x=>x.id===selection.id); if(!w)return false;
+    beginNudgeGesture();
+    w.x1=Math.round((w.x1+dx)*1000)/1000; w.y1=Math.round((w.y1+dy)*1000)/1000;
+    w.x2=Math.round((w.x2+dx)*1000)/1000; w.y2=Math.round((w.y2+dy)*1000)/1000;
+    rf=true; threeD=true; moved=true;
+  } else if(selection.type==='walls'){
+    const ids=new Set(multiWalls); const walls=f.walls.filter(w=>ids.has(w.id)); if(!walls.length)return false;
+    beginNudgeGesture();
+    walls.forEach(w=>{ w.x1=Math.round((w.x1+dx)*1000)/1000; w.y1=Math.round((w.y1+dy)*1000)/1000; w.x2=Math.round((w.x2+dx)*1000)/1000; w.y2=Math.round((w.y2+dy)*1000)/1000; });
+    rf=true; threeD=true; moved=true;
+  } else if(selection.type==='zone'){
+    const z=(f.zones||[]).find(x=>x.id===selection.id); if(!z)return false;
+    beginNudgeGesture();
+    z.x1=Math.round((z.x1+dx)*1000)/1000; z.y1=Math.round((z.y1+dy)*1000)/1000;
+    z.x2=Math.round((z.x2+dx)*1000)/1000; z.y2=Math.round((z.y2+dy)*1000)/1000;
+    coverageOnly=true; moved=true;
+  }
+  if(!moved) return false;
+  if(rf) scheduleHeat();
+  else if(coverageOnly){ coverageUpdate(); refreshStats(); }
+  draw2d(); renderProp(); if(threeD&&view==='3d')build3d();
+  return true;
+}
+
 window.addEventListener('keydown',e=>{
   const mod=e.ctrlKey||e.metaKey;
   if(mod && e.key.toLowerCase()==='z'){ e.preventDefault(); if(e.shiftKey)redo(); else undo(); return; }
   if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
-  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(isEditingTarget(e.target))return;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){
+    const step=mod?0.01:(e.shiftKey?0.25:0.05);
+    const dx=e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
+    const dy=e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
+    if(selection && nudgeSelection(dx,dy)){ e.preventDefault(); beginNudgeGesture(); return; }
+  }
   if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; openingDraft=null; measureLine=null; select(null); draw2d(); }
   if(e.key==='Enter'&&tool==='opening'&&openingDraft){ e.preventDefault(); finishOpeningDraft(); draw2d(); return; }
   const map={m:'select',v:'wall',p:'pillar',a:'ap',t:'label',i:'rack',c:'cable',o:'opening',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
 });
+window.addEventListener('keyup',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) endNudgeGesture(); });
+window.addEventListener('blur',endNudgeGesture);
 
 // ============================================================
 //  RF MODEL  (simple log-distance + walls + inter-floor)
@@ -2113,6 +2196,10 @@ function fsplAt1m(mhz){ return 20*Math.log10(mhz) - 27.55; } // dB at 1 m
 
 function floorElevation(idx){ let e=0; for(let i=0;i<idx;i++) e+=state.floors[i].height; return e; }
 function receiverHeight(){ return Number.isFinite(state.receiverHeight) ? Math.max(0,state.receiverHeight) : 1.2; }
+function apRfEnabled(ap){ return ap.rfEnabled!==false; }
+function soloApActive(){ return !!soloApId && state.floors.some(f=>f.aps.some(ap=>ap.id===soloApId)); }
+function apParticipatesInRf(ap){ return apRfEnabled(ap) && (!soloApActive() || ap.id===soloApId); }
+function activeRfApCount(){ return state.floors.reduce((n,f)=>n+f.aps.filter(apParticipatesInRf).length,0); }
 function pointInOpening(f,x,y){
   return (f.openings||[]).some(o=>pointInPolygon(x,y,o.points)||pointOnPolygonEdge(x,y,o.points,1e-9));
 }
@@ -2241,6 +2328,7 @@ function bestRSSI(px,py, tf, mhz){
   let best=-Infinity;
   for(let af=0; af<state.floors.length; af++){
     for(const ap of state.floors[af].aps){
+      if(!apParticipatesInRf(ap)) continue;
       if(!ap.bands.includes(state.band)) continue;
       const r=rssiFromAP(ap,af,px,py,tf,mhz);
       if(r>best)best=r;
@@ -2253,6 +2341,7 @@ function cellField(px,py, tf, mhz){
   let best=-Infinity, bestI=-1; const arr=[];
   for(let af=0; af<state.floors.length; af++){
     for(const ap of state.floors[af].aps){
+      if(!apParticipatesInRf(ap)) continue;
       if(!ap.bands.includes(state.band)) continue;
       const r=rssiFromAP(ap,af,px,py,tf,mhz);
       const ch=(ap.channels&&ap.channels[state.band])||0;
@@ -2427,7 +2516,7 @@ function rfScenarioMetrics(){
     const s=sinrAt(wx,wy,state.activeFloor,mhz);
     if(s>=20) sinrOk++;
   }
-  const apCount=state.floors.reduce((n,fl)=>n+fl.aps.length,0);
+  const apCount=activeRfApCount();
   const totalArea=total*cellArea, failArea=(total-rssiOk)*cellArea;
   return {
     floorId:f.id, floorName:f.name, threshold:state.covThreshold, apCount,
@@ -2492,7 +2581,7 @@ function runRayTrace(onDone){
   const mhz=BANDS[state.band].mhz, pl1=fsplAt1m(mhz);
   const best=new Float32Array(cols*rows).fill(-Infinity);
   const aps=[];
-  state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(ap.bands.includes(state.band)) aps.push({ap,af}); }));
+  state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(apParticipatesInRf(ap)&&ap.bands.includes(state.band)) aps.push({ap,af}); }));
   const RAYS=600, MAXINTER=9, MAXREFL=2, REFL_LOSS=5, stepM=cell*0.6;
   const maxDist=Math.hypot(b.maxx-b.minx,b.maxy-b.miny)*1.5;
 
@@ -2705,7 +2794,7 @@ function build3d(){
     // APs
     f.aps.forEach(ap=>{
       const g=new THREE.SphereGeometry(0.16,16,16);
-      const col=ap.bands.includes(state.band)?0x34d6c4:0x6b7a8c;
+      const col=!apRfEnabled(ap)?0x6b7280:(soloApId===ap.id?0xf4a83a:(ap.bands.includes(state.band)?0x34d6c4:0x6b7a8c));
       const mm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:.5});
       const s=new THREE.Mesh(g,mm);
       s.position.set(ap.x-cx, (ap.mount||2.6), ap.y-cz);
@@ -2865,7 +2954,7 @@ function deleteSelection(){
     f.walls=f.walls.filter(w=>!multiWalls.includes(w.id)); multiWalls=[]; selection=null;
     scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d(); return; }
   if(!selection)return; const f=floor();
-  if(selection.type==='ap'){ f.aps=f.aps.filter(a=>a.id!==selection.id); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.apId!==selection.id); }
+  if(selection.type==='ap'){ if(soloApId===selection.id)soloApId=null; f.aps=f.aps.filter(a=>a.id!==selection.id); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.apId!==selection.id); }
   else if(selection.type==='rack'){ f.racks=(f.racks||[]).filter(r=>r.id!==selection.id); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.rackId!==selection.id); f.aps.forEach(a=>{ if(a.sourceRackId===selection.id) delete a.sourceRackId; }); }
   else if(selection.type==='cable') f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.id!==selection.id);
   else if(selection.type==='opening') f.openings=(f.openings||[]).filter(o=>o.id!==selection.id);
@@ -2933,6 +3022,8 @@ function renderProp(){
         <option value="">—</option>
         ${(f.racks||[]).map(r=>`<option value="${r.id}" ${ap.sourceRackId===r.id?'selected':''}>${escapeHtml((r.kind||'Rack')+' · '+(r.name||'Rack'))}</option>`).join('')}
       </select></div>
+      <div class="field"><label><input type="checkbox" id="pRfEnabled" ${apRfEnabled(ap)?'checked':''}> <span data-i18n="ap.rfEnabled">${t('ap.rfEnabled')}</span></label>
+        <label><input type="checkbox" id="pRfSolo" ${soloApId===ap.id?'checked':''}> <span data-i18n="ap.rfSolo">${t('ap.rfSolo')}</span></label></div>
       <div class="field"><label data-i18n="ap.bands">Frekvensband (flerval)</label><div class="pillrow" id="pBands"></div></div>
       <div class="field"><label data-i18n="ap.power">Sändareffekt</label>
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
@@ -2962,6 +3053,8 @@ function renderProp(){
     $('#pManufacturer').oninput=e=>{ap.manufacturer=e.target.value;};
     $('#pModel').oninput=e=>{ap.model=e.target.value;};
     $('#pSourceRack').onchange=e=>{ if(e.target.value)ap.sourceRackId=e.target.value; else delete ap.sourceRackId; };
+    $('#pRfEnabled').onchange=e=>{commit();ap.rfEnabled=e.target.checked;if(!apRfEnabled(ap)&&soloApId===ap.id)soloApId=null;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
+    $('#pRfSolo').onchange=e=>{soloApId=e.target.checked?ap.id:null;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
     const pb=$('#pBands');
     Object.entries(BANDS).forEach(([k,v])=>{
       const on=ap.bands.includes(k);
@@ -3401,7 +3494,7 @@ const CHANNELS={'2.4':[1,6,11],'5':[36,40,44,48,149,153,157,161],'6':[37,53,69,8
 function channelOptions(band,sel){ return (CHANNELS[band]||[0]).map(c=>`<option value="${c}" ${c===sel?'selected':''}>${c}</option>`).join(''); }
 function autoChannelPlan(){
   commit();
-  const all=[]; state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>all.push({ap,af})));
+  const all=[]; state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(apRfEnabled(ap))all.push({ap,af}); }));
   Object.keys(BANDS).forEach(band=>{
     const chans=CHANNELS[band]; const list=all.filter(o=>o.ap.bands.includes(band));
     list.forEach(o=>{ if(!o.ap.channels)o.ap.channels=defaultChannels(); });
@@ -3576,8 +3669,8 @@ function restoreState(json){
   state=JSON.parse(json);
   if(state.receiverHeight==null)state.receiverHeight=1.2;
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
-  selection=null; multiWalls=[]; calibState=null; analyzeState=null; _indoor=null;
+  state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  selection=null; multiWalls=[]; calibState=null; analyzeState=null; soloApId=null; _indoor=null;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
   buildFloors(); buildMaterials(); buildBands(); buildHeatView(); syncFloorPanel(); updateChips(); refreshStats(); renderProp();
@@ -3603,7 +3696,7 @@ function loadProject(file){
     try{
       const s=JSON.parse(fr.result);
       if(!s.floors) throw uiError('error.invalidFile');
-      state=s; tool='select'; scenarioA=null; scenarioCompare=null;
+      state=s; tool='select'; soloApId=null; scenarioA=null; scenarioCompare=null;
       // migrate older projects
       if(s.covThreshold==null)s.covThreshold=-67;
       if(s.showFail==null)s.showFail=false;
@@ -3613,7 +3706,7 @@ function loadProject(file){
       if(s.receiverHeight==null)s.receiverHeight=1.2;
       _indoor=null;
       state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
-        f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.mountType)a.mountType='ceiling'; if(!a.channels)a.channels=defaultChannels(); }); });
+        f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
       bootUI(); scheduleHeat();
@@ -3815,7 +3908,7 @@ function exportGLTF(){
     plExp:state.plExp, slabDb:state.slabDb, receiverHeight_m:receiverHeight(),
     materials:state.materials.map(m=>({name:m.name,attenuation_dB:m.db})),
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
-      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),mountType:apMountType(a),bands:a.bands,txPower_dBm:a.txPower})),
+      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),mountType:apMountType(a),rfEnabled:apRfEnabled(a),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
       pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,height:p.height,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
       openings:(f.openings||[]).map(o=>({name:o.name,points:o.points})) })) };
