@@ -386,7 +386,9 @@ const translations = {
     "settings.appearance": "Apariencia del editor",
     "settings.wallVisualWidth": "Grosor visual de pared",
     "settings.showGrid": "Mostrar cuadrícula",
-    "settings.smoothHeatmap": "Suavizar mapa",
+    "settings.heatmapSmoothing": "Suavizado del mapa",
+    "settings.heatmapRaw": "Crudo",
+    "settings.heatmapSoft": "Suave",
     "floor.width": "Anchura (X)",
     "floor.depth": "Profundidad (Y)",
     "floor.ceiling": "Altura del techo",
@@ -631,7 +633,9 @@ const translations = {
     "settings.appearance": "Editor appearance",
     "settings.wallVisualWidth": "Visual wall thickness",
     "settings.showGrid": "Show grid",
-    "settings.smoothHeatmap": "Smooth map",
+    "settings.heatmapSmoothing": "Map smoothing",
+    "settings.heatmapRaw": "Raw",
+    "settings.heatmapSoft": "Smooth",
     "floor.width": "Width (X)",
     "floor.depth": "Depth (Y)",
     "floor.ceiling": "Ceiling height",
@@ -876,7 +880,9 @@ const translations = {
     "settings.appearance": "Redigerarens utseende",
     "settings.wallVisualWidth": "Visuell väggtjocklek",
     "settings.showGrid": "Visa rutnät",
-    "settings.smoothHeatmap": "Jämna ut karta",
+    "settings.heatmapSmoothing": "Kartutjämning",
+    "settings.heatmapRaw": "Rå",
+    "settings.heatmapSoft": "Mjuk",
     "floor.width": "Bredd (X)",
     "floor.depth": "Djup (Y)",
     "floor.ceiling": "Takhöjd",
@@ -1202,7 +1208,7 @@ function saveWallSnapPref(key,value){
 const editorPrefs = {
   wallVisualWidth: 5,
   showGrid: true,
-  heatmapSmoothing: true,
+  heatmapSmoothing: 50,
 };
 function loadEditorPrefs(){
   try{
@@ -1211,7 +1217,13 @@ function loadEditorPrefs(){
     const hs=localStorage.getItem(wallSnapStoragePrefix+'heatmapSmoothing');
     if(Number.isFinite(ww)) editorPrefs.wallVisualWidth=clamp(ww,2,14);
     if(sg!==null) editorPrefs.showGrid = sg !== 'false';
-    if(hs!==null) editorPrefs.heatmapSmoothing = hs !== 'false';
+    if(hs!==null){
+      if(hs==='true'||hs==='false') editorPrefs.heatmapSmoothing = hs==='false' ? 0 : 50;
+      else {
+        const hsn=parseFloat(hs);
+        if(Number.isFinite(hsn)) editorPrefs.heatmapSmoothing=clamp(hsn,0,100);
+      }
+    }
   }catch(_){}
 }
 function saveEditorPref(key,value){
@@ -1390,7 +1402,7 @@ function draw2d(){
   // heatmap underlay
   if(showHeat && heatCanvas && heatMeta && heatMeta.floorId===f.id){
     const a=W2S(heatMeta.minx,heatMeta.miny), b=W2S(heatMeta.maxx,heatMeta.maxy);
-    ctx.save(); ctx.globalAlpha=0.62; ctx.imageSmoothingEnabled=editorPrefs.heatmapSmoothing;
+    ctx.save(); ctx.globalAlpha=0.62; ctx.imageSmoothingEnabled=(Number(editorPrefs.heatmapSmoothing)||0)>0;
     ctx.drawImage(heatCanvas, a.x, a.y, b.x-a.x, b.y-a.y);
     ctx.restore();
   }
@@ -2425,7 +2437,8 @@ function computeHeatSimple(){
 function paintHeat(){
   if(!heatGridDisp||!heatMeta){ heatCanvas=null; return; }
   const {cols,rows}=heatMeta;
-  const scale=editorPrefs.heatmapSmoothing?2:1;
+  const smooth=clamp(Number(editorPrefs.heatmapSmoothing)||0,0,100);
+  const scale=smooth<=0?1:(smooth<=50?2:Math.round(2+(smooth-50)/50*2));
   const W=cols*scale, H=rows*scale;
   const c=document.createElement('canvas'); c.width=W;c.height=H;
   const cc=c.getContext('2d');
@@ -2438,13 +2451,28 @@ function paintHeat(){
     return rawAt(i,j,grid);
   };
   const sampleDisplay=(gx,gy,grid)=>{
-    if(!editorPrefs.heatmapSmoothing) return nearestValue(gx,gy,grid);
+    if(smooth<=0) return nearestValue(gx,gy,grid);
     if(gx<0||gy<0||gx>cols-1||gy>rows-1) return nearestValue(gx,gy,grid);
     const x0=Math.floor(gx), y0=Math.floor(gy), x1=Math.min(cols-1,x0+1), y1=Math.min(rows-1,y0+1);
     const v00=rawAt(x0,y0,grid), v10=rawAt(x1,y0,grid), v01=rawAt(x0,y1,grid), v11=rawAt(x1,y1,grid);
     if(!finite(v00)||!finite(v10)||!finite(v01)||!finite(v11)) return nearestValue(gx,gy,grid);
     const tx=gx-x0, ty=gy-y0;
-    return lerp(lerp(v00,v10,tx),lerp(v01,v11,tx),ty);
+    const bilinear=lerp(lerp(v00,v10,tx),lerp(v01,v11,tx),ty);
+    if(smooth<=50) return lerp(nearestValue(gx,gy,grid), bilinear, smooth/50);
+    let sum=0, weight=0, invalid=false;
+    const sigma=0.7 + (smooth-50)/50*0.45;
+    const radius=smooth>=90?2:1;
+    const ci=Math.round(gx), cj=Math.round(gy);
+    for(let j=cj-radius;j<=cj+radius;j++)for(let i=ci-radius;i<=ci+radius;i++){
+      if(i<0||j<0||i>=cols||j>=rows){ invalid=true; continue; }
+      const v=rawAt(i,j,grid);
+      if(!finite(v)){ invalid=true; continue; }
+      const d2=(i-gx)*(i-gx)+(j-gy)*(j-gy);
+      const w=Math.exp(-d2/(2*sigma*sigma));
+      sum+=v*w; weight+=w;
+    }
+    if(invalid||weight<=0) return bilinear;
+    return lerp(bilinear, sum/weight, (smooth-50)/50*0.45);
   };
   const img2=cc.createImageData(W,H);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
@@ -3069,13 +3097,15 @@ function buildEditorSettings(){
   host.innerHTML=`
     <div class="field"><label>${t('settings.appearance')}</label>
       <div class="field"><label><input type="checkbox" id="sShowGrid" ${editorPrefs.showGrid?'checked':''}> ${t('settings.showGrid')}</label></div>
-      <div class="field"><label><input type="checkbox" id="sHeatmapSmoothing" ${editorPrefs.heatmapSmoothing?'checked':''}> ${t('settings.smoothHeatmap')}</label></div>
+      <label>${t('settings.heatmapSmoothing')}</label>
+      <div class="slider"><input id="sHeatmapSmoothing" type="range" min="0" max="100" step="1" value="${editorPrefs.heatmapSmoothing}"><span class="val" id="sHeatmapSmoothingV">${editorPrefs.heatmapSmoothing.toFixed(0)}</span></div>
+      <div class="hint">${t('settings.heatmapRaw')} · ${t('settings.heatmapSoft')}</div>
       <label>${t('settings.wallVisualWidth')}</label>
       <div class="slider"><input id="sWallVisualWidth" type="range" min="2" max="14" step="1" value="${editorPrefs.wallVisualWidth}"><span class="val" id="sWallVisualWidthV">${editorPrefs.wallVisualWidth.toFixed(0)} px</span></div>
     </div>
     ${wallSnapControlsHtml('s')}`;
   $('#sShowGrid').onchange=e=>{ editorPrefs.showGrid=e.target.checked; saveEditorPref('showGrid',editorPrefs.showGrid); draw2d(); };
-  $('#sHeatmapSmoothing').onchange=e=>{ editorPrefs.heatmapSmoothing=e.target.checked; saveEditorPref('heatmapSmoothing',editorPrefs.heatmapSmoothing); paintHeat(); draw2d(); if(view==='3d')refresh3dHeat(); };
+  $('#sHeatmapSmoothing').oninput=e=>{ editorPrefs.heatmapSmoothing=+e.target.value; $('#sHeatmapSmoothingV').textContent=editorPrefs.heatmapSmoothing.toFixed(0); saveEditorPref('heatmapSmoothing',editorPrefs.heatmapSmoothing); paintHeat(); draw2d(); if(view==='3d')refresh3dHeat(); };
   $('#sWallVisualWidth').oninput=e=>{ editorPrefs.wallVisualWidth=+e.target.value; $('#sWallVisualWidthV').textContent=editorPrefs.wallVisualWidth.toFixed(0)+' px'; saveEditorPref('wallVisualWidth',editorPrefs.wallVisualWidth); draw2d(); };
   wireWallSnapControls('s');
 }
@@ -3891,7 +3921,7 @@ function exportPNG(){
   const g=c.getContext('2d');
   g.fillStyle='#0d1117'; g.fillRect(0,0,W,H);
   // heatmap
-  g.imageSmoothingEnabled=editorPrefs.heatmapSmoothing; g.globalAlpha=0.85;
+  g.imageSmoothingEnabled=(Number(editorPrefs.heatmapSmoothing)||0)>0; g.globalAlpha=0.85;
   g.drawImage(heatCanvas,0,0,W,H); g.globalAlpha=1;
   // helper world->png
   const wx2p=x=>(x-b.minx)/(b.maxx-b.minx)*W, wy2p=y=>(y-b.miny)/(b.maxy-b.miny)*H;
