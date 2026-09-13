@@ -1490,9 +1490,11 @@ function draw2d(){
     const selP=selection&&selection.type==='pillar'&&selection.id===pl.id;
     ctx.save();
     ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
-    ctx.fillStyle=hexToRgba(m.color, selP?0.48:0.32); ctx.fill();
+    ctx.fillStyle=hexToRgba(m.color, selP?0.96:0.9); ctx.fill();
     ctx.lineWidth=selP?3:2;
     ctx.strokeStyle=selP?'#7aa2ff':shade(m.color,-0.25); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x-r*0.28,p.y-r*0.28,Math.max(1.5,r*0.18),0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,.18)'; ctx.fill();
     ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2,r*0.22),0,Math.PI*2);
     ctx.fillStyle=selP?'#7aa2ff':m.color; ctx.fill();
     ctx.restore();
@@ -2468,6 +2470,17 @@ function paintHeat(){
     const i=clamp(Math.round(gx),0,cols-1), j=clamp(Math.round(gy),0,rows-1);
     return rawAt(i,j,grid);
   };
+  const validAlpha=(gx,gy)=>{
+    if(smooth<=0) return 1;
+    if(!finite(nearestValue(gx,gy,heatGridDisp))) return 0;
+    if(gx<0||gy<0||gx>cols-1||gy>rows-1) return 1;
+    const x0=Math.floor(gx), y0=Math.floor(gy), x1=Math.min(cols-1,x0+1), y1=Math.min(rows-1,y0+1);
+    const m00=finite(rawAt(x0,y0,heatGridDisp))?1:0, m10=finite(rawAt(x1,y0,heatGridDisp))?1:0;
+    const m01=finite(rawAt(x0,y1,heatGridDisp))?1:0, m11=finite(rawAt(x1,y1,heatGridDisp))?1:0;
+    const tx=gx-x0, ty=gy-y0;
+    const a=lerp(lerp(m00,m10,tx),lerp(m01,m11,tx),ty);
+    return clamp(0.18+0.82*a,0,1);
+  };
   const sampleDisplay=(gx,gy,grid)=>{
     if(smooth<=0) return nearestValue(gx,gy,grid);
     if(gx<0||gy<0||gx>cols-1||gy>rows-1) return nearestValue(gx,gy,grid);
@@ -2499,6 +2512,7 @@ function paintHeat(){
     let col = d<=-Infinity ? [0,0,0,0] : colFn(d);
     const r=nearestValue(gx,gy,heatGridRssi);
     if(showFail && r>-120 && r<thr){ col=[70,16,28, Math.max(col[3],175)]; }
+    col[3]=Math.round(col[3]*validAlpha(gx,gy));
     const k=(y*W+x)*4;
     img2.data[k]=col[0];img2.data[k+1]=col[1];img2.data[k+2]=col[2];img2.data[k+3]=col[3];
   }
@@ -3994,7 +4008,7 @@ function exportPNG(){
   // pillars
   (f.pillars||[]).forEach(p=>{ const m=matById(p.materialId);
     const rx=(p.diameter||0.6)/2/(b.maxx-b.minx)*W, ry=(p.diameter||0.6)/2/(b.maxy-b.miny)*H;
-    g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
+    g.fillStyle=hexToRgba(m.color,0.92); g.strokeStyle=shade(m.color,-0.25); g.lineWidth=3;
     g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
   // cable routes
   (f.cableRoutes||[]).forEach(route=>{
