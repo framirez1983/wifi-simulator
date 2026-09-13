@@ -2460,8 +2460,8 @@ function paintHeat(){
     const bilinear=lerp(lerp(v00,v10,tx),lerp(v01,v11,tx),ty);
     if(smooth<=50) return lerp(nearestValue(gx,gy,grid), bilinear, smooth/50);
     let sum=0, weight=0, invalid=false;
-    const sigma=0.7 + (smooth-50)/50*0.45;
-    const radius=smooth>=90?2:1;
+    const sigma=0.75 + (smooth-50)/50*0.2;
+    const radius=1;
     const ci=Math.round(gx), cj=Math.round(gy);
     for(let j=cj-radius;j<=cj+radius;j++)for(let i=ci-radius;i<=ci+radius;i++){
       if(i<0||j<0||i>=cols||j>=rows){ invalid=true; continue; }
@@ -2472,7 +2472,7 @@ function paintHeat(){
       sum+=v*w; weight+=w;
     }
     if(invalid||weight<=0) return bilinear;
-    return lerp(bilinear, sum/weight, (smooth-50)/50*0.45);
+    return lerp(bilinear, sum/weight, (smooth-50)/50*0.55);
   };
   const img2=cc.createImageData(W,H);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
