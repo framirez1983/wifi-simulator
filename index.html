@@ -389,6 +389,11 @@ const translations = {
     "settings.heatmapSmoothing": "Suavizado del mapa",
     "settings.heatmapRaw": "Crudo",
     "settings.heatmapSoft": "Suave",
+    "settings.rtQuality": "Calidad de Ray Tracing",
+    "settings.rtFast": "Rápida",
+    "settings.rtNormal": "Normal",
+    "settings.rtHigh": "Alta",
+    "settings.rtRays": "{quality} · {count} rayos/AP",
     "floor.width": "Anchura (X)",
     "floor.depth": "Profundidad (Y)",
     "floor.ceiling": "Altura del techo",
@@ -636,6 +641,11 @@ const translations = {
     "settings.heatmapSmoothing": "Map smoothing",
     "settings.heatmapRaw": "Raw",
     "settings.heatmapSoft": "Smooth",
+    "settings.rtQuality": "Ray Tracing quality",
+    "settings.rtFast": "Fast",
+    "settings.rtNormal": "Normal",
+    "settings.rtHigh": "High",
+    "settings.rtRays": "{quality} · {count} rays/AP",
     "floor.width": "Width (X)",
     "floor.depth": "Depth (Y)",
     "floor.ceiling": "Ceiling height",
@@ -883,6 +893,11 @@ const translations = {
     "settings.heatmapSmoothing": "Kartutjämning",
     "settings.heatmapRaw": "Rå",
     "settings.heatmapSoft": "Mjuk",
+    "settings.rtQuality": "Ray tracing-kvalitet",
+    "settings.rtFast": "Snabb",
+    "settings.rtNormal": "Normal",
+    "settings.rtHigh": "Hög",
+    "settings.rtRays": "{quality} · {count} strålar/AP",
     "floor.width": "Bredd (X)",
     "floor.depth": "Djup (Y)",
     "floor.ceiling": "Takhöjd",
@@ -1209,12 +1224,14 @@ const editorPrefs = {
   wallVisualWidth: 5,
   showGrid: true,
   heatmapSmoothing: 50,
+  rtQuality: 'normal',
 };
 function loadEditorPrefs(){
   try{
     const ww=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallVisualWidth'));
     const sg=localStorage.getItem(wallSnapStoragePrefix+'showGrid');
     const hs=localStorage.getItem(wallSnapStoragePrefix+'heatmapSmoothing');
+    const rq=localStorage.getItem(wallSnapStoragePrefix+'rtQuality');
     if(Number.isFinite(ww)) editorPrefs.wallVisualWidth=clamp(ww,2,14);
     if(sg!==null) editorPrefs.showGrid = sg !== 'false';
     if(hs!==null){
@@ -1224,6 +1241,7 @@ function loadEditorPrefs(){
         if(Number.isFinite(hsn)) editorPrefs.heatmapSmoothing=clamp(hsn,0,100);
       }
     }
+    if(['fast','normal','high'].includes(rq)) editorPrefs.rtQuality=rq;
   }catch(_){}
 }
 function saveEditorPref(key,value){
@@ -2630,10 +2648,39 @@ function scheduleHeat(){
   clearTimeout(heatTimer);
   heatTimer=setTimeout(()=>{ computeHeatSimple(); draw2d(); if(view==='3d') refresh3dHeat(); }, 90);
 }
+function rayTraceQualityConfig(){
+  const q=['fast','normal','high'].includes(editorPrefs.rtQuality) ? editorPrefs.rtQuality : 'normal';
+  if(q==='fast') return {key:q, label:'settings.rtFast', targetFactor:null, min:600, max:600};
+  if(q==='high') return {key:q, label:'settings.rtHigh', targetFactor:0.5, min:900, max:4200};
+  return {key:q, label:'settings.rtNormal', targetFactor:1, min:700, max:2400};
+}
+function maxDistanceToBounds(x,y,b){
+  return Math.max(
+    Math.hypot(x-b.minx,y-b.miny), Math.hypot(x-b.maxx,y-b.miny),
+    Math.hypot(x-b.minx,y-b.maxy), Math.hypot(x-b.maxx,y-b.maxy)
+  );
+}
+function rayCountForAP(ap,b,cellSpacing){
+  const cfg=rayTraceQualityConfig();
+  if(cfg.key==='fast') return 600;
+  const radius=Math.max(0.5,maxDistanceToBounds(ap.x,ap.y,b));
+  const target=Math.max(0.04,cellSpacing*cfg.targetFactor);
+  return clamp(Math.ceil(2*Math.PI*radius/target), cfg.min, cfg.max);
+}
+function rayTraceQualitySummary(){
+  const f=floor(), b=floorBounds(f), cell=0.16;
+  const cols=clamp(Math.ceil((b.maxx-b.minx)/cell),16,460), rows=clamp(Math.ceil((b.maxy-b.miny)/cell),16,460);
+  const spacing=Math.min((b.maxx-b.minx)/cols,(b.maxy-b.miny)/rows);
+  const counts=f.aps.filter(apParticipatesInRf).map(ap=>rayCountForAP(ap,b,spacing));
+  const count=counts.length ? Math.max(...counts) : rayCountForAP({x:0,y:0},b,spacing);
+  const cfg=rayTraceQualityConfig();
+  return t('settings.rtRays',{quality:t(cfg.label),count});
+}
 
 // ============================================================
 //  ADVANCED RAY TRACING  (ray-launching: transmission + reflection)
 // ============================================================
+let lastRayTraceStats=null;
 function runRayTrace(onDone){
   const traceMessage=uiMessage(state.floors.some(f=>(f.pillars||[]).length)?'trace.pillarsWarning':'trace.progress');
   const f=floor(); const b=floorBounds(f);
@@ -2644,8 +2691,10 @@ function runRayTrace(onDone){
   const best=new Float32Array(cols*rows).fill(-Infinity);
   const aps=[];
   state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(apParticipatesInRf(ap)&&ap.bands.includes(state.band)) aps.push({ap,af}); }));
-  const RAYS=600, MAXINTER=9, MAXREFL=2, REFL_LOSS=5, stepM=cell*0.6;
+  const MAXINTER=9, MAXREFL=2, REFL_LOSS=5, stepM=cell*0.6;
+  const raySpacing=Math.min(cw,ch);
   const maxDist=Math.hypot(b.maxx-b.minx,b.maxy-b.miny)*1.5;
+  const traceStarted=performance.now(); let processedBranches=0, initialRays=0; const raysPerAp=[];
 
   function depositCell(x,y,rssi){
     const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
@@ -2743,6 +2792,9 @@ function runRayTrace(onDone){
     const sameFloor=af===state.activeFloor;
     const tx=ap.txPower;
     const walls=state.floors[state.activeFloor].walls;
+    const RAYS=rayCountForAP(ap,b,raySpacing);
+    raysPerAp.push({apId:ap.id, rays:RAYS});
+    initialRays+=RAYS;
     for(let r=0;r<RAYS;r++){
       const angDeg=r/RAYS*360, ang=angDeg*Math.PI/180;
       const gain=antennaAzGain(ap, angDeg);
@@ -2754,13 +2806,15 @@ function runRayTrace(onDone){
   function step(){
     const t0=performance.now();
     while(rayQueue.length && performance.now()-t0<35){
-      const ray=rayQueue.pop(); marchRay(ray, ray._w, ray._s, ray._t);
+      const ray=rayQueue.pop(); processedBranches++; marchRay(ray, ray._w, ray._s, ray._t);
     }
     showToast(true,traceMessage, clamp(1-rayQueue.length/(initial*1.6),0,0.99));
     if(rayQueue.length){ requestAnimationFrame(step); return; }
     heatGridRssi=best; heatGridDisp=best; heatMetric='rssi';
     heatMeta={floorId:f.id, minx:b.minx,miny:b.miny,maxx:b.maxx,maxy:b.maxy, cols,rows};
     heatMode='trace'; showHeat=true; $('#btnHeat').classList.add('primary');
+    let finite=0; for(let k=0;k<best.length;k++) if(best[k]>-Infinity) finite++;
+    lastRayTraceStats={quality:rayTraceQualityConfig().key, raysPerAp, initialRays, processedBranches, elapsedMs:performance.now()-traceStarted, finiteCells:finite, totalCells:best.length, gridCellM:raySpacing};
     paintHeat(); coverageUpdate(); showToast(false); draw2d(); if(view==='3d')refresh3dHeat();
     if(onDone)onDone();
   }
@@ -3100,12 +3154,20 @@ function buildEditorSettings(){
       <label>${t('settings.heatmapSmoothing')}</label>
       <div class="slider"><input id="sHeatmapSmoothing" type="range" min="0" max="100" step="1" value="${editorPrefs.heatmapSmoothing}"><span class="val" id="sHeatmapSmoothingV">${editorPrefs.heatmapSmoothing.toFixed(0)}</span></div>
       <div class="hint">${t('settings.heatmapRaw')} · ${t('settings.heatmapSoft')}</div>
+      <label>${t('settings.rtQuality')}</label>
+      <select id="sRtQuality" class="tbtn" style="width:100%">
+        <option value="fast" ${editorPrefs.rtQuality==='fast'?'selected':''}>${t('settings.rtFast')}</option>
+        <option value="normal" ${editorPrefs.rtQuality==='normal'?'selected':''}>${t('settings.rtNormal')}</option>
+        <option value="high" ${editorPrefs.rtQuality==='high'?'selected':''}>${t('settings.rtHigh')}</option>
+      </select>
+      <div class="hint" id="sRtQualityHint">${rayTraceQualitySummary()}</div>
       <label>${t('settings.wallVisualWidth')}</label>
       <div class="slider"><input id="sWallVisualWidth" type="range" min="2" max="14" step="1" value="${editorPrefs.wallVisualWidth}"><span class="val" id="sWallVisualWidthV">${editorPrefs.wallVisualWidth.toFixed(0)} px</span></div>
     </div>
     ${wallSnapControlsHtml('s')}`;
   $('#sShowGrid').onchange=e=>{ editorPrefs.showGrid=e.target.checked; saveEditorPref('showGrid',editorPrefs.showGrid); draw2d(); };
   $('#sHeatmapSmoothing').oninput=e=>{ editorPrefs.heatmapSmoothing=+e.target.value; $('#sHeatmapSmoothingV').textContent=editorPrefs.heatmapSmoothing.toFixed(0); saveEditorPref('heatmapSmoothing',editorPrefs.heatmapSmoothing); paintHeat(); draw2d(); if(view==='3d')refresh3dHeat(); };
+  $('#sRtQuality').onchange=e=>{ editorPrefs.rtQuality=e.target.value; saveEditorPref('rtQuality',editorPrefs.rtQuality); $('#sRtQualityHint').textContent=rayTraceQualitySummary(); };
   $('#sWallVisualWidth').oninput=e=>{ editorPrefs.wallVisualWidth=+e.target.value; $('#sWallVisualWidthV').textContent=editorPrefs.wallVisualWidth.toFixed(0)+' px'; saveEditorPref('wallVisualWidth',editorPrefs.wallVisualWidth); draw2d(); };
   wireWallSnapControls('s');
 }
