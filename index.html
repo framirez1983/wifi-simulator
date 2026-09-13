@@ -2400,7 +2400,9 @@ function sinrAt(px,py, tf, mhz){
 
 // ---------- heatmap ----------
 let heatCanvas=null, heatMeta=null, heatTimer=null;
-let heatGridRssi=null, heatGridDisp=null, heatMetric='rssi';
+let heatGridRssi=null, heatGridDisp=null, heatMetric='rssi', heatRtReach=null;
+const RT_FLOOR_DBM = -100;
+const RT_FLOOR_DISPLAY_DBM = -90;
 function rssiColor(rssi){ // -> [r,g,b,a]
   if(rssi<-92) return [0,0,0,0];
   const stops=[
@@ -2450,7 +2452,7 @@ function computeHeatSimple(){
       rssi[k]=fld.best; disp[k]= fld.best<=-Infinity?-Infinity: fld.best-10*Math.log10(fld.interfMW+Math.pow(10,state.noiseFloor/10)); }
     else { const r=bestRSSI(wx,wy,state.activeFloor,mhz); rssi[k]=r; disp[k]=r; }
   }
-  heatGridRssi=rssi; heatGridDisp=disp; heatMetric=wantSinr?'sinr':'rssi';
+  heatGridRssi=rssi; heatGridDisp=disp; heatRtReach=null; heatMetric=wantSinr?'sinr':'rssi';
   heatMeta={floorId:f.id, minx:b.minx,miny:b.miny,maxx:b.maxx,maxy:b.maxy, cols,rows};
   heatMode='simple'; paintHeat(); coverageUpdate();
 }
@@ -2465,18 +2467,26 @@ function paintHeat(){
   const colFn = heatMetric==='sinr'?sinrColor:rssiColor;
   const thr=state.covThreshold, showFail=state.showFail;
   const rawAt=(i,j,grid)=>grid[j*cols+i];
+  const reachAt=(i,j)=> heatRtReach && heatMode==='trace' ? heatRtReach[j*cols+i] : 0;
   const finite=v=>v!==-Infinity && Number.isFinite(v);
+  const displayFinite=(i,j,grid)=>finite(rawAt(i,j,grid)) || reachAt(i,j)===2;
+  const displayValue=(i,j,grid)=> reachAt(i,j)===2 && !finite(rawAt(i,j,grid)) ? RT_FLOOR_DISPLAY_DBM : rawAt(i,j,grid);
   const nearestValue=(gx,gy,grid)=>{
+    const i=clamp(Math.round(gx),0,cols-1), j=clamp(Math.round(gy),0,rows-1);
+    return displayValue(i,j,grid);
+  };
+  const nearestRawValue=(gx,gy,grid)=>{
     const i=clamp(Math.round(gx),0,cols-1), j=clamp(Math.round(gy),0,rows-1);
     return rawAt(i,j,grid);
   };
   const validAlpha=(gx,gy)=>{
     if(smooth<=0) return 1;
-    if(!finite(nearestValue(gx,gy,heatGridDisp))) return 0;
+    const ni=clamp(Math.round(gx),0,cols-1), nj=clamp(Math.round(gy),0,rows-1);
+    if(!displayFinite(ni,nj,heatGridDisp)) return 0;
     if(gx<0||gy<0||gx>cols-1||gy>rows-1) return 1;
     const x0=Math.floor(gx), y0=Math.floor(gy), x1=Math.min(cols-1,x0+1), y1=Math.min(rows-1,y0+1);
-    const m00=finite(rawAt(x0,y0,heatGridDisp))?1:0, m10=finite(rawAt(x1,y0,heatGridDisp))?1:0;
-    const m01=finite(rawAt(x0,y1,heatGridDisp))?1:0, m11=finite(rawAt(x1,y1,heatGridDisp))?1:0;
+    const m00=displayFinite(x0,y0,heatGridDisp)?1:0, m10=displayFinite(x1,y0,heatGridDisp)?1:0;
+    const m01=displayFinite(x0,y1,heatGridDisp)?1:0, m11=displayFinite(x1,y1,heatGridDisp)?1:0;
     const tx=gx-x0, ty=gy-y0;
     const a=lerp(lerp(m00,m10,tx),lerp(m01,m11,tx),ty);
     return clamp(0.18+0.82*a,0,1);
@@ -2485,8 +2495,8 @@ function paintHeat(){
     if(smooth<=0) return nearestValue(gx,gy,grid);
     if(gx<0||gy<0||gx>cols-1||gy>rows-1) return nearestValue(gx,gy,grid);
     const x0=Math.floor(gx), y0=Math.floor(gy), x1=Math.min(cols-1,x0+1), y1=Math.min(rows-1,y0+1);
-    const v00=rawAt(x0,y0,grid), v10=rawAt(x1,y0,grid), v01=rawAt(x0,y1,grid), v11=rawAt(x1,y1,grid);
-    if(!finite(v00)||!finite(v10)||!finite(v01)||!finite(v11)) return nearestValue(gx,gy,grid);
+    const v00=displayValue(x0,y0,grid), v10=displayValue(x1,y0,grid), v01=displayValue(x0,y1,grid), v11=displayValue(x1,y1,grid);
+    if(!displayFinite(x0,y0,grid)||!displayFinite(x1,y0,grid)||!displayFinite(x0,y1,grid)||!displayFinite(x1,y1,grid)) return nearestValue(gx,gy,grid);
     const tx=gx-x0, ty=gy-y0;
     const bilinear=lerp(lerp(v00,v10,tx),lerp(v01,v11,tx),ty);
     if(smooth<=50) return lerp(nearestValue(gx,gy,grid), bilinear, smooth/50);
@@ -2496,8 +2506,8 @@ function paintHeat(){
     const ci=Math.round(gx), cj=Math.round(gy);
     for(let j=cj-radius;j<=cj+radius;j++)for(let i=ci-radius;i<=ci+radius;i++){
       if(i<0||j<0||i>=cols||j>=rows){ invalid=true; continue; }
-      const v=rawAt(i,j,grid);
-      if(!finite(v)){ invalid=true; continue; }
+      const v=displayValue(i,j,grid);
+      if(!displayFinite(i,j,grid)){ invalid=true; continue; }
       const d2=(i-gx)*(i-gx)+(j-gy)*(j-gy);
       const w=Math.exp(-d2/(2*sigma*sigma));
       sum+=v*w; weight+=w;
@@ -2510,7 +2520,7 @@ function paintHeat(){
     const gx=(x+0.5)/scale-0.5, gy=(y+0.5)/scale-0.5;
     const d=sampleDisplay(gx,gy,heatGridDisp);
     let col = d<=-Infinity ? [0,0,0,0] : colFn(d);
-    const r=nearestValue(gx,gy,heatGridRssi);
+    const r=nearestRawValue(gx,gy,heatGridRssi);
     if(showFail && r>-120 && r<thr){ col=[70,16,28, Math.max(col[3],175)]; }
     col[3]=Math.round(col[3]*validAlpha(gx,gy));
     const k=(y*W+x)*4;
@@ -2658,7 +2668,7 @@ function buildHeatView(){
 }
 function repaintHeat(){ paintHeat(); coverageUpdate(); draw2d(); if(view==='3d')refresh3dHeat(); }
 function scheduleHeat(){
-  if(!showHeat){heatCanvas=null;draw2d();return;}
+  if(!showHeat){heatCanvas=null;heatRtReach=null;draw2d();return;}
   clearTimeout(heatTimer);
   heatTimer=setTimeout(()=>{ computeHeatSimple(); draw2d(); if(view==='3d') refresh3dHeat(); }, 90);
 }
@@ -2703,6 +2713,7 @@ function runRayTrace(onDone){
   const cw=(b.maxx-b.minx)/cols, ch=(b.maxy-b.miny)/rows;
   const mhz=BANDS[state.band].mhz, pl1=fsplAt1m(mhz);
   const best=new Float32Array(cols*rows).fill(-Infinity);
+  const reach=new Uint8Array(cols*rows); // 0 unvisited, 1 exact RT sample, 2 reached after RT floor cutoff
   const aps=[];
   state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(apParticipatesInRf(ap)&&ap.bands.includes(state.band)) aps.push({ap,af}); }));
   const MAXINTER=9, MAXREFL=2, REFL_LOSS=5, stepM=cell*0.6;
@@ -2714,6 +2725,23 @@ function runRayTrace(onDone){
     const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
     if(i<0||j<0||i>=cols||j>=rows)return;
     const k=j*cols+i; if(rssi>best[k]) best[k]=rssi;
+    reach[k]=1;
+  }
+  function markBelowFloorCell(x,y){
+    const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
+    if(i<0||j<0||i>=cols||j>=rows)return;
+    const k=j*cols+i;
+    if(reach[k]===0) reach[k]=2;
+  }
+  function continueBelowFloor(x,y,dx,dy,dst,steps){
+    // Once a branch falls below the RT simulation floor, continue only its
+    // geometric footprint. Existing RT obstacles are transmissive, so no more
+    // wall/pillar loss, reflections, or slab math is needed for this marker.
+    while(dst<maxDist && steps<2600){
+      markBelowFloorCell(x,y);
+      if(x<b.minx-1||x>b.maxx+1||y<b.miny-1||y>b.maxy+1) break;
+      x+=dx*stepM; y+=dy*stepM; dst+=stepM; steps++;
+    }
   }
   function segCrossT(ax,ay,bx,by, cx,cy,dx,dy){
     const r1=bx-ax,r2=by-ay,s1=dx-cx,s2=dy-cy, den=r1*s2-r2*s1;
@@ -2795,7 +2823,7 @@ function runRayTrace(onDone){
       }
       dst+=stepM;
       const rssi=tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(dst)))+dB+slabAt(nx,ny));
-      if(rssi<-100) break;
+      if(rssi<RT_FLOOR_DBM){ continueBelowFloor(nx,ny,dx,dy,dst,steps); break; }
       depositCell(nx,ny, rssi);
       x=nx;y=ny;steps++;
       if(x<b.minx-1||x>b.maxx+1||y<b.miny-1||y>b.maxy+1) break;
@@ -2824,11 +2852,11 @@ function runRayTrace(onDone){
     }
     showToast(true,traceMessage, clamp(1-rayQueue.length/(initial*1.6),0,0.99));
     if(rayQueue.length){ requestAnimationFrame(step); return; }
-    heatGridRssi=best; heatGridDisp=best; heatMetric='rssi';
+    heatGridRssi=best; heatGridDisp=best; heatRtReach=reach; heatMetric='rssi';
     heatMeta={floorId:f.id, minx:b.minx,miny:b.miny,maxx:b.maxx,maxy:b.maxy, cols,rows};
     heatMode='trace'; showHeat=true; $('#btnHeat').classList.add('primary');
-    let finite=0; for(let k=0;k<best.length;k++) if(best[k]>-Infinity) finite++;
-    lastRayTraceStats={quality:rayTraceQualityConfig().key, raysPerAp, initialRays, processedBranches, elapsedMs:performance.now()-traceStarted, finiteCells:finite, totalCells:best.length, gridCellM:raySpacing};
+    let finite=0, belowFloor=0; for(let k=0;k<best.length;k++){ if(best[k]>-Infinity) finite++; else if(reach[k]===2) belowFloor++; }
+    lastRayTraceStats={quality:rayTraceQualityConfig().key, raysPerAp, initialRays, processedBranches, elapsedMs:performance.now()-traceStarted, finiteCells:finite, belowFloorCells:belowFloor, totalCells:best.length, gridCellM:raySpacing};
     paintHeat(); coverageUpdate(); showToast(false); draw2d(); if(view==='3d')refresh3dHeat();
     if(onDone)onDone();
   }
