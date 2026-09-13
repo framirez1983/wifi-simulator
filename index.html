@@ -2470,7 +2470,11 @@ function paintHeat(){
   const reachAt=(i,j)=> heatRtReach && heatMode==='trace' ? heatRtReach[j*cols+i] : 0;
   const finite=v=>v!==-Infinity && Number.isFinite(v);
   const displayFinite=(i,j,grid)=>finite(rawAt(i,j,grid)) || reachAt(i,j)===2;
-  const displayValue=(i,j,grid)=> reachAt(i,j)===2 && !finite(rawAt(i,j,grid)) ? RT_FLOOR_DISPLAY_DBM : rawAt(i,j,grid);
+  const displayValue=(i,j,grid)=>{
+    const v=rawAt(i,j,grid), reach=reachAt(i,j);
+    if(reach===2 && !finite(v)) return RT_FLOOR_DISPLAY_DBM;
+    return heatMode==='trace' && reach>0 && finite(v) && v<RT_FLOOR_DISPLAY_DBM ? RT_FLOOR_DISPLAY_DBM : v;
+  };
   const nearestValue=(gx,gy,grid)=>{
     const i=clamp(Math.round(gx),0,cols-1), j=clamp(Math.round(gy),0,rows-1);
     return displayValue(i,j,grid);
@@ -2733,14 +2737,22 @@ function runRayTrace(onDone){
     const k=j*cols+i;
     if(reach[k]===0) reach[k]=2;
   }
+  function markBelowFloorSegment(x1,y1,x2,y2){
+    const steps=Math.max(1,Math.ceil(Math.hypot(x2-x1,y2-y1)/(Math.min(cw,ch)*0.45)));
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      markBelowFloorCell(lerp(x1,x2,t), lerp(y1,y2,t));
+    }
+  }
   function continueBelowFloor(x,y,dx,dy,dst,steps){
     // Once a branch falls below the RT simulation floor, continue only its
     // geometric footprint. Existing RT obstacles are transmissive, so no more
     // wall/pillar loss, reflections, or slab math is needed for this marker.
     while(dst<maxDist && steps<2600){
-      markBelowFloorCell(x,y);
+      const nx=x+dx*stepM, ny=y+dy*stepM;
+      markBelowFloorSegment(x,y,nx,ny);
       if(x<b.minx-1||x>b.maxx+1||y<b.miny-1||y>b.maxy+1) break;
-      x+=dx*stepM; y+=dy*stepM; dst+=stepM; steps++;
+      x=nx; y=ny; dst+=stepM; steps++;
     }
   }
   function segCrossT(ax,ay,bx,by, cx,cy,dx,dy){
