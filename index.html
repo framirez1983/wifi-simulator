@@ -230,7 +230,8 @@
     <button class="tbtn" id="btnSave" data-i18n="toolbar.saveProject">Spara projekt</button>
     <button class="tbtn" id="btnLoad" data-i18n="toolbar.openProject">Öppna</button>
     <div class="seg" style="margin-left:2px">
-      <button id="btnPng" data-i18n="export.rfMap">Mapa RF</button>
+      <button id="btnPng" data-i18n="export.rfMapNoPlan">Mapa RF</button>
+      <button id="btnPngBg" data-i18n="export.rfMapWithPlan">RF + plano</button>
       <button id="btnPlanPng" data-i18n="export.floorPlan">Plano</button>
       <button id="btnGltf" data-i18n="toolbar.scene">3D-scen</button>
     </div>
@@ -578,6 +579,8 @@ const translations = {
     "error.invalidFile": "Archivo no válido",
     "error.noHeatExport": "No hay un mapa de cobertura que exportar. Calcula primero la cobertura.",
     "export.rfMap": "Exportar mapa RF",
+    "export.rfMapNoPlan": "RF sin plano",
+    "export.rfMapWithPlan": "RF con plano",
     "export.floorPlan": "Exportar plano",
     "export.pngDone": "PNG exportado (1600px).",
     "export.planDone": "Plano exportado (1600px).",
@@ -830,6 +833,8 @@ const translations = {
     "error.invalidFile": "Invalid file",
     "error.noHeatExport": "No coverage map to export — calculate coverage first.",
     "export.rfMap": "Export RF map",
+    "export.rfMapNoPlan": "RF without plan",
+    "export.rfMapWithPlan": "RF with plan",
     "export.floorPlan": "Export floor plan",
     "export.pngDone": "PNG exported (1600px).",
     "export.planDone": "Floor plan exported (1600px).",
@@ -1082,6 +1087,8 @@ const translations = {
     "error.invalidFile": "Ogiltig fil",
     "error.noHeatExport": "Ingen täckningskarta att exportera — beräkna täckning först.",
     "export.rfMap": "Exportera RF-karta",
+    "export.rfMapNoPlan": "RF utan ritning",
+    "export.rfMapWithPlan": "RF med ritning",
     "export.floorPlan": "Exportera planritning",
     "export.pngDone": "PNG exporterad (1600px).",
     "export.planDone": "Planritning exporterad (1600px).",
@@ -4026,16 +4033,30 @@ function drawCleanPlan(g,f,b,W,H){
     g.restore();
   });
 }
+function drawExportBackgroundPlan(g,f,b,W,H){
+  if(!f.bg||!f.bg._img||f.bg.visible===false) return false;
+  const sx=W/(b.maxx-b.minx), sy=H/(b.maxy-b.miny);
+  const wx2p=x=>(x-b.minx)*sx, wy2p=y=>(y-b.miny)*sy;
+  g.save();
+  g.globalAlpha=f.bg.opacity==null?0.7:f.bg.opacity;
+  g.translate(wx2p(f.bg.x),wy2p(f.bg.y));
+  g.rotate(f.bg.rot||0);
+  g.drawImage(f.bg._img,0,0,f.bg.w*f.bg.scale*sx,f.bg.h*f.bg.scale*sy);
+  g.restore();
+  return true;
+}
 
 // ---- high-res PNG of active floor heatmap ----
-function exportPNG(){
+function exportPNG(withBackground=false){
   if(!heatCanvas||!heatMeta){ showToast(true,uiMessage('error.noHeatExport'),null,2400); return; }
   const f=floor(); const b=heatMeta;
   const PX=1600; const aspect=(b.maxy-b.miny)/(b.maxx-b.minx);
   const W=PX, H=Math.round(PX*aspect);
   const c=document.createElement('canvas'); c.width=W;c.height=H;
   const g=c.getContext('2d');
-  g.fillStyle='#0d1117'; g.fillRect(0,0,W,H);
+  if(withBackground){ g.fillStyle='#f8fafc'; g.fillRect(0,0,W,H); }
+  const drewBg=withBackground && drawExportBackgroundPlan(g,f,b,W,H);
+  if(!drewBg){ g.fillStyle='#0d1117'; g.fillRect(0,0,W,H); }
   // heatmap
   g.imageSmoothingEnabled=(Number(editorPrefs.heatmapSmoothing)||0)>0; g.globalAlpha=0.85;
   g.drawImage(heatCanvas,0,0,W,H); g.globalAlpha=1;
@@ -4283,7 +4304,8 @@ function wireGlobals(){
   $('#btnSave').onclick=saveProject;
   $('#btnLoad').onclick=()=>$('#fileLoad').click();
   $('#fileLoad').onchange=e=>{ if(e.target.files[0])loadProject(e.target.files[0]); e.target.value=''; };
-  $('#btnPng').onclick=exportPNG;
+  $('#btnPng').onclick=()=>exportPNG(false);
+  $('#btnPngBg').onclick=()=>exportPNG(true);
   $('#btnPlanPng').onclick=exportFloorPlanPNG;
   $('#btnGltf').onclick=exportGLTF;
   $('#plExp').oninput=e=>{ state.plExp=+e.target.value; $('#plExpV').textContent=state.plExp.toFixed(1); scheduleHeat(); };
