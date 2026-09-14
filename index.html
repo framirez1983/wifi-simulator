@@ -2727,7 +2727,9 @@ function runRayTrace(onDone){
   const reach=new Uint8Array(cols*rows); // 0 unvisited, 1 exact RT sample, 2 reached after RT floor cutoff
   const aps=[];
   state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{ if(apParticipatesInRf(ap)&&ap.bands.includes(state.band)) aps.push({ap,af}); }));
-  const MAXINTER=9, MAXREFL=2, REFL_LOSS=5, stepM=cell*0.6;
+  // Transmission crossings are ordinary propagation, not reflection branching.
+  // The high cap is only a safety fuse for malformed/repeated-hit geometry.
+  const MAXREFL=2, MAX_TRANSMISSION_EVENTS=128, REFL_LOSS=5, stepM=cell*0.6;
   const raySpacing=Math.min(cw,ch);
   const maxDist=Math.hypot(b.maxx-b.minx,b.maxy-b.miny)*1.5;
   const traceStarted=performance.now(); let processedBranches=0, initialRays=0; const raysPerAp=[];
@@ -2801,7 +2803,7 @@ function runRayTrace(onDone){
     return best;
   }
   function marchRay(ray, walls, sameFloor, tx){
-    let {x,y,dx,dy,dB,dist:dst,inter,refl}=ray; let steps=0;
+    let {x,y,dx,dy,dB,dist:dst,refl}=ray; let steps=0, transmissionEvents=ray.transmissions||0;
     const apz=floorElevation(ray._af)+(ray._ap.mount||2.6);
     const evz=floorElevation(state.activeFloor)+receiverHeight();
     const verticalDelta=Math.abs(apz-evz);
@@ -2812,7 +2814,7 @@ function runRayTrace(onDone){
       if(ray._af===state.activeFloor) return 0;
       return slabLossBetweenPoints(ray._ap.x,ray._ap.y,apz,ray._af,px,py,evz,state.activeFloor);
     };
-    while(dst<maxDist && inter<=MAXINTER && steps<2600){
+    while(dst<maxDist && steps<2600 && transmissionEvents<MAX_TRANSMISSION_EVENTS){
       const nx=x+dx*stepM, ny=y+dy*stepM;
       let hitW=null, hitT=2;
       if(sameFloor){ for(const w of walls){ const tt=segCrossT(x,y,nx,ny,w.x1,w.y1,w.x2,w.y2); if(tt>=0&&tt<hitT){hitT=tt;hitW=w;} } }
@@ -2820,7 +2822,7 @@ function runRayTrace(onDone){
       if(hitP && (!hitW || hitP.t<hitT)){
         const entryDist=dst+hitP.enterD;
         depositCell(hitP.x,hitP.y, tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(entryDist)))+dB+slabAt(hitP.x,hitP.y)));
-        dB+=matById(hitP.pillar.materialId).db; inter++;
+        dB+=matById(hitP.pillar.materialId).db; transmissionEvents++;
         dst+=hitP.exitD;
         x=hitP.exitX+dx*1e-3; y=hitP.exitY+dy*1e-3;
         dst+=1e-3; steps++;
@@ -2835,9 +2837,9 @@ function runRayTrace(onDone){
           const wdx=hitW.x2-hitW.x1, wdy=hitW.y2-hitW.y1, wl=Math.hypot(wdx,wdy)||1;
           const nxn=-wdy/wl, nyn=wdx/wl, dot=dx*nxn+dy*nyn;
           const rdx=dx-2*dot*nxn, rdy=dy-2*dot*nyn;
-          rayQueue.push({x:hx+rdx*1e-3,y:hy+rdy*1e-3,dx:rdx,dy:rdy,dB:dB+mdb*0.5+REFL_LOSS,dist:dst,inter:inter+1,refl:refl+1,_w:walls,_s:sameFloor,_t:tx,_ap:ray._ap,_af:ray._af});
+          rayQueue.push({x:hx+rdx*1e-3,y:hy+rdy*1e-3,dx:rdx,dy:rdy,dB:dB+mdb*0.5+REFL_LOSS,dist:dst,refl:refl+1,transmissions:transmissionEvents,_w:walls,_s:sameFloor,_t:tx,_ap:ray._ap,_af:ray._af});
         }
-        dB+=mdb; inter++;
+        dB+=mdb; transmissionEvents++;
         x=hx+dx*1e-3; y=hy+dy*1e-3; continue;
       }
       dst+=stepM;
@@ -2859,7 +2861,7 @@ function runRayTrace(onDone){
     for(let r=0;r<RAYS;r++){
       const angDeg=r/RAYS*360, ang=angDeg*Math.PI/180;
       const gain=antennaAzGain(ap, angDeg);
-      rayQueue.push({x:ap.x,y:ap.y,dx:Math.cos(ang),dy:Math.sin(ang),dB:-gain,dist:0,inter:0,refl:0,_w:walls,_s:sameFloor,_t:tx,_ap:ap,_af:af});
+      rayQueue.push({x:ap.x,y:ap.y,dx:Math.cos(ang),dy:Math.sin(ang),dB:-gain,dist:0,refl:0,transmissions:0,_w:walls,_s:sameFloor,_t:tx,_ap:ap,_af:af});
     }
   });
   const initial=rayQueue.length||1;
