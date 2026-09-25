@@ -110,6 +110,8 @@
   .delbtn{width:100%;background:rgba(239,95,95,.08);border:1px solid rgba(239,95,95,.4);
     color:var(--danger);border-radius:var(--r2);padding:8px;margin-top:6px;font-size:12px}
   .delbtn:hover{background:rgba(239,95,95,.18)}
+  .delbtn:disabled{opacity:.35;cursor:default}
+  .delbtn:disabled:hover{background:rgba(239,95,95,.08)}
 
   /* stage overlays */
   #canvas2d{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -510,6 +512,7 @@ const translations = {
     "pillar.heightMode": "Altura RF",
     "pillar.fullHeight": "Altura completa",
     "pillar.heightMeters": "Altura (m)",
+    "projected.from": "Proyectado desde {name}",
     "pillar.attenuation": "Atenuación",
     "pillar.remove": "Eliminar pilar",
     "label.title": "Etiqueta",
@@ -771,6 +774,7 @@ const translations = {
     "pillar.heightMode": "RF height",
     "pillar.fullHeight": "Full height",
     "pillar.heightMeters": "Height (m)",
+    "projected.from": "Projected from {name}",
     "pillar.attenuation": "Attenuation",
     "pillar.remove": "Remove pillar",
     "label.title": "Label",
@@ -1032,6 +1036,7 @@ const translations = {
     "pillar.heightMode": "RF-höjd",
     "pillar.fullHeight": "Full höjd",
     "pillar.heightMeters": "Höjd (m)",
+    "projected.from": "Projicerad från {name}",
     "pillar.attenuation": "Dämpning",
     "pillar.remove": "Ta bort pelare",
     "label.title": "Etikett",
@@ -1543,6 +1548,26 @@ function draw2d(){
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
   });
   drawWallEndpointHandles();
+  // projected spanning walls owned by other floors (same canonical objects, never copies)
+  wallsOnFloor(state.activeFloor).forEach(e=>{
+    if(!e.projected)return;
+    const wl=e.o, a=W2S(wl.x1,wl.y1), b=W2S(wl.x2,wl.y2);
+    const m=matById(wl.materialId);
+    const selW=selection&&selection.type==='wall'&&selection.id===wl.id&&(selection.floorId||floor().id)===e.ownerId;
+    const visualWidth=editorPrefs.wallVisualWidth||5;
+    ctx.save();
+    ctx.globalAlpha=selW?0.95:0.5;
+    ctx.lineCap='round';
+    ctx.lineWidth=selW?visualWidth+2:visualWidth;
+    ctx.strokeStyle=selW?'#7aa2ff':m.color;
+    if(!selW)ctx.setLineDash([6,4]);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    ctx.setLineDash([]);
+    const owner=floorById(e.ownerId);
+    if(owner){ ctx.globalAlpha=selW?0.95:0.75; ctx.fillStyle=selW?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
+      ctx.fillText(owner.name,(a.x+b.x)/2+6,(a.y+b.y)/2-6); }
+    ctx.restore();
+  });
 
   // RF pillars
   (f.pillars||[]).forEach(pl=>{
@@ -1559,6 +1584,26 @@ function draw2d(){
     ctx.fillStyle='rgba(255,255,255,.18)'; ctx.fill();
     ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(2,r*0.22),0,Math.PI*2);
     ctx.fillStyle=selP?'#7aa2ff':m.color; ctx.fill();
+    ctx.restore();
+  });
+  // projected spanning pillars owned by other floors (same canonical objects, never copies)
+  pillarsOnFloor(state.activeFloor).forEach(e=>{
+    if(!e.projected)return;
+    const pl=e.o, p=W2S(pl.x,pl.y);
+    const m=matById(pl.materialId);
+    const r=Math.max(0.05,(pl.diameter||0.6)/2)*camera.zoom;
+    const selP=selection&&selection.type==='pillar'&&selection.id===pl.id&&(selection.floorId||floor().id)===e.ownerId;
+    ctx.save();
+    ctx.globalAlpha=selP?0.95:0.5;
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle=hexToRgba(m.color,0.9); ctx.fill();
+    ctx.lineWidth=selP?3:2;
+    ctx.strokeStyle=selP?'#7aa2ff':shade(m.color,-0.25);
+    if(!selP)ctx.setLineDash([4,3]);
+    ctx.stroke(); ctx.setLineDash([]);
+    const owner=floorById(e.ownerId);
+    if(owner){ ctx.globalAlpha=selP?0.95:0.75; ctx.fillStyle=selP?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
+      ctx.fillText(owner.name,p.x+r+4,p.y+3); }
     ctx.restore();
   });
 
@@ -1846,9 +1891,30 @@ function pickWall(wx,wy){
   }
   return null;
 }
+// Projected spanning walls/pillars owned by other floors ({o,ownerId} refs, never copies).
+function pickProjectedWall(wx,wy){
+  const tol=8/camera.zoom, ai=state.activeFloor, sl=floorSlice(ai);
+  let best=null;
+  state.floors.forEach((g,gi)=>{ if(gi===ai)return;
+    (g.walls||[]).forEach(w=>{ if(!hasExplicitHeight(w))return;
+      const s=spanInterval(w,gi);
+      if(!spansOverlap(s.base,s.top,sl.base,sl.top))return;
+      if(distToSeg(wx,wy,w.x1,w.y1,w.x2,w.y2)<tol) best={o:w,ownerId:g.id}; }); });
+  return best;
+}
+function pickProjectedPillar(wx,wy){
+  const ai=state.activeFloor, sl=floorSlice(ai);
+  let best=null;
+  state.floors.forEach((g,gi)=>{ if(gi===ai)return;
+    (g.pillars||[]).forEach(p=>{ if(!hasExplicitHeight(p))return;
+      const s=spanInterval(p,gi);
+      if(!spansOverlap(s.base,s.top,sl.base,sl.top))return;
+      if(dist(wx,wy,p.x,p.y)<=Math.max((p.diameter||0.6)/2,10/camera.zoom)) best={o:p,ownerId:g.id}; }); });
+  return best;
+}
 function selectedSingleWall(){
   if(!selection || selection.type!=='wall' || multiWalls.length) return null;
-  return floor().walls.find(w=>w.id===selection.id) || null;
+  return selFloor().walls.find(w=>w.id===selection.id) || null;
 }
 function drawWallEndpointHandles(){
   const w=selectedSingleWall();
@@ -2022,10 +2088,10 @@ cv.addEventListener('pointerdown',e=>{
     if(lb){ select('label',lb.id); commit(); dragging={type:'label',id:lb.id,ox:w.x-lb.x,oy:w.y-lb.y}; return; }
     const pl=pickPillar(w.x,w.y);
     if(pl){ select('pillar',pl.id); commit(); dragging={type:'pillar',id:pl.id,ox:w.x-pl.x,oy:w.y-pl.y}; return; }
+    const ppl=pickProjectedPillar(w.x,w.y);
+    if(ppl){ select('pillar',ppl.o.id,ppl.ownerId); commit(); dragging={type:'pillar',id:ppl.o.id,ox:w.x-ppl.o.x,oy:w.y-ppl.o.y}; return; }
     const cr=pickCableRoute(w.x,w.y);
     if(cr){ select('cable',cr.id); return; }
-    const op=pickOpening(w.x,w.y);
-    if(op){ select('opening',op.id); commit(); dragging={type:'opening',id:op.id,startWx:w.x,startWy:w.y,start:op.points.map(p=>({x:p.x,y:p.y}))}; return; }
     const wl=pickWall(w.x,w.y);
     if(wl){
       if(selection && selection.type==='wall' && selection.id===wl.id && !multiWalls.length){
@@ -2035,6 +2101,19 @@ cv.addEventListener('pointerdown',e=>{
       }
       select('wall',wl.id); return;
     }
+    const pwl=pickProjectedWall(w.x,w.y);
+    if(pwl){
+      if(selection && selection.type==='wall' && selection.id===pwl.o.id && selection.floorId===pwl.ownerId && !multiWalls.length){
+        dragging={type:'wall-body',id:pwl.o.id,sx:e.offsetX,sy:e.offsetY,startWx:w.x,startWy:w.y,
+          start:{x1:pwl.o.x1,y1:pwl.o.y1,x2:pwl.o.x2,y2:pwl.o.y2}, committed:false,moved:false};
+        return;
+      }
+      select('wall',pwl.o.id,pwl.ownerId); return;
+    }
+    // Openings yield to selectable physical objects (local and projected alike):
+    // an opening captures the click only when nothing higher-priority is under the pointer.
+    const op=pickOpening(w.x,w.y);
+    if(op){ select('opening',op.id); commit(); dragging={type:'opening',id:op.id,startWx:w.x,startWy:w.y,start:op.points.map(p=>({x:p.x,y:p.y}))}; return; }
     const f=floor();
     if(f.bg&&f.bg._img&&insideBg(w.x,w.y)){ select('bg'); if(!f.bg.locked){ commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; } return; }
     const z=pickZone(w.x,w.y);
@@ -2119,7 +2198,7 @@ window.addEventListener('pointermove',e=>{
   if(boxing){ boxing.x1=w.x; boxing.y1=w.y; draw2d(); return; }
   if(zoneDraft){ zoneDraft.x1=w.x; zoneDraft.y1=w.y; draw2d(); return; }
   if(dragging){
-    const f=floor();
+    const f=selFloor();
     if(dragging.type==='ap'){ const ap=f.aps.find(a=>a.id===dragging.id); if(ap){ap.x=Math.round((w.x-dragging.ox)*4)/4;ap.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='cable-node'){ const route=(f.cableRoutes||[]).find(r=>r.id===dragging.id); if(route&&route.nodes&&route.nodes[dragging.index]){route.nodes[dragging.index].x=Math.round((w.x-dragging.ox)*4)/4;route.nodes[dragging.index].y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='opening'){ const op=(f.openings||[]).find(o=>o.id===dragging.id); if(op){ const dx=w.x-dragging.startWx, dy=w.y-dragging.startWy; op.points=dragging.start.map(p=>({x:p.x+dx,y:p.y+dy})); } }
@@ -2228,7 +2307,7 @@ function endNudgeGesture(){
 function moveBy(obj,dx,dy){ obj.x=Math.round((obj.x+dx)*1000)/1000; obj.y=Math.round((obj.y+dy)*1000)/1000; }
 function nudgeSelection(dx,dy){
   if(!selection) return false;
-  const f=floor(); let rf=false, threeD=false, coverageOnly=false, moved=false;
+  const f=selFloor(); let rf=false, threeD=false, coverageOnly=false, moved=false;
   if(selection.type==='ap'){
     const ap=f.aps.find(a=>a.id===selection.id); if(!ap)return false;
     beginNudgeGesture();
@@ -3296,6 +3375,13 @@ function duplicateFloor(i){
   commit();
   const src=state.floors[i];
   const copy=JSON.parse(JSON.stringify(src,(k,v)=>k==='_img'?undefined:v));
+  // Objects taller than the owner slice remain canonical on the original floor:
+  // never copy a second overlapping physical object into the duplicate.
+  // Purely owner-local objects (null or in-slice height) duplicate normally.
+  const oh=(Number.isFinite(src.height)&&src.height>0)?src.height:3;
+  const outlivesOwner=o=>Number.isFinite(o.height)&&o.height>oh+SPAN_EPS;
+  copy.walls=(copy.walls||[]).filter(w=>!outlivesOwner(w));
+  copy.pillars=(copy.pillars||[]).filter(p=>!outlivesOwner(p));
   copy.id=uid('flr'); copy.name=src.name+' (copy)';
   copy.walls.forEach(w=>w.id=uid('wl'));
   (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
@@ -3367,9 +3453,46 @@ function buildBands(){
 }
 
 // ---------- selection / properties ----------
-function select(type,id){ if(type!=='walls') multiWalls=[]; selection=type?{type,id}:null; draw2d(); renderProp(); }
+function select(type,id,floorId){ if(type!=='walls') multiWalls=[]; selection=type?{type,id}:null; if(selection&&floorId)selection.floorId=floorId; draw2d(); renderProp(); }
+// Cross-floor canonical identity: stable floor ids, never array indices.
+// Selections without floorId resolve against the active floor (legacy behavior).
+function floorById(fid){ return state.floors.find(f=>f.id===fid)||null; }
+function selFloor(){ return (selection&&selection.floorId&&floorById(selection.floorId))||floor(); }
+// Vertical spanning (Stage 1: 2D projection + editing; RF untouched).
+// Half-open spans with epsilon: a top exactly at the next floor base does NOT project upward.
+const SPAN_EPS=1e-9;
+// A wall/pillar projects onto other floors iff it has an explicit finite height>0,
+// spanning [floorElevation(owner), +height). Null-height legacy objects keep
+// owner-floor-only behavior. Physical height alone decides; there is no opt-in flag.
+function hasExplicitHeight(o){ return !!o && Number.isFinite(o.height) && o.height>0; }
+function spanInterval(o,ownerIdx){ const b=floorElevation(ownerIdx); return {base:b,top:b+Math.max(0,o.height)}; }
+function floorSlice(i){ const b=floorElevation(i); return {base:b,top:b+state.floors[i].height}; }
+function spansOverlap(ob,ot,fb,ft){ return ot>fb+SPAN_EPS && ob<ft-SPAN_EPS; }
+// Canonical references {o,ownerId,projected} for Stage-2 RF deduplication (ownerFloorId, objectId).
+function spanProjected(listName,i){
+  const out=[], f=state.floors[i], sl=floorSlice(i);
+  (f[listName]||[]).forEach(o=>out.push({o,ownerId:f.id,projected:false}));
+  state.floors.forEach((g,gi)=>{ if(gi===i)return;
+    (g[listName]||[]).forEach(o=>{ if(!hasExplicitHeight(o))return;
+      const s=spanInterval(o,gi);
+      if(spansOverlap(s.base,s.top,sl.base,sl.top)) out.push({o,ownerId:g.id,projected:true}); }); });
+  return out;
+}
+function wallsOnFloor(i){ return spanProjected('walls',i); }
+function pillarsOnFloor(i){ return spanProjected('pillars',i); }
+// True when a floorId-carrying selection still overlaps the active floor slice.
+// Local selections (no floorId) always resolve on the active floor.
+function selectionIntersectsActive(obj){
+  if(!selection||!selection.floorId||selection.floorId===floor().id) return true;
+  const oi=state.floors.findIndex(x=>x.id===selection.floorId);
+  if(oi<0||!hasExplicitHeight(obj)) return false;
+  const s=spanInterval(obj,oi), sl=floorSlice(state.activeFloor);
+  return spansOverlap(s.base,s.top,sl.base,sl.top);
+}
+function ownerFloorName(fid){ const f=floorById(fid); return f?f.name:''; }
 function deleteSelection(){
   if(!selection)return;
+  if(selection.floorId&&selection.floorId!==floor().id) return; // Stage 1: projected objects delete only from the owner floor
   commit();
   if(selection.type==='walls'){ const f=floor();
     f.walls=f.walls.filter(w=>!multiWalls.includes(w.id)); multiWalls=[]; selection=null;
@@ -3441,7 +3564,7 @@ function renderProp(){
     wireWallSnapControls();
     $('#pSelAll').onclick=selectAllWalls;
     $('#pCleanup').onclick=cleanupWalls; return; }
-  const f=floor();
+  const f=selFloor();
   if(selection.type==='ap'){
     const ap=f.aps.find(a=>a.id===selection.id); if(!ap){select(null);return;}
     setUiText(title,'tool.ap');
@@ -3575,8 +3698,11 @@ function renderProp(){
   }
   else if(selection.type==='pillar'){
     const p=(f.pillars||[]).find(x=>x.id===selection.id); if(!p){select(null);return;}
+    if(!selectionIntersectsActive(p)){select(null);return;}
+    const isProj=!!(selection.floorId&&selection.floorId!==floor().id);
     setUiText(title,'pillar.title');
     body.innerHTML=`
+      ${isProj?`<div class="hint">${t('projected.from',{name:escapeHtml(ownerFloorName(selection.floorId))})}</div>`:''}
       <div class="field"><label>${t('pillar.material')}</label><select id="pMat">
         ${state.materials.map(m=>`<option value="${m.id}" ${p.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
@@ -3588,7 +3714,7 @@ function renderProp(){
       <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${p.x.toFixed(2)}"></div>
         <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${p.y.toFixed(2)}"></div></div>
       <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(p.materialId).db} dB</b></div>
-      <button class="delbtn" id="pDel">${t('pillar.remove')}</button>`;
+      <button class="delbtn" id="pDel" ${isProj?'disabled':''}>${t('pillar.remove')}</button>`;
     $('#pMat').onchange=e=>{commit();p.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
     $('#pPillarDia').onchange=e=>{ const v=parseFloat(e.target.value);
       if(!(v>0)){ e.target.value=(p.diameter||0.6).toFixed(2); return; }
@@ -3610,9 +3736,12 @@ function renderProp(){
   }
   else if(selection.type==='wall'){
     const w=f.walls.find(x=>x.id===selection.id); if(!w){select(null);return;}
+    if(!selectionIntersectsActive(w)){select(null);return;}
+    const isProj=!!(selection.floorId&&selection.floorId!==floor().id);
     setUiText(title,'tool.wall');
     const len=wallLen(w), angle=normAngleDeg(wallAngleDeg(w));
     body.innerHTML=`
+      ${isProj?`<div class="hint">${t('projected.from',{name:escapeHtml(ownerFloorName(selection.floorId))})}</div>`:''}
       <div class="field"><label>${t('wall.material')}</label><select id="pMat">
         ${state.materials.map(m=>`<option value="${m.id}" ${w.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
@@ -3626,7 +3755,7 @@ function renderProp(){
       <div class="stat"><span>${t('wall.attenuation')}</span><b>${matById(w.materialId).db} dB</b></div>
       <button class="tbtn" id="pStraighten" style="width:100%;justify-content:center;margin:8px 0">${t('wall.straighten')}</button>
       ${wallSnapControlsHtml()}
-      <button class="delbtn" id="pDel">${t('wall.remove')}</button>`;
+      <button class="delbtn" id="pDel" ${isProj?'disabled':''}>${t('wall.remove')}</button>`;
     $('#pMat').onchange=e=>{w.materialId=e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();renderProp();};
     $('#pWallLen').onchange=e=>{
       const v=parseFloat(e.target.value);
