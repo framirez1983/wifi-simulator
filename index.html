@@ -3018,6 +3018,127 @@ function resize3d(){
 }
 
 // world(x,y meters) -> three(x, z).  We map world.x->X, world.y->Z, elevation->Y
+// Valid opening rings shared by the 3D slab/bg builders (visual only; RF untouched).
+// Returns world-coordinate points normalized to three.js canonical hole winding
+// (CCW in shape coords), or null for malformed input.
+function cleanOpeningRing(points){
+  const pts=((points)||[]).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y));
+  const clean=[];
+  pts.forEach(p=>{ const l=clean[clean.length-1];
+    if(!l||Math.hypot(p.x-l.x,p.y-l.y)>1e-6) clean.push({x:p.x,y:p.y}); });
+  if(clean.length>2){
+    const f0=clean[0], fl=clean[clean.length-1];
+    if(Math.hypot(f0.x-fl.x,f0.y-fl.y)<=1e-6) clean.pop();
+  }
+  if(clean.length<3) return null;
+  let holeArea=0;
+  for(let i=0;i<clean.length;i++){ const a=clean[i], c=clean[(i+1)%clean.length]; holeArea+=a.x*(-c.y)-c.x*(-a.y); }
+  if(holeArea<0) clean.reverse();
+  return clean;
+}
+// Sutherland–Hodgman clip of a world-coordinate ring against an axis-aligned rect.
+function clipRingToRect(ring, r){
+  let out=ring.map(p=>({x:p.x,y:p.y}));
+  const edges=[
+    {in:p=>p.x>=r.x, cross:(a,b)=>{ const t=(r.x-a.x)/(b.x-a.x); return {x:r.x,y:a.y+(b.y-a.y)*t}; }},
+    {in:p=>p.x<=r.x+r.w, cross:(a,b)=>{ const t=(r.x+r.w-a.x)/(b.x-a.x); return {x:r.x+r.w,y:a.y+(b.y-a.y)*t}; }},
+    {in:p=>p.y>=r.y, cross:(a,b)=>{ const t=(r.y-a.y)/(b.y-a.y); return {x:a.x+(b.x-a.x)*t,y:r.y}; }},
+    {in:p=>p.y<=r.y+r.h, cross:(a,b)=>{ const t=(r.y+r.h-a.y)/(b.y-a.y); return {x:a.x+(b.x-a.x)*t,y:r.y+r.h}; }},
+  ];
+  edges.forEach(e=>{
+    const inp=out; out=[];
+    if(!inp.length)return;
+    for(let i=0;i<inp.length;i++){
+      const a=inp[(i+inp.length-1)%inp.length], b=inp[i];
+      const ain=e.in(a), bin=e.in(b);
+      if(bin){ if(!ain)out.push(e.cross(a,b)); out.push({x:b.x,y:b.y}); }
+      else if(ain){ out.push(e.cross(a,b)); }
+    }
+  });
+  return out;
+}
+// Background-plane geometry with the floor's openings cut out (3D only).
+// Returns {geo} (clipped plane), {empty:true} (plane fully covered, draw nothing),
+// or null (no usable opening -> caller keeps the legacy PlaneGeometry path).
+// Same holes/shape-space convention as the perforated slab; bg rotation stays
+// ignored exactly like the legacy 3D plane.
+function bgPlaneGeometryClipped(f){
+  const b=f.bg;
+  if(!b||!b._img) return null;
+  const pw=b.w*b.scale, ph=b.h*b.scale;
+  if(!(pw>0)||!(ph>0)) return null;
+  const rx=b.x, ry=b.y, bgArea=pw*ph;
+  const holes=[];
+  let swallowed=false;
+  (f.openings||[]).forEach(o=>{
+    if(swallowed)return;
+    const ring=cleanOpeningRing(o&&o.points);
+    if(!ring)return;
+    let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+    ring.forEach(p=>{ if(p.x<mnx)mnx=p.x; if(p.x>mxx)mxx=p.x; if(p.y<mny)mny=p.y; if(p.y>mxy)mxy=p.y; });
+    if(mxx<rx||mnx>rx+pw||mxy<ry||mny>ry+ph) return; // hole misses the image entirely
+    const c=clipRingToRect(ring,{x:rx,y:ry,w:pw,h:ph});
+    if(c.length<3) return;
+    let a=0;
+    for(let i=0;i<c.length;i++){ const p=c[i], q=c[(i+1)%c.length]; a+=p.x*q.y-q.x*p.y; }
+    a=Math.abs(a)/2;
+    if(a<1e-9) return;
+    if(a>=bgArea*(1-1e-6)){ swallowed=true; return; } // opening covers the whole image
+    holes.push(c);
+  });
+  if(swallowed) return {empty:true};
+  if(!holes.length) return null;
+  try{
+    const shape=new THREE.Shape();
+    shape.moveTo(rx,-ry); shape.lineTo(rx+pw,-ry);
+    shape.lineTo(rx+pw,-(ry+ph)); shape.lineTo(rx,-(ry+ph));
+    shape.closePath();
+    holes.forEach(c=>{
+      const path=new THREE.Path();
+      c.forEach((p,i)=>{ if(i)path.lineTo(p.x,-p.y); else path.moveTo(p.x,-p.y); });
+      path.closePath();
+      shape.holes.push(path);
+    });
+    const geo=new THREE.ShapeGeometry(shape);
+    // ShapeGeometry UVs follow shape coords; remap to image space
+    // (u=0 left, v=1 image top, matching the legacy plane orientation).
+    const pos=geo.attributes.position, uv=geo.attributes.uv;
+    for(let i=0;i<pos.count;i++){ uv.setXY(i,(pos.getX(i)-rx)/pw,(pos.getY(i)+ry+ph)/ph); }
+    uv.needsUpdate=true;
+    geo.rotateX(-Math.PI/2);
+    return {geo};
+  }catch(_){ return null; }
+}
+// Slab geometry with real holes for slab openings (visual only; RF untouched).
+// Shape coords use (worldX, -worldY); after rotateX(-PI/2) + translate the mesh
+// occupies world x∈[minx,maxx], y∈[-0.12,0], z(worldY)∈[miny,maxy] — exactly the
+// legacy BoxGeometry volume. Returns null when there is no usable opening, in
+// which case the caller keeps the legacy solid-slab path.
+function slabGeometryForFloor(b, openings){
+  const fw=b.maxx-b.minx, fd=b.maxy-b.miny;
+  if(!(fw>0)||!(fd>0)) return null;
+  const holes=[];
+  (openings||[]).forEach(o=>{
+    const clean=cleanOpeningRing(o&&o.points);
+    if(!clean) return; // malformed: ignore this opening, keep the scene intact
+    const path=new THREE.Path();
+    clean.forEach((p,i)=>{ if(i)path.lineTo(p.x,-p.y); else path.moveTo(p.x,-p.y); });
+    path.closePath();
+    holes.push(path);
+  });
+  if(!holes.length) return null;
+  try{
+    const shape=new THREE.Shape();
+    shape.moveTo(b.minx,-b.miny); shape.lineTo(b.maxx,-b.miny);
+    shape.lineTo(b.maxx,-b.maxy); shape.lineTo(b.minx,-b.maxy);
+    shape.closePath();
+    shape.holes=holes;
+    const geo=new THREE.ExtrudeGeometry(shape,{depth:0.12,bevelEnabled:false});
+    geo.rotateX(-Math.PI/2);
+    geo.translate(0,-0.12,0);
+    return geo;
+  }catch(_){ return null; }
+}
 function build3d(){
   if(!three)return;
   const root=three.root;
@@ -3035,23 +3156,32 @@ function build3d(){
     fl.position.set(0, elev, 0);
     const dim = idx===state.activeFloor ? 1 : 0.32;
 
-    // floor slab
+    // floor slab (slab openings cut real holes through the slab thickness)
     const fw=b.maxx-b.minx, fd=b.maxy-b.miny;
-    const slabGeo=new THREE.BoxGeometry(fw,0.12,fd);
     const slabMat=new THREE.MeshStandardMaterial({color:0x1b2430,transparent:true,opacity:0.55*dim+0.12,roughness:.95});
-    const slab=new THREE.Mesh(slabGeo,slabMat);
-    slab.position.set((b.minx+b.maxx)/2-cx, -0.06, (b.miny+b.maxy)/2-cz);
+    const holedSlabGeo=slabGeometryForFloor(b, f.openings);
+    let slab;
+    if(holedSlabGeo){ slab=new THREE.Mesh(holedSlabGeo,slabMat); slab.position.set(-cx,0,-cz); }
+    else {
+      slab=new THREE.Mesh(new THREE.BoxGeometry(fw,0.12,fd),slabMat);
+      slab.position.set((b.minx+b.maxx)/2-cx, -0.06, (b.miny+b.maxy)/2-cz);
+    }
     fl.add(slab);
 
-    // background image as textured plane on this floor
+    // background image as textured plane on this floor (openings clip the plane in 3D)
     if(f.bg && f.bg._img && f.bg.visible!==false && idx===state.activeFloor){
       const tex=new THREE.Texture(f.bg._img); tex.needsUpdate=true;
       const pw=f.bg.w*f.bg.scale, ph=f.bg.h*f.bg.scale;
-      const pg=new THREE.PlaneGeometry(pw,ph);
       const pm=new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:f.bg.opacity*0.8});
-      const pl=new THREE.Mesh(pg,pm); pl.rotation.x=-Math.PI/2;
-      pl.position.set(f.bg.x+pw/2-cx, 0.02, f.bg.y+ph/2-cz);
-      fl.add(pl);
+      const clip=bgPlaneGeometryClipped(f);
+      let pl=null;
+      if(clip&&clip.geo){ pl=new THREE.Mesh(clip.geo,pm); pl.position.set(-cx,0.02,-cz); }
+      else if(!(clip&&clip.empty)){
+        const pg=new THREE.PlaneGeometry(pw,ph);
+        pl=new THREE.Mesh(pg,pm); pl.rotation.x=-Math.PI/2;
+        pl.position.set(f.bg.x+pw/2-cx, 0.02, f.bg.y+ph/2-cz);
+      }
+      if(pl)fl.add(pl);
     }
 
     // walls
