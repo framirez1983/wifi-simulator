@@ -452,6 +452,7 @@ const translations = {
     "tool.cable": "Cable",
     "tool.opening": "Espacio abierto",
     "tool.bg": "Plano",
+    "tool.rfobj": "Objeto RF",
     "tool.erase": "Borrar",
     "tool.zone": "Zona de exclusión",
     "tool.measure": "Medir",
@@ -515,6 +516,15 @@ const translations = {
     "projected.from": "Proyectado desde {name}",
     "pillar.attenuation": "Atenuación",
     "pillar.remove": "Eliminar pilar",
+    "rfobj.title": "Objeto RF",
+    "rfobj.name": "Nombre",
+    "rfobj.width": "Anchura (m)",
+    "rfobj.depth": "Profundidad (m)",
+    "rfobj.height": "Altura (m)",
+    "rfobj.rotation": "Rotación (°)",
+    "rfobj.material": "Material",
+    "rfobj.extraLoss": "Atenuación extra (dB)",
+    "rfobj.remove": "Eliminar objeto RF",
     "label.title": "Etiqueta",
     "label.text": "Texto",
     "label.size": "Tamaño",
@@ -562,6 +572,7 @@ const translations = {
     "stats.aps": "Puntos de acceso",
     "stats.walls": "Paredes (total)",
     "stats.pillars": "Pilares RF",
+    "stats.rfObjects": "Objetos RF",
     "stats.wallMeters": "Metros de pared",
     "stats.floorAps": "AP en la planta",
     "calibration.title": "Calibrar",
@@ -714,6 +725,7 @@ const translations = {
     "tool.cable": "Cable",
     "tool.opening": "Open space",
     "tool.bg": "Floor plan",
+    "tool.rfobj": "RF Object",
     "tool.erase": "Erase",
     "tool.zone": "Exclusion zone",
     "tool.measure": "Measure",
@@ -777,6 +789,15 @@ const translations = {
     "projected.from": "Projected from {name}",
     "pillar.attenuation": "Attenuation",
     "pillar.remove": "Remove pillar",
+    "rfobj.title": "RF Object",
+    "rfobj.name": "Name",
+    "rfobj.width": "Width (m)",
+    "rfobj.depth": "Depth (m)",
+    "rfobj.height": "Height (m)",
+    "rfobj.rotation": "Rotation (°)",
+    "rfobj.material": "Material",
+    "rfobj.extraLoss": "Extra loss (dB)",
+    "rfobj.remove": "Remove RF object",
     "label.title": "Label",
     "label.text": "Text",
     "label.size": "Size",
@@ -824,6 +845,7 @@ const translations = {
     "stats.aps": "Access points",
     "stats.walls": "Walls (total)",
     "stats.pillars": "RF pillars",
+    "stats.rfObjects": "RF Objects",
     "stats.wallMeters": "Wall meters",
     "stats.floorAps": "APs on this floor",
     "calibration.title": "Calibrate",
@@ -976,6 +998,7 @@ const translations = {
     "tool.cable": "Kabel",
     "tool.opening": "Öppet utrymme",
     "tool.bg": "Ritning",
+    "tool.rfobj": "RF-objekt",
     "tool.erase": "Radera",
     "tool.zone": "Spärryta",
     "tool.measure": "Mät",
@@ -1039,6 +1062,15 @@ const translations = {
     "projected.from": "Projicerad från {name}",
     "pillar.attenuation": "Dämpning",
     "pillar.remove": "Ta bort pelare",
+    "rfobj.title": "RF-objekt",
+    "rfobj.name": "Namn",
+    "rfobj.width": "Bredd (m)",
+    "rfobj.depth": "Djup (m)",
+    "rfobj.height": "Höjd (m)",
+    "rfobj.rotation": "Rotation (°)",
+    "rfobj.material": "Material",
+    "rfobj.extraLoss": "Extra dämpning (dB)",
+    "rfobj.remove": "Ta bort RF-objekt",
     "label.title": "Etikett",
     "label.text": "Text",
     "label.size": "Storlek",
@@ -1086,6 +1118,7 @@ const translations = {
     "stats.aps": "Accesspunkter",
     "stats.walls": "Väggar (totalt)",
     "stats.pillars": "RF-pelare",
+    "stats.rfObjects": "RF-objekt",
     "stats.wallMeters": "Väggmeter",
     "stats.floorAps": "AP på planet",
     "calibration.title": "Kalibrera",
@@ -1333,7 +1366,7 @@ const DEFAULT_MATERIALS = [
 let state;
 function freshFloor(name, idx){
   return { id:uid('flr'), name:name||('Floor '+(idx+1)), height:3.0, w:20, d:14,
-           walls:[], pillars:[], aps:[], labels:[], racks:[], cableRoutes:[], openings:[], zones:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
+           walls:[], pillars:[], aps:[], labels:[], racks:[], cableRoutes:[], openings:[], zones:[], rfObjects:[], bg:null /* {data,scale,x,y,rot,opacity,locked,visible,w,h} */ };
 }
 function freshState(){
   const mats = DEFAULT_MATERIALS.map(m=>({...m}));
@@ -1378,6 +1411,7 @@ const TOOLS = [
   ['cable','tool.cable','C','<path d="M4 7c5 0 3 10 8 10s3-10 8-10"/><circle cx="4" cy="7" r="2"/><circle cx="20" cy="7" r="2"/>'],
   ['opening','tool.opening','O','<path d="M5 7l7-3 7 4-2 9-9 2-4-6z"/><path d="M8 10l8 4M14 7l-4 9" opacity=".55"/>'],
   ['bg','tool.bg','R','<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 14l5-4 4 3 3-2 6 4" /><circle cx="9" cy="9" r="1.3"/>'],
+  ['rfobj','tool.rfobj','B','<rect x="5" y="5" width="14" height="10" rx="1"/><path d="M7 7l4-2 4 2-4 2-4-2" opacity=".5"/>'],
   ['erase','tool.erase','E','<path d="M4 14l6-6 7 7-3 3H8z"/><path d="M14 4l6 6"/>'],
   ['zone','tool.zone','Z','<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M6 18L18 6M11 18L18 11M6 13L13 6" opacity=".55"/>'],
   ['measure','tool.measure','L','<path d="M3 8l13 13M3 8l5-5 13 13-5 5z"/><path d="M7 7l1.5 1.5M10 10l1.5 1.5M13 13l1.5 1.5"/>'],
@@ -1429,6 +1463,7 @@ function floorBounds(f){
   f.walls.forEach(w=>{acc(w.x1,w.y1);acc(w.x2,w.y2);});
   (f.pillars||[]).forEach(p=>{ const r=(p.diameter||0.6)/2; acc(p.x-r,p.y-r); acc(p.x+r,p.y+r); });
   f.aps.forEach(a=>acc(a.x,a.y));
+  (f.rfObjects||[]).forEach(o=>{ const hw=o.width/2, hd=o.depth/2; acc(o.x-hw,o.y-hd); acc(o.x+hw,o.y+hd); });
   if(f.bg){ acc(f.bg.x,f.bg.y); acc(f.bg.x+f.bg.w*f.bg.scale, f.bg.y+f.bg.h*f.bg.scale); }
   const pad=1.0;
   return {minx:minx-pad, miny:miny-pad, maxx:maxx+pad, maxy:maxy+pad};
@@ -1606,6 +1641,111 @@ function draw2d(){
       ctx.fillText(owner.name,p.x+r+4,p.y+3); }
     ctx.restore();
   });
+
+  // RF Objects (rotated rectangles)
+  (f.rfObjects||[]).forEach(ro=>{
+    const c=W2S(ro.x,ro.y);
+    const m=matById(ro.materialId);
+    const sel=selection&&selection.type==='rfobj'&&selection.id===ro.id;
+    const cos=Math.cos(ro.rotation*Math.PI/180), sin=Math.sin(ro.rotation*Math.PI/180);
+    const hw=ro.width/2, hd=ro.depth/2;
+    const corners=[
+      {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+    ].map(p=>({x:c.x+(p.x*cos-p.y*sin)*camera.zoom,y:c.y+(p.x*sin+p.y*cos)*camera.zoom}));
+    ctx.save();
+    ctx.globalAlpha=sel?1:0.85;
+    ctx.lineWidth=sel?3:2;
+    ctx.strokeStyle=sel?'#7aa2ff':m.color;
+    ctx.fillStyle=hexToRgba(m.color,sel?0.25:0.12);
+    ctx.beginPath();
+    corners.forEach((p,i)=>{ i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); });
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    if(sel){ ctx.strokeStyle='#7aa2ff'; ctx.lineWidth=3; ctx.stroke(); }
+    // dimension labels
+    ctx.globalAlpha=sel?1:0.7;
+    ctx.fillStyle=sel?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
+    ctx.fillText(`${ro.width.toFixed(1)}×${ro.depth.toFixed(1)} m`, c.x+6, c.y-6);
+    ctx.restore();
+    // Corner resize handles for selected RF object (editor-only)
+    if(sel){
+      const hs=16/camera.zoom; // handle size ~16 screen px
+      const hitTol=22/camera.zoom; // hit target ~22 screen px
+      const handleCorners=[
+        {x:-hw,y:-hd, idx:0}, // bottom-left
+        {x:hw,y:-hd, idx:1},  // bottom-right
+        {x:hw,y:hd, idx:2},   // top-right
+        {x:-hw,y:hd, idx:3}   // top-left
+      ];
+      handleCorners.forEach(hc=>{
+        const hx=c.x+(hc.x*cos-hc.y*sin)*camera.zoom;
+        const hy=c.y+(hc.x*sin+hc.y*cos)*camera.zoom;
+        ctx.save();
+        ctx.fillStyle='#7aa2ff';
+        ctx.strokeStyle='#0d1117';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.arc(hx,hy,hs,0,Math.PI*2);
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      });
+    }
+  });
+  // projected spanning RF Objects owned by other floors (same canonical objects, never copies)
+  (function(){
+    const ai=state.activeFloor, sl=floorSlice(ai);
+    state.floors.forEach((g,gi)=>{ if(gi===ai)return;
+      (g.rfObjects||[]).forEach(o=>{
+        if(!hasExplicitHeight(o))return;
+        const s=spanInterval(o,gi);
+        if(!spansOverlap(s.base,s.top,sl.base,sl.top))return;
+        const c=W2S(o.x,o.y);
+        const m=matById(o.materialId);
+        const cos=Math.cos(o.rotation*Math.PI/180), sin=Math.sin(o.rotation*Math.PI/180);
+        const hw=o.width/2, hd=o.depth/2;
+        const corners=[
+          {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+        ].map(p=>({x:c.x+(p.x*cos-p.y*sin)*camera.zoom,y:c.y+(p.x*sin+p.y*cos)*camera.zoom}));
+        const sel=selection&&selection.type==='rfobj'&&selection.id===o.id&&(selection.floorId||floor().id)===g.id;
+        ctx.save();
+        ctx.globalAlpha=sel?0.95:0.45;
+        ctx.lineWidth=sel?3:2;
+        ctx.strokeStyle=sel?'#7aa2ff':m.color;
+        ctx.fillStyle=hexToRgba(m.color,sel?0.2:0.08);
+        if(!sel)ctx.setLineDash([6,4]);
+        ctx.beginPath();
+        corners.forEach((p,i)=>{ i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); });
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.setLineDash([]);
+        const owner=floorById(g.id);
+        if(owner){ ctx.globalAlpha=sel?0.95:0.75; ctx.fillStyle=sel?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
+          ctx.fillText(owner.name,corners[0].x+6,corners[0].y-6); }
+        // Corner resize handles for selected projected RF object (editor-only)
+        if(sel){
+          const hs=16/camera.zoom; // handle size ~16 screen px
+          const hitTol=22/camera.zoom; // hit target ~22 screen px
+          const hw=o.width/2, hd=o.depth/2;
+          const cos=Math.cos(o.rotation*Math.PI/180), sin=Math.sin(o.rotation*Math.PI/180);
+          const handleCorners=[
+            {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+          ];
+          handleCorners.forEach(hc=>{
+            const hx=c.x+(hc.x*cos-hc.y*sin)*camera.zoom;
+            const hy=c.y+(hc.x*sin+hc.y*cos)*camera.zoom;
+            ctx.save();
+            ctx.fillStyle='#7aa2ff';
+            ctx.strokeStyle='#0d1117';
+            ctx.lineWidth=2;
+            ctx.beginPath();
+            ctx.arc(hx,hy,hs,0,Math.PI*2);
+            ctx.fill(); ctx.stroke();
+            ctx.restore();
+          });
+        }
+        ctx.restore();
+      }); });
+  })();
 
   // non-RF cable routes
   (f.cableRoutes||[]).forEach(route=>{
@@ -1912,6 +2052,51 @@ function pickProjectedPillar(wx,wy){
       if(dist(wx,wy,p.x,p.y)<=Math.max((p.diameter||0.6)/2,10/camera.zoom)) best={o:p,ownerId:g.id}; }); });
   return best;
 }
+// RF Object: rotated rectangle hit test (center + dims + rotation)
+function pickRfObject(wx,wy){
+  const f=floor(), tol=8/camera.zoom;
+  for(let i=(f.rfObjects||[]).length-1;i>=0;i--){
+    const o=f.rfObjects[i];
+    // transform point to object local space
+    const cos=Math.cos(-o.rotation*Math.PI/180), sin=Math.sin(-o.rotation*Math.PI/180);
+    const dx=wx-o.x, dy=wy-o.y;
+    const lx=dx*cos-dy*sin, ly=dx*sin+dy*cos;
+    if(Math.abs(lx)<=o.width/2+tol && Math.abs(ly)<=o.depth/2+tol) return o;
+  }
+  return null;
+}
+function pickProjectedRfObject(wx,wy){
+  const tol=8/camera.zoom, ai=state.activeFloor, sl=floorSlice(ai);
+  let best=null;
+  state.floors.forEach((g,gi)=>{ if(gi===ai)return;
+    (g.rfObjects||[]).forEach(o=>{
+      const s=spanInterval(o,gi);
+      if(!spansOverlap(s.base,s.top,sl.base,sl.top))return;
+      const cos=Math.cos(-o.rotation*Math.PI/180), sin=Math.sin(-o.rotation*Math.PI/180);
+      const dx=wx-o.x, dy=wy-o.y;
+      const lx=dx*cos-dy*sin, ly=dx*sin+dy*cos;
+      if(Math.abs(lx)<=o.width/2+tol && Math.abs(ly)<=o.depth/2+tol) best={o,ownerId:g.id}; }); });
+  return best;
+}
+function pickRfObjectCornerHandle(wx,wy){
+  if(!selection||selection.type!=='rfobj') return null;
+  const ro=selFloor().rfObjects.find(o=>o.id===selection.id);
+  if(!ro) return null;
+  const tol=22/camera.zoom;
+  const cos=Math.cos(-ro.rotation*Math.PI/180), sin=Math.sin(-ro.rotation*Math.PI/180);
+  const hw=ro.width/2, hd=ro.depth/2;
+  const corners=[
+    {x:-hw,y:-hd, idx:0}, {x:hw,y:-hd, idx:1},
+    {x:hw,y:hd, idx:2}, {x:-hw,y:hd, idx:3}
+  ];
+  for(let i=0;i<4;i++){
+    const c=corners[i];
+    const wx_c=ro.x+(c.x*cos-c.y*sin);
+    const wy_c=ro.y+(c.x*sin+c.y*cos);
+    if(dist(wx,wy,wx_c,wy_c)<=tol) return {idx:i, cx:c.x, cy:c.y};
+  }
+  return null;
+}
 function selectedSingleWall(){
   if(!selection || selection.type!=='wall' || multiWalls.length) return null;
   return selFloor().walls.find(w=>w.id===selection.id) || null;
@@ -1972,6 +2157,7 @@ function eraseAt(wx,wy){
   const rk=pickRack(wx,wy); if(rk){ f.racks=(f.racks||[]).filter(x=>x!==rk); f.cableRoutes=(f.cableRoutes||[]).filter(r=>r.rackId!==rk.id); f.aps.forEach(a=>{ if(a.sourceRackId===rk.id) delete a.sourceRackId; }); changed=true; }
   const lb=pickLabel(wx,wy); if(lb){ f.labels=(f.labels||[]).filter(x=>x!==lb); changed=true; }
   const pl=pickPillar(wx,wy); if(pl){ f.pillars=(f.pillars||[]).filter(x=>x!==pl); changed=true; }
+  const ro=pickRfObject(wx,wy); if(ro){ f.rfObjects=(f.rfObjects||[]).filter(x=>x!==ro); changed=true; }
   const wl=pickWall(wx,wy); if(wl){ f.walls=f.walls.filter(x=>x!==wl); multiWalls=multiWalls.filter(id=>id!==wl.id); changed=true; }
   const z=pickZone(wx,wy); if(z){ f.zones=f.zones.filter(q=>q!==z); changed=true; }
   if(changed){ scheduleHeat(); refreshStats(); draw2d(); }
@@ -2080,6 +2266,27 @@ cv.addEventListener('pointerdown',e=>{
         start:{x1:wl.x1,y1:wl.y1,x2:wl.x2,y2:wl.y2}, committed:false,moved:false};
       return;
     }
+    const rfobjCorner=pickRfObjectCornerHandle(w.x,w.y);
+    if(rfobjCorner){
+      const ro=selFloor().rfObjects.find(o=>o.id===selection.id);
+      // Compute the fixed opposite corner world coordinates at drag start
+      const hw=ro.width/2, hd=ro.depth/2;
+      const cos_r=Math.cos(ro.rotation*Math.PI/180), sin_r=Math.sin(ro.rotation*Math.PI/180);
+      // Local coordinates of all four corners: idx 0=bl, 1=br, 2=tr, 3=tl
+      const corners_local=[
+        {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+      ];
+      const idx=rfobjCorner.idx;
+      // Fixed corner is the opposite one
+      const fixed_idx=(idx+2)%4;
+      const fc=corners_local[fixed_idx];
+      const fx_w=ro.x + (fc.x*Math.cos(ro.rotation*Math.PI/180) - fc.y*Math.sin(ro.rotation*Math.PI/180));
+      const fy_w=ro.y + (fc.x*Math.sin(ro.rotation*Math.PI/180) + fc.y*Math.cos(ro.rotation*Math.PI/180));
+      dragging={type:'rfobj-corner',id:ro.id,cornerIdx:rfobjCorner.idx,
+        start:{fx_w:fx_w, fy_w:fy_w, cx0_w:ro.x, cy0_w:ro.y},
+        sx:e.offsetX,sy:e.offsetY,committed:false,moved:false};
+      return;
+    }
     const ap=pickAP(w.x,w.y);
     if(ap){ select('ap',ap.id); commit(); dragging={type:'ap',id:ap.id,ox:w.x-ap.x,oy:w.y-ap.y}; return; }
     const rk=pickRack(w.x,w.y);
@@ -2090,6 +2297,10 @@ cv.addEventListener('pointerdown',e=>{
     if(pl){ select('pillar',pl.id); commit(); dragging={type:'pillar',id:pl.id,ox:w.x-pl.x,oy:w.y-pl.y}; return; }
     const ppl=pickProjectedPillar(w.x,w.y);
     if(ppl){ select('pillar',ppl.o.id,ppl.ownerId); commit(); dragging={type:'pillar',id:ppl.o.id,ox:w.x-ppl.o.x,oy:w.y-ppl.o.y}; return; }
+    const ro=pickRfObject(w.x,w.y);
+    if(ro){ select('rfobj',ro.id); commit(); dragging={type:'rfobj',id:ro.id,ox:w.x-ro.x,oy:w.y-ro.y}; return; }
+    const pro=pickProjectedRfObject(w.x,w.y);
+    if(pro){ select('rfobj',pro.o.id,pro.ownerId); commit(); dragging={type:'rfobj',id:pro.o.id,ox:w.x-pro.o.x,oy:w.y-pro.o.y}; return; }
     const cr=pickCableRoute(w.x,w.y);
     if(cr){ select('cable',cr.id); return; }
     const wl=pickWall(w.x,w.y);
@@ -2143,6 +2354,12 @@ cv.addEventListener('pointerdown',e=>{
     if(!f.racks)f.racks=[];
     const rk={id:uid('rck'),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,name:'Rack '+(f.racks.length+1),kind:'Rack'};
     commit(); f.racks.push(rk); select('rack',rk.id); refreshStats();
+  }
+  else if(tool==='rfobj'){
+    const f=floor();
+    if(!f.rfObjects)f.rfObjects=[];
+    const ro={id:uid('rfobj'),name:'RF-Objekt '+(f.rfObjects.length+1),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,width:1,depth:1,height:1,rotation:0,materialId:state.activeMat,extraLossDb:0};
+    commit(); f.rfObjects.push(ro); select('rfobj',ro.id); if(view==='3d')build3d(); refreshStats();
   }
   else if(tool==='cable'){
     const f=floor();
@@ -2205,6 +2422,50 @@ window.addEventListener('pointermove',e=>{
     else if(dragging.type==='rack'){ const rk=(f.racks||[]).find(r=>r.id===dragging.id); if(rk){rk.x=Math.round((w.x-dragging.ox)*4)/4;rk.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='label'){ const lb=(f.labels||[]).find(l=>l.id===dragging.id); if(lb){lb.x=Math.round((w.x-dragging.ox)*4)/4;lb.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='pillar'){ const pl=(f.pillars||[]).find(p=>p.id===dragging.id); if(pl){pl.x=Math.round((w.x-dragging.ox)*4)/4;pl.y=Math.round((w.y-dragging.oy)*4)/4;} }
+    else if(dragging.type==='rfobj'){ const ro=(f.rfObjects||[]).find(o=>o.id===dragging.id); if(ro){ro.x=Math.round((w.x-dragging.ox)*4)/4;ro.y=Math.round((w.y-dragging.oy)*4)/4;} }
+    else if(dragging.type==='rfobj-corner'){
+      const ro=(f.rfObjects||[]).find(o=>o.id===dragging.id);
+      if(ro){
+        const movedPx=Math.hypot(ox-dragging.sx,oy-dragging.sy);
+        if(movedPx>=4 || dragging.moved){
+          if(!dragging.committed){ commit(); dragging.committed=true; }
+          dragging.moved=true;
+          // Fixed opposite corner in world coordinates (stored at drag start)
+          const fx_w=dragging.start.fx_w, fy_w=dragging.start.fy_w;
+          // Object center at drag start (world)
+          const cx0_w=dragging.start.cx0_w, cy0_w=dragging.start.cy0_w;
+          // Current mouse in world
+          const wx=w.x, wy=w.y;
+          // Transform fixed corner and current mouse to local space using drag-start center
+          const cos_l=Math.cos(-ro.rotation*Math.PI/180), sin_l=Math.sin(-ro.rotation*Math.PI/180);
+          // Fixed corner local (constant during drag)
+          const fdx=fx_w-cx0_w, fdy=fy_w-cy0_w;
+          const flx=fdx*cos_l-fdy*sin_l, fly=fdx*sin_l+fdy*cos_l;
+          // Current mouse local
+          const mdx=wx-cx0_w, mdy=wy-cy0_w;
+          const mlx=mdx*cos_l-mdy*sin_l, mly=mdx*sin_l+mdy*cos_l;
+          // New half-width/depth from fixed to dragged corner in local space
+          let hw, hd;
+          const idx=dragging.cornerIdx;
+          if(idx===0){ hw=flx-mlx; hd=fly-mly; }      // bottom-left dragged, top-right fixed
+          else if(idx===1){ hw=mlx-flx; hd=fly-mly; }   // bottom-right dragged, top-left fixed
+          else if(idx===2){ hw=mlx-flx; hd=mly-fly; }   // top-right dragged, bottom-left fixed
+          else { hw=flx-mlx; hd=mly-fly; }              // top-left dragged, bottom-right fixed
+          hw=Math.max(0.1, hw); hd=Math.max(0.1, hd);
+          // New center in local space = midpoint between fixed and dragged corners
+          const cx_local=(flx+mlx)/2, cy_local=(fly+mly)/2;
+          // Transform new local center to world coordinates
+          const cos_r=Math.cos(ro.rotation*Math.PI/180), sin_r=Math.sin(ro.rotation*Math.PI/180);
+          const cx_w=cx_local*cos_r - cy_local*sin_r;
+          const cy_w=cx_local*sin_r + cy_local*cos_r;
+          // Set absolute world position (not delta)
+          ro.x = cx_w;
+          ro.y = cy_w;
+          ro.width = hw*2;
+          ro.depth = hd*2;
+        }
+      }
+    }
     else if(dragging.type==='bg'){ if(f.bg&&!f.bg.locked){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; } }
     else if(dragging.type==='zone'){ const z=(f.zones||[]).find(q=>q.id===dragging.id);
       if(z){ const wd=Math.abs(z.x2-z.x1), hd=Math.abs(z.y2-z.y1); const nx=w.x-dragging.ox, ny=w.y-dragging.oy; z.x1=nx; z.y1=ny; z.x2=nx+wd; z.y2=ny+hd; } }
@@ -2316,6 +2577,10 @@ function nudgeSelection(dx,dy){
     const p=(f.pillars||[]).find(x=>x.id===selection.id); if(!p)return false;
     beginNudgeGesture();
     moveBy(p,dx,dy); rf=true; threeD=true; moved=true;
+  } else if(selection.type==='rfobj'){
+    const ro=(f.rfObjects||[]).find(x=>x.id===selection.id); if(!ro)return false;
+    beginNudgeGesture();
+    moveBy(ro,dx,dy); threeD=true; moved=true;
   } else if(selection.type==='rack'){
     const r=(f.racks||[]).find(x=>x.id===selection.id); if(!r)return false;
     beginNudgeGesture();
@@ -3291,6 +3556,18 @@ function build3d(){
       fl.add(mesh);
     });
 
+    // RF Objects
+    (f.rfObjects||[]).forEach(ro=>{
+      const m=matById(ro.materialId);
+      const geo=new THREE.BoxGeometry(ro.width, ro.height, ro.depth);
+      const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
+        transparent:true,opacity:(0.72)*dim+0.18,roughness:.78,metalness:m.db>20?0.45:0.04});
+      const mesh=new THREE.Mesh(geo,mat);
+      mesh.position.set(ro.x-cx, ro.height/2, ro.y-cz);
+      mesh.rotation.y=-ro.rotation*Math.PI/180;
+      fl.add(mesh);
+    });
+
     // APs
     f.aps.forEach(ap=>{
       const g=new THREE.SphereGeometry(0.16,16,16);
@@ -3382,6 +3659,7 @@ function duplicateFloor(i){
   const outlivesOwner=o=>Number.isFinite(o.height)&&o.height>oh+SPAN_EPS;
   copy.walls=(copy.walls||[]).filter(w=>!outlivesOwner(w));
   copy.pillars=(copy.pillars||[]).filter(p=>!outlivesOwner(p));
+  copy.rfObjects=(copy.rfObjects||[]).filter(o=>!outlivesOwner(o));
   copy.id=uid('flr'); copy.name=src.name+' (copy)';
   copy.walls.forEach(w=>w.id=uid('wl'));
   (copy.pillars||[]).forEach(p=>p.id=uid('plr'));
@@ -3391,6 +3669,7 @@ function duplicateFloor(i){
   (copy.racks||[]).forEach(r=>{ const old=r.id; r.id=uid('rck'); rackIds[old]=r.id; });
   copy.aps.forEach(a=>{ const old=a.id; a.id=uid('ap'); apIds[old]=a.id; if(a.sourceRackId&&rackIds[a.sourceRackId])a.sourceRackId=rackIds[a.sourceRackId]; });
   (copy.cableRoutes||[]).forEach(c=>{ c.id=uid('cab'); if(rackIds[c.rackId])c.rackId=rackIds[c.rackId]; if(apIds[c.apId])c.apId=apIds[c.apId]; });
+  (copy.rfObjects||[]).forEach(o=>o.id=uid('rfobj'));
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
   if(copy.bg && src.bg && src.bg._img) copy.bg._img=src.bg._img;
   state.floors.splice(i+1,0,copy); state.activeFloor=i+1;
@@ -3504,6 +3783,7 @@ function deleteSelection(){
   else if(selection.type==='opening') f.openings=(f.openings||[]).filter(o=>o.id!==selection.id);
   else if(selection.type==='wall') f.walls=f.walls.filter(w=>w.id!==selection.id);
   else if(selection.type==='pillar') f.pillars=(f.pillars||[]).filter(p=>p.id!==selection.id);
+  else if(selection.type==='rfobj') f.rfObjects=(f.rfObjects||[]).filter(o=>o.id!==selection.id);
   else if(selection.type==='label') f.labels=(f.labels||[]).filter(l=>l.id!==selection.id);
   else if(selection.type==='zone') f.zones=(f.zones||[]).filter(z=>z.id!==selection.id);
   else if(selection.type==='bg') f.bg=null;
@@ -3734,6 +4014,37 @@ function renderProp(){
     $('#pY').onchange=e=>{commit();p.y=+e.target.value;scheduleHeat();draw2d();if(view==='3d')build3d();};
     $('#pDel').onclick=deleteSelection;
   }
+  else if(selection.type==='rfobj'){
+    const ro=(f.rfObjects||[]).find(x=>x.id===selection.id); if(!ro){select(null);return;}
+    if(!selectionIntersectsActive(ro)){select(null);return;}
+    const isProj=!!(selection.floorId&&selection.floorId!==floor().id);
+    setUiText(title,'rfobj.title');
+    body.innerHTML=`
+      ${isProj?`<div class="hint">${t('projected.from',{name:escapeHtml(ownerFloorName(selection.floorId))})}</div>`:''}
+      <div class="field"><label>${t('rfobj.name')}</label><input id="pRfobjName" type="text" value="${escapeHtml(ro.name)}"></div>
+      <div class="row2"><div class="field"><label>${t('rfobj.width')}</label><input id="pRfobjWidth" type="number" step="0.1" min="0.1" value="${ro.width.toFixed(2)}"></div>
+        <div class="field"><label>${t('rfobj.depth')}</label><input id="pRfobjDepth" type="number" step="0.1" min="0.1" value="${ro.depth.toFixed(2)}"></div></div>
+      <div class="row2"><div class="field"><label>${t('rfobj.height')}</label><input id="pRfobjHeight" type="number" step="0.1" min="0.1" value="${ro.height.toFixed(2)}"></div>
+        <div class="field"><label>${t('rfobj.rotation')}</label><input id="pRfobjRot" type="number" step="1" min="0" max="360" value="${Math.round(ro.rotation)}"></div></div>
+      <div class="field"><label>${t('rfobj.material')}</label><select id="pRfobjMat">
+        ${state.materials.map(m=>`<option value="${m.id}" ${ro.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
+      </select></div>
+      <div class="field"><label>${t('rfobj.extraLoss')}</label><input id="pRfobjExtraLoss" type="number" step="0.5" min="0" value="${ro.extraLossDb}"></div>
+      <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${ro.x.toFixed(2)}"></div>
+        <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${ro.y.toFixed(2)}"></div></div>
+      <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(ro.materialId).db} dB</b> ${ro.extraLossDb>0?`+ ${ro.extraLossDb} dB extra`:''}</div>
+      <button class="delbtn" id="pDel" ${isProj?'disabled':''}>${t('rfobj.remove')}</button>`;
+    $('#pRfobjName').oninput=e=>{ro.name=e.target.value;draw2d();};
+    $('#pRfobjWidth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.width.toFixed(2); return; } commit(); ro.width=v; if(view==='3d')build3d(); draw2d(); };
+    $('#pRfobjDepth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.depth.toFixed(2); return; } commit(); ro.depth=v; if(view==='3d')build3d(); draw2d(); };
+    $('#pRfobjHeight').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.height.toFixed(2); return; } commit(); ro.height=v; if(view==='3d')build3d(); draw2d(); };
+    $('#pRfobjRot').onchange=e=>{ const v=(+e.target.value)%360; if(!Number.isFinite(v)){ e.target.value=ro.rotation; return; } commit(); ro.rotation=v; draw2d(); if(view==='3d')build3d(); };
+    $('#pRfobjMat').onchange=e=>{commit();ro.materialId=e.target.value;if(view==='3d')build3d();renderProp();};
+    $('#pRfobjExtraLoss').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)||v<0){ e.target.value=ro.extraLossDb; return; } commit(); ro.extraLossDb=v; renderProp(); };
+    $('#pX').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.x.toFixed(2); return; } commit(); ro.x=v; if(view==='3d')build3d(); draw2d(); };
+    $('#pY').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.y.toFixed(2); return; } commit(); ro.y=v; if(view==='3d')build3d(); draw2d(); };
+    $('#pDel').onclick=deleteSelection;
+  }
   else if(selection.type==='wall'){
     const w=f.walls.find(x=>x.id===selection.id); if(!w){select(null);return;}
     if(!selectionIntersectsActive(w)){select(null);return;}
@@ -3855,14 +4166,15 @@ function renderProp(){
 }
 
 function refreshStats(){
-  const host=$('#stats'); let walls=0,pillars=0,aps=0,len=0;
-  state.floors.forEach(f=>{walls+=f.walls.length;pillars+=(f.pillars||[]).length;aps+=f.aps.length;f.walls.forEach(w=>len+=dist(w.x1,w.y1,w.x2,w.y2));});
+  const host=$('#stats'); let walls=0,pillars=0,aps=0,rfobjs=0,len=0;
+  state.floors.forEach(f=>{walls+=f.walls.length;pillars+=(f.pillars||[]).length;aps+=f.aps.length;rfobjs+=(f.rfObjects||[]).length;f.walls.forEach(w=>len+=dist(w.x1,w.y1,w.x2,w.y2));});
   const cur=floor();
   host.innerHTML=`
     <div class="stat"><span data-i18n="section.floors">Våningar</span><b>${state.floors.length}</b></div>
     <div class="stat"><span data-i18n="stats.aps">Accesspunkter</span><b>${aps}</b></div>
     <div class="stat"><span data-i18n="stats.walls">Väggar (totalt)</span><b>${walls}</b></div>
     <div class="stat"><span data-i18n="stats.pillars">RF-pelare</span><b>${pillars}</b></div>
+    <div class="stat"><span data-i18n="stats.rfObjects">Objetos RF</span><b>${rfobjs}</b></div>
     <div class="stat"><span data-i18n="stats.wallMeters">Väggmeter</span><b>${len.toFixed(1)} m</b></div>
     <div class="stat"><span data-i18n="section.activeFloor">Aktivt plan</span><b>${escapeHtml(cur.name)}</b></div>
     <div class="stat"><span data-i18n="stats.floorAps">AP på planet</span><b>${cur.aps.length}</b></div>
@@ -4258,7 +4570,7 @@ function restoreState(json){
   if(state.originY==null)state.originY=0;
   if(state.northAngle==null)state.northAngle=0;
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
-  state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
+  state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(!f.rfObjects)f.rfObjects=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; soloApId=null; _indoor=null;
   originPlaceMode=false;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
@@ -4299,7 +4611,7 @@ function loadProject(file){
       if(s.originY==null)s.originY=0;
       if(s.northAngle==null)s.northAngle=0;
       _indoor=null;
-      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
+      state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(!f.rfObjects)f.rfObjects=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
         f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; if(!a.channels)a.channels=defaultChannels(); }); });
       // rebuild background images
       state.floors.forEach(f=>{ if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d();if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
@@ -4333,6 +4645,7 @@ function planExportBounds(f){
     b.minx=Math.min(b.minx,p.x-0.5); b.maxx=Math.max(b.maxx,p.x+0.5);
     b.miny=Math.min(b.miny,p.y-0.5); b.maxy=Math.max(b.maxy,p.y+0.5);
   }));
+  (f.rfObjects||[]).forEach(o=>{ const hw=o.width/2, hd=o.depth/2; b.minx=Math.min(b.minx,o.x-hw); b.maxx=Math.max(b.maxx,o.x+hw); b.miny=Math.min(b.miny,o.y-hd); b.maxy=Math.max(b.maxy,o.y+hd); });
   return b;
 }
 function drawCleanPlan(g,f,b,W,H){
@@ -4392,6 +4705,24 @@ function drawCleanPlan(g,f,b,W,H){
     g.fillStyle='#0f172a'; g.strokeText(lb.text||'Label',0,0); g.fillText(lb.text||'Label',0,0);
     g.restore();
   });
+  // RF Objects
+  (f.rfObjects||[]).forEach(ro=>{
+    const m=matById(ro.materialId);
+    const c=W2S(ro.x,ro.y);
+    const cos=Math.cos(ro.rotation*Math.PI/180), sin=Math.sin(ro.rotation*Math.PI/180);
+    const hw=ro.width/2, hd=ro.depth/2;
+    const corners=[
+      {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+    ].map(p=>({x:c.x+(p.x*cos-p.y*sin)*camera.zoom,y:c.y+(p.x*sin+p.y*cos)*camera.zoom}));
+    const worldCorners=corners.map(p=>({x:(p.x-b.minx)/(b.maxx-b.minx)*W,y:(p.y-b.miny)/(b.maxy-b.miny)*H}));
+    g.save();
+    g.fillStyle=hexToRgba(m.color,0.2); g.strokeStyle=m.color; g.lineWidth=2;
+    g.beginPath();
+    worldCorners.forEach((p,i)=>{ i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y); });
+    g.closePath();
+    g.fill(); g.stroke();
+    g.restore();
+  });
 }
 function drawExportBackgroundPlan(g,f,b,W,H){
   if(!f.bg||!f.bg._img||f.bg.visible===false) return false;
@@ -4431,6 +4762,21 @@ function exportPNG(withBackground=false){
     const rx=(p.diameter||0.6)/2/(b.maxx-b.minx)*W, ry=(p.diameter||0.6)/2/(b.maxy-b.miny)*H;
     g.fillStyle=hexToRgba(m.color,0.92); g.strokeStyle=shade(m.color,-0.25); g.lineWidth=3;
     g.beginPath(); g.ellipse(wx2p(p.x),wy2p(p.y),rx,ry,0,0,Math.PI*2); g.fill(); g.stroke(); });
+  // RF Objects
+  (f.rfObjects||[]).forEach(ro=>{
+    const m=matById(ro.materialId);
+    const c={x:wx2p(ro.x),y:wy2p(ro.y)};
+    const cos=Math.cos(ro.rotation*Math.PI/180), sin=Math.sin(ro.rotation*Math.PI/180);
+    const hw=ro.width/2/(b.maxx-b.minx)*W, hd=ro.depth/2/(b.maxy-b.miny)*H;
+    const corners=[
+      {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
+    ].map(p=>({x:c.x+(p.x*cos-p.y*sin),y:c.y+(p.x*sin+p.y*cos)}));
+    g.fillStyle=hexToRgba(m.color,0.25); g.strokeStyle=m.color; g.lineWidth=2;
+    g.beginPath();
+    corners.forEach((p,i)=>{ i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y); });
+    g.closePath();
+    g.fill(); g.stroke();
+  });
   // cable routes
   (f.cableRoutes||[]).forEach(route=>{
     const pts=routePoints(route,f); if(pts.length<2)return;
@@ -4505,6 +4851,10 @@ function exportGLTF(){
       const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
       builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color), 'pillar_'+m.name);
     });
+    (f.rfObjects||[]).forEach(ro=>{
+      const m=matById(ro.materialId);
+      builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, -ro.rotation*Math.PI/180, hexToRgb(m.color), 'rfobj_'+ro.name);
+    });
     f.aps.forEach(ap=>{
       builder.addBox(0.3,0.3,0.3, ap.x, elev+(ap.mount||2.6), ap.y, 0, [0.2,0.84,0.77], 'AP_'+ap.name);
     });
@@ -4519,6 +4869,7 @@ function exportGLTF(){
       aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),mountType:apMountType(a),rfEnabled:apRfEnabled(a),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
       pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,height:p.height,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
+      rfObjects:(f.rfObjects||[]).map(o=>({name:o.name,x:o.x,y:o.y,width:o.width,depth:o.depth,height:o.height,rotation:o.rotation,material:matById(o.materialId).name,attenuation_dB:matById(o.materialId).db,extraLoss_dB:o.extraLossDb})),
       openings:(f.openings||[]).map(o=>({name:o.name,points:o.points})) })) };
   download(new Blob([JSON.stringify(meta,null,2)],{type:'application/json'}),'rf-scen-metadata.json');
   showToast(true,uiMessage('export.sceneDone'),null,2200);
