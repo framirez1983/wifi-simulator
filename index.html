@@ -1976,7 +1976,7 @@ cv.addEventListener('pointerdown',e=>{
       select('wall',wl.id); return;
     }
     const f=floor();
-    if(f.bg&&f.bg._img&&!f.bg.locked&&insideBg(w.x,w.y)){ select('bg'); commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; return; }
+    if(f.bg&&f.bg._img&&insideBg(w.x,w.y)){ select('bg'); if(!f.bg.locked){ commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; } return; }
     const z=pickZone(w.x,w.y);
     if(z){ select('zone',z.id); commit(); dragging={type:'zone',id:z.id,ox:w.x-Math.min(z.x1,z.x2),oy:w.y-Math.min(z.y1,z.y2)}; return; }
     multiWalls=[]; selection=null; boxing={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; renderProp(); draw2d();
@@ -2066,7 +2066,7 @@ window.addEventListener('pointermove',e=>{
     else if(dragging.type==='rack'){ const rk=(f.racks||[]).find(r=>r.id===dragging.id); if(rk){rk.x=Math.round((w.x-dragging.ox)*4)/4;rk.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='label'){ const lb=(f.labels||[]).find(l=>l.id===dragging.id); if(lb){lb.x=Math.round((w.x-dragging.ox)*4)/4;lb.y=Math.round((w.y-dragging.oy)*4)/4;} }
     else if(dragging.type==='pillar'){ const pl=(f.pillars||[]).find(p=>p.id===dragging.id); if(pl){pl.x=Math.round((w.x-dragging.ox)*4)/4;pl.y=Math.round((w.y-dragging.oy)*4)/4;} }
-    else if(dragging.type==='bg'){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; }
+    else if(dragging.type==='bg'){ if(f.bg&&!f.bg.locked){ f.bg.x=w.x-dragging.ox; f.bg.y=w.y-dragging.oy; } }
     else if(dragging.type==='zone'){ const z=(f.zones||[]).find(q=>q.id===dragging.id);
       if(z){ const wd=Math.abs(z.x2-z.x1), hd=Math.abs(z.y2-z.y1); const nx=w.x-dragging.ox, ny=w.y-dragging.oy; z.x1=nx; z.y1=ny; z.x2=nx+wd; z.y2=ny+hd; } }
     else if(dragging.type==='wall-endpoint'){
@@ -3491,23 +3491,23 @@ function renderProp(){
     body.innerHTML=`
       <div class="field"><label><input type="checkbox" id="pBgV" ${b.visible!==false?'checked':''}> <span data-i18n="bg.show">Visa ritning på detta plan</span></label></div>
       <div class="field"><label data-i18n="bg.scale">Skala (meter per bildbredd)</label>
-        <input id="pBgW" type="number" step="0.1" value="${(b.w*b.scale).toFixed(2)}"></div>
-      <button class="tbtn" id="pBgCal" style="width:100%;justify-content:center;margin-bottom:8px" data-i18n="bg.calibrate">Kalibrera skala…</button>
+        <input id="pBgW" type="number" step="0.1" value="${(b.w*b.scale).toFixed(2)}" ${b.locked?'disabled':''}></div>
+      <button class="tbtn" id="pBgCal" style="width:100%;justify-content:center;margin-bottom:8px" data-i18n="bg.calibrate" ${b.locked?'disabled':''}>Kalibrera skala…</button>
       <button class="tbtn" id="pBgAnalyze" style="width:100%;justify-content:center;margin-bottom:11px" data-i18n="bg.analyze">Analysera ritning → skapa väggar…</button>
       <div class="field"><label data-i18n="bg.opacity">Opacitet</label>
         <div class="slider"><input id="pBgO" type="range" min="0.1" max="1" step="0.05" value="${b.opacity}"><span class="val" id="pBgOV">${Math.round(b.opacity*100)}%</span></div></div>
       <div class="field"><label data-i18n="bg.rotation">Rotation</label>
-        <div class="slider"><input id="pBgR" type="range" min="0" max="360" step="1" value="${Math.round((b.rot||0)*180/Math.PI)}"><span class="val" id="pBgRV">${Math.round((b.rot||0)*180/Math.PI)}°</span></div></div>
+        <div class="slider"><input id="pBgR" type="range" min="0" max="360" step="1" value="${Math.round((b.rot||0)*180/Math.PI)}" ${b.locked?'disabled':''}><span class="val" id="pBgRV">${Math.round((b.rot||0)*180/Math.PI)}°</span></div></div>
       <div class="field"><label><input type="checkbox" id="pBgL" ${b.locked?'checked':''}> <span data-i18n="bg.lock">Lås position</span></label></div>
       <div class="hint" data-i18n="bg.hint">Tips: använd Kalibrera skala och klicka på två punkter med känt avstånd (t.ex. en dörr ≈ 0,9 m) för att få rätt skala mot rutnätet. Rita sedan väggar ovanpå ritningen.</div>
       <button class="delbtn" id="pDel" data-i18n="bg.remove">Ta bort ritning</button>`;
     $('#pBgV').onchange=e=>{ commit(); b.visible=e.target.checked; draw2d(); if(view==='3d')build3d(); buildFloors(); };
     $('#pBgCal').onclick=startCalib;
     $('#pBgAnalyze').onclick=startAnalyze;
-    $('#pBgW').onchange=e=>{ const targetW=+e.target.value; b.scale=targetW/b.w; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
+    $('#pBgW').onchange=e=>{ if(b.locked)return; const targetW=+e.target.value; b.scale=targetW/b.w; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
     $('#pBgO').oninput=e=>{ b.opacity=+e.target.value; $('#pBgOV').textContent=Math.round(b.opacity*100)+'%'; draw2d(); if(view==='3d')build3d(); };
-    $('#pBgR').oninput=e=>{ b.rot=(+e.target.value)*Math.PI/180; $('#pBgRV').textContent=e.target.value+'°'; draw2d(); };
-    $('#pBgL').onchange=e=>{ b.locked=e.target.checked; };
+    $('#pBgR').oninput=e=>{ if(b.locked)return; b.rot=(+e.target.value)*Math.PI/180; $('#pBgRV').textContent=e.target.value+'°'; draw2d(); };
+    $('#pBgL').onchange=e=>{ b.locked=e.target.checked; renderProp(); };
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='zone'){
@@ -3564,6 +3564,7 @@ function showToast(show,msg,progress,autoMs){
 function startCalib(){
   const f=floor();
   if(!f.bg){ showToast(true,uiMessage('error.noBackground'),null,2200); return; }
+  if(f.bg.locked){ return; }
   if(view!=='2d') setView('2d');
   if(f.bg.visible===false){ f.bg.visible=true; buildFloors(); }
   calibState={p1:null,p2:null,awaitDist:false};
@@ -3587,6 +3588,7 @@ function updateCalibBar(){
 function applyCalib(dTarget){
   const f=floor(), b=f.bg;
   if(!b||!calibState||!calibState.p1||!calibState.p2){ cancelCalib(); return; }
+  if(b.locked){ cancelCalib(); return; }
   const dNow=dist(calibState.p1.x,calibState.p1.y,calibState.p2.x,calibState.p2.y);
   if(!(dTarget>0)||dNow<1e-4){ showToast(true,uiMessage('error.distance'),null,2200); return; }
   const ratio=dTarget/dNow;
