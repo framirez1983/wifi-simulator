@@ -147,16 +147,16 @@
     border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   #toast progress{width:150px;height:6px;accent-color:var(--accent)}
-  #calibBar{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:31;display:none;
+  #calibBar,#originBar{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:31;display:none;
     align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--amber);
     border-radius:var(--r);padding:9px 14px;font-size:12px;color:var(--ink);
     box-shadow:0 12px 40px rgba(0,0,0,.5)}
-  #calibBar .ct{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--amber)}
-  #calibBar b{color:var(--amber)}
-  #calibBar input{background:#0e141c;border:1px solid var(--line);border-radius:5px;color:var(--ink);padding:5px 7px;width:84px}
-  #calibBar button{border:1px solid var(--line);background:var(--panel);border-radius:5px;padding:5px 10px;color:var(--ink)}
-  #calibBar button.cu{background:var(--amber);color:#241600;border-color:var(--amber);font-weight:600}
-  #calibBar button.cx:hover{border-color:var(--danger);color:var(--danger)}
+  #calibBar .ct,#originBar .ct{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--amber)}
+  #calibBar b,#originBar b{color:var(--amber)}
+  #calibBar input,#originBar input{background:#0e141c;border:1px solid var(--line);border-radius:5px;color:var(--ink);padding:5px 7px;width:84px}
+  #calibBar button,#originBar button{border:1px solid var(--line);background:var(--panel);border-radius:5px;padding:5px 10px;color:var(--ink)}
+  #calibBar button.cu,#originBar button.cu{background:var(--amber);color:#241600;border-color:var(--amber);font-weight:600}
+  #calibBar button.cx:hover,#originBar button.cx:hover{border-color:var(--danger);color:var(--danger)}
   .floor .eye{background:transparent;border:0;color:var(--amber);padding:2px 4px;font-size:12px;line-height:1}
   .floor .eye.off{color:var(--faint)}
   .floor .dup{background:transparent;border:0;color:var(--faint);padding:2px 4px;font-size:12px;line-height:1}
@@ -278,6 +278,7 @@ höger·drag · panorera</div>
       </div>
       <div id="toast"></div>
       <div id="calibBar"></div>
+      <div id="originBar"></div>
       <div id="analyzePanel"></div>
     </div>
 
@@ -296,6 +297,15 @@ höger·drag · panorera</div>
         <div class="field"><label data-i18n="floor.ceiling">Takhöjd</label>
           <div class="slider"><input type="range" id="planH" min="2" max="6" step="0.1"><span class="val" id="planHV">—</span></div></div>
         <div class="hint" data-i18n="floor.sizeHint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
+      </div>
+      <div class="grp" id="refPanel">
+        <h3 data-i18n="section.reference">Projektreferens</h3>
+        <div class="row2"><div class="field"><label data-i18n="ref.x0">X0 (m)</label><input id="refX0" type="number" step="0.1"></div>
+          <div class="field"><label data-i18n="ref.y0">Y0 (m)</label><input id="refY0" type="number" step="0.1"></div></div>
+        <div class="field"><label data-i18n="ref.north">Norr (°)</label>
+          <div class="slider"><input id="refNorth" type="range" min="0" max="360" step="1" value="0"><span class="val" id="refNorthV">0°</span></div></div>
+        <button class="tbtn" id="btnRefOrigin" style="width:100%;justify-content:center" data-i18n="ref.setOrigin">Sätt origo…</button>
+        <div class="hint" data-i18n="ref.hint">X0/Y0 och norr är endast planeringsreferenser. De ändrar inte geometri eller RF.</div>
       </div>
       <div class="grp" id="settingsPanel" data-editor-pref="settings">
         <h3 data-i18n="section.settings">Ajustes</h3>
@@ -383,6 +393,13 @@ const translations = {
     "properties.title": "Propiedades",
     "properties.empty": "Selecciona un punto de acceso, una pared o una imagen de fondo para editarlo.",
     "section.activeFloor": "Planta activa",
+    "section.reference": "Referencia del proyecto",
+    "ref.x0": "X0 (m)",
+    "ref.y0": "Y0 (m)",
+    "ref.north": "Norte (°)",
+    "ref.setOrigin": "Fijar origen…",
+    "ref.placing": "Haz clic en el punto de origen del proyecto.",
+    "ref.hint": "X0/Y0 y el norte son solo referencias de planificación. No modifican la geometría ni la RF.",
     "section.settings": "Ajustes",
     "settings.appearance": "Apariencia del editor",
     "settings.wallVisualWidth": "Grosor visual de pared",
@@ -637,6 +654,13 @@ const translations = {
     "properties.title": "Properties",
     "properties.empty": "Select an access point, wall or background image to edit it.",
     "section.activeFloor": "Active floor",
+    "section.reference": "Project reference",
+    "ref.x0": "X0 (m)",
+    "ref.y0": "Y0 (m)",
+    "ref.north": "North (°)",
+    "ref.setOrigin": "Set origin…",
+    "ref.placing": "Click the project origin point.",
+    "ref.hint": "X0/Y0 and North are planning references only. They do not change geometry or RF.",
     "section.settings": "Settings",
     "settings.appearance": "Editor appearance",
     "settings.wallVisualWidth": "Visual wall thickness",
@@ -891,6 +915,13 @@ const translations = {
     "properties.title": "Egenskaper",
     "properties.empty": "Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den.",
     "section.activeFloor": "Aktivt plan",
+    "section.reference": "Projektreferens",
+    "ref.x0": "X0 (m)",
+    "ref.y0": "Y0 (m)",
+    "ref.north": "Norr (°)",
+    "ref.setOrigin": "Sätt origo…",
+    "ref.placing": "Klicka på projektets origopunkt.",
+    "ref.hint": "X0/Y0 och norr är endast planeringsreferenser. De ändrar inte geometri eller RF.",
     "section.settings": "Inställningar",
     "settings.appearance": "Redigerarens utseende",
     "settings.wallVisualWidth": "Visuell väggtjocklek",
@@ -1306,6 +1337,7 @@ function freshState(){
     receiverHeight:1.2,
     activeFloor:0, activeMat:mats[4].id,
     covThreshold:-67, showFail:false, heatView:'rssi', noiseFloor:-95, indoorOnly:true,
+    originX:0, originY:0, northAngle:0,
     floors:[ freshFloor('Ground floor',0) ],
   };
   return s;
@@ -1324,6 +1356,7 @@ let showHeat=true;
 let selection=null;     // {type:'ap'|'wall'|'pillar'|'label'|'rack'|'cable'|'opening'|'bg', id?}
 let heatMode='simple';  // 'simple' | 'trace'
 let calibState=null;    // {p1,p2,awaitDist} during background-image scale calibration
+let originPlaceMode=false; // true while arming project-origin placement (next canvas click sets X0/Y0)
 let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} during auto wall detection
 let cableDraft=null;    // {rackId} while creating a cable route
 let openingDraft=null;  // [{x,y}, ...] while drawing a slab opening polygon
@@ -1405,6 +1438,28 @@ function draw2d(){
   ctx.clearRect(0,0,r.width,r.height);
 
   if(editorPrefs.showGrid) drawGrid(r);
+  // project reference marker + compass (editor graphics only; never exported)
+  (function(){
+    const o=W2S(originX(),originY());
+    ctx.save();
+    ctx.strokeStyle='rgba(244,168,58,.9)'; ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(o.x-10,o.y);ctx.lineTo(o.x+10,o.y);ctx.moveTo(o.x,o.y-10);ctx.lineTo(o.x,o.y+10);ctx.stroke();
+    ctx.strokeStyle='rgba(244,168,58,.45)'; ctx.lineWidth=1;
+    ctx.strokeRect(o.x-10,o.y-10,20,20);
+    ctx.fillStyle='rgba(244,168,58,.95)'; ctx.font='600 10px sans-serif';
+    ctx.fillText('X0/Y0', o.x+13, o.y-8);
+    ctx.restore();
+    const cxp=r.width-34, cyp=46, R=20;
+    const a=northDeg()*Math.PI/180, dx=Math.sin(a), dy=-Math.cos(a);
+    ctx.save();
+    ctx.strokeStyle='rgba(232,238,247,.55)'; ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.arc(cxp,cyp,R,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle='#f4a83a'; ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(cxp-dx*R*0.55,cyp-dy*R*0.55);ctx.lineTo(cxp+dx*R*0.8,cyp+dy*R*0.8);ctx.stroke();
+    ctx.fillStyle='#f4a83a'; ctx.font='700 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('N', cxp+dx*(R+11), cyp+dy*(R+11)+4);
+    ctx.restore();
+  })();
   const f = floor();
 
   // background drawing image
@@ -1932,6 +1987,11 @@ cv.addEventListener('pointerdown',e=>{
   cv.setPointerCapture(e.pointerId);
   const w=S2W(e.offsetX,e.offsetY);
   mouse.down=true; mouse.button=e.button;
+  if(originPlaceMode && e.button===0 && !e.shiftKey){
+    commit();
+    state.originX=Math.round(w.x*1000)/1000; state.originY=Math.round(w.y*1000)/1000;
+    originPlaceMode=false; updateOriginBar(); syncProjectRef(); draw2d(); return;
+  }
   if(calibState && e.button===0){
     if(!calibState.p1) calibState.p1={x:w.x,y:w.y};
     else if(!calibState.p2){ calibState.p2={x:w.x,y:w.y}; calibState.awaitDist=true; }
@@ -2049,7 +2109,7 @@ window.addEventListener('pointermove',e=>{
   const rect=cv.getBoundingClientRect();
   const ox=e.clientX-rect.left, oy=e.clientY-rect.top;
   const w=S2W(ox,oy); mouse.wx=w.x; mouse.wy=w.y;
-  $('#coords').textContent = `x ${w.x.toFixed(2)}  y ${w.y.toFixed(2)} m`;
+  $('#coords').textContent = `x ${(w.x-originX()).toFixed(2)}  y ${(w.y-originY()).toFixed(2)} m`;
   if(panning&&panStart){
     camera.x = panStart.cx - (ox-panStart.mx)/camera.zoom;
     camera.y = panStart.cy - (oy-panStart.my)/camera.zoom;
@@ -2229,7 +2289,7 @@ window.addEventListener('keydown',e=>{
     const dy=e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
     if(selection && nudgeSelection(dx,dy)){ e.preventDefault(); beginNudgeGesture(); return; }
   }
-  if(e.key==='Escape'){ if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; openingDraft=null; measureLine=null; select(null); draw2d(); }
+  if(e.key==='Escape'){ if(originPlaceMode){cancelOriginPlace();return;} if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; openingDraft=null; measureLine=null; select(null); draw2d(); }
   if(e.key==='Enter'&&tool==='opening'&&openingDraft){ e.preventDefault(); finishOpeningDraft(); draw2d(); return; }
   const map={m:'select',v:'wall',p:'pillar',a:'ap',t:'label',i:'rack',c:'cable',o:'opening',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
@@ -2245,6 +2305,9 @@ function fsplAt1m(mhz){ return 20*Math.log10(mhz) - 27.55; } // dB at 1 m
 
 function floorElevation(idx){ let e=0; for(let i=0;i<idx;i++) e+=state.floors[i].height; return e; }
 function receiverHeight(){ return Number.isFinite(state.receiverHeight) ? Math.max(0,state.receiverHeight) : 1.2; }
+function originX(){ return Number.isFinite(state.originX)?state.originX:0; }
+function originY(){ return Number.isFinite(state.originY)?state.originY:0; }
+function northDeg(){ const v=+state.northAngle; return Number.isFinite(v)?normAngleDeg(v):0; }
 function apRfEnabled(ap){ return ap.rfEnabled!==false; }
 function soloApActive(){ return !!soloApId && state.floors.some(f=>f.aps.some(ap=>ap.id===soloApId)); }
 function apParticipatesInRf(ap){ return apRfEnabled(ap) && (!soloApActive() || ap.id===soloApId); }
@@ -3565,10 +3628,32 @@ function showToast(show,msg,progress,autoMs){
 }
 
 // ---------- scale calibration ----------
+function syncProjectRef(){
+  if(!$('#refX0'))return;
+  $('#refX0').value=originX().toFixed(2);
+  $('#refY0').value=originY().toFixed(2);
+  $('#refNorth').value=Math.round(northDeg());
+  $('#refNorthV').textContent=Math.round(northDeg())+'°';
+}
+// ---------- project origin interactive placement ----------
+function startOriginPlace(){
+  if(calibState)cancelCalib();
+  if(view!=='2d') setView('2d');
+  originPlaceMode=true; updateOriginBar(); draw2d();
+}
+function cancelOriginPlace(){ originPlaceMode=false; const el=$('#originBar'); if(el)el.style.display='none'; draw2d(); }
+function updateOriginBar(){
+  const el=$('#originBar'); if(!el)return;
+  if(!originPlaceMode){ el.style.display='none'; return; }
+  el.style.display='flex';
+  el.innerHTML='<span class="ct" data-i18n="section.reference">Projektreferens</span><span data-i18n="ref.placing">Klicka på projektets origopunkt.</span><button class="cx" id="originCancel" data-i18n="common.cancel">Avbryt</button>';
+  $('#originCancel').onclick=cancelOriginPlace;
+}
 function startCalib(){
   const f=floor();
   if(!f.bg){ showToast(true,uiMessage('error.noBackground'),null,2200); return; }
   if(f.bg.locked){ return; }
+  if(originPlaceMode)cancelOriginPlace();
   if(view!=='2d') setView('2d');
   if(f.bg.visible===false){ f.bg.visible=true; buildFloors(); }
   calibState={p1:null,p2:null,awaitDist:false};
@@ -3910,12 +3995,17 @@ function commitThrottled(){ const t=performance.now(); if(t-_commitThrottle<450)
 function restoreState(json){
   state=JSON.parse(json);
   if(state.receiverHeight==null)state.receiverHeight=1.2;
+  if(state.originX==null)state.originX=0;
+  if(state.originY==null)state.originY=0;
+  if(state.northAngle==null)state.northAngle=0;
   state.activeFloor=clamp(state.activeFloor||0,0,state.floors.length-1);
   state.floors.forEach(f=>{ if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; f.aps.forEach(a=>{ if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; }); if(f.bg&&f.bg.data){ const im=new Image(); im.onload=()=>{draw2d(); if(view==='3d')build3d();}; im.src=f.bg.data; f.bg._img=im; } });
   selection=null; multiWalls=[]; calibState=null; analyzeState=null; soloApId=null; _indoor=null;
+  originPlaceMode=false;
   const cb=$('#calibBar'); if(cb)cb.style.display='none';
+  const ob=$('#originBar'); if(ob)ob.style.display='none';
   const ap=$('#analyzePanel'); if(ap)ap.style.display='none';
-  buildFloors(); buildMaterials(); buildBands(); buildHeatView(); syncFloorPanel(); updateChips(); refreshStats(); renderProp();
+  buildFloors(); buildMaterials(); buildBands(); buildHeatView(); syncFloorPanel(); syncProjectRef(); updateChips(); refreshStats(); renderProp();
   scheduleHeat(); draw2d(); if(view==='3d')build3d(); updateUndoBtns();
 }
 function undo(){ if(!undoStack.length)return; redoStack.push(snapState()); restoreState(undoStack.pop()); }
@@ -3946,6 +4036,9 @@ function loadProject(file){
       if(s.noiseFloor==null)s.noiseFloor=-95;
       if(s.indoorOnly==null)s.indoorOnly=true;
       if(s.receiverHeight==null)s.receiverHeight=1.2;
+      if(s.originX==null)s.originX=0;
+      if(s.originY==null)s.originY=0;
+      if(s.northAngle==null)s.northAngle=0;
       _indoor=null;
       state.floors.forEach(f=>{ if(f.w==null)f.w=20; if(f.d==null)f.d=14; if(!f.aps)f.aps=[]; if(!f.pillars)f.pillars=[]; if(!f.labels)f.labels=[]; if(!f.racks)f.racks=[]; if(!f.cableRoutes)f.cableRoutes=[]; if(!f.openings)f.openings=[]; if(!f.zones)f.zones=[]; if(f.bg&&f.bg.visible===undefined)f.bg.visible=true;
         f.aps.forEach(a=>{ if(!a.antenna)a.antenna={type:'omni',az:0,tilt:0,gain:3}; if(!a.mountType)a.mountType='ceiling'; if(a.rfEnabled==null)a.rfEnabled=true; if(!a.channels)a.channels=defaultChannels(); }); });
@@ -4285,7 +4378,7 @@ function setupBgInput(){
 // ============================================================
 function bootUI(){
   buildTools(); buildFloors(); buildMaterials(); buildBands(); buildHeatView(); buildLegend(); buildEditorSettings();
-  setTool('select'); updateChips(); refreshStats(); renderProp(); syncFloorPanel();
+  setTool('select'); updateChips(); refreshStats(); renderProp(); syncFloorPanel(); syncProjectRef();
   $('#plExp').value=state.plExp; $('#plExpV').textContent=state.plExp.toFixed(1);
   $('#slabDb').value=state.slabDb; $('#slabDbV').textContent=state.slabDb+' dB';
   $('#receiverHeight').value=receiverHeight(); $('#receiverHeightV').textContent=receiverHeight().toFixed(1)+' m';
@@ -4322,6 +4415,10 @@ function wireGlobals(){
   $('#planW').oninput=e=>{ floor().w=+e.target.value; $('#planWV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planD').oninput=e=>{ floor().d=+e.target.value; $('#planDV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planH').oninput=e=>{ floor().height=+e.target.value; $('#planHV').textContent=(+e.target.value).toFixed(1)+' m'; if(view==='3d')build3d(); renderProp(); };
+  $('#refX0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originX=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
+  $('#refY0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originY=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
+  $('#refNorth').oninput=e=>{ state.northAngle=normAngleDeg(+e.target.value); $('#refNorthV').textContent=Math.round(northDeg())+'°'; draw2d(); };
+  $('#btnRefOrigin').onclick=startOriginPlace;
   $('#covThr').oninput=e=>{ state.covThreshold=+e.target.value; $('#covThrV').textContent=state.covThreshold+' dBm'; repaintHeat(); refreshStats(); };
   $('#showFail').onchange=e=>{ state.showFail=e.target.checked; repaintHeat(); };
   $('#indoorOnly').onchange=e=>{ state.indoorOnly=e.target.checked; _indoor=null; coverageUpdate(); refreshStats(); };
