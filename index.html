@@ -2185,6 +2185,10 @@ function nudgeSelection(dx,dy){
     const l=(f.labels||[]).find(x=>x.id===selection.id); if(!l)return false;
     beginNudgeGesture();
     moveBy(l,dx,dy); moved=true;
+  } else if(selection.type==='bg'){
+    const b=f.bg; if(!b||b.locked)return false;
+    beginNudgeGesture();
+    moveBy(b,dx,dy); moved=true;
   } else if(selection.type==='opening'){
     const op=(f.openings||[]).find(x=>x.id===selection.id); if(!op)return false;
     beginNudgeGesture();
