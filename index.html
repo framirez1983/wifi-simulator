@@ -1667,10 +1667,11 @@ function draw2d(){
     ctx.fillStyle=sel?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
     ctx.fillText(`${ro.width.toFixed(1)}×${ro.depth.toFixed(1)} m`, c.x+6, c.y-6);
     ctx.restore();
-    // Corner resize handles for selected RF object (editor-only)
+    // Corner resize handles for selected RF object (editor-only).
+    // Drawn in screen space (corners are already W2S-projected), so the handle
+    // is a plain CSS-pixel radius: screen-constant at every zoom level.
     if(sel){
-      const hs=16/camera.zoom; // handle size ~16 screen px
-      const hitTol=22/camera.zoom; // hit target ~22 screen px
+      const hs=RFOBJ_HANDLE_PX;
       const handleCorners=[
         {x:-hw,y:-hd, idx:0}, // bottom-left
         {x:hw,y:-hd, idx:1},  // bottom-right
@@ -1721,10 +1722,10 @@ function draw2d(){
         const owner=floorById(g.id);
         if(owner){ ctx.globalAlpha=sel?0.95:0.75; ctx.fillStyle=sel?'#7aa2ff':'#9aa7b5'; ctx.font='600 9px sans-serif';
           ctx.fillText(owner.name,corners[0].x+6,corners[0].y-6); }
-        // Corner resize handles for selected projected RF object (editor-only)
+        // Corner resize handles for selected projected RF object (editor-only).
+        // Same screen-space, screen-constant sizing as the canonical objects.
         if(sel){
-          const hs=16/camera.zoom; // handle size ~16 screen px
-          const hitTol=22/camera.zoom; // hit target ~22 screen px
+          const hs=RFOBJ_HANDLE_PX;
           const hw=o.width/2, hd=o.depth/2;
           const cos=Math.cos(o.rotation*Math.PI/180), sin=Math.sin(o.rotation*Math.PI/180);
           const handleCorners=[
@@ -2078,12 +2079,33 @@ function pickProjectedRfObject(wx,wy){
       if(Math.abs(lx)<=o.width/2+tol && Math.abs(ly)<=o.depth/2+tol) best={o,ownerId:g.id}; }); });
   return best;
 }
+// RF Object corner-resize geometry (shared by picking, drawing and the drag)
+// ---------------------------------------------------------------------------
+// Handles are drawn in SCREEN coordinates (after W2S), so their sizes are plain
+// CSS pixels and must NOT be divided by camera.zoom. Hit-testing happens in
+// WORLD coordinates, so the pixel radius is converted exactly once, here.
+const RFOBJ_HANDLE_PX = 7;       // visible radius  -> 14 px diameter
+const RFOBJ_HANDLE_HIT_PX = 17;  // hit radius      -> 34 px diameter
+const RFOBJ_MIN_SIZE = 0.1;      // minimum width/depth (m) when clamped
+// Corner index -> local sign, matching the order used by drawing and picking:
+// 0=(-1,-1) 1=(1,-1) 2=(1,1) 3=(-1,1)
+const RFOBJ_CORNER_SIGNS=[[-1,-1],[1,-1],[1,1],[-1,1]];
+// local -> world (theta in radians)
+function rfobjLocalToWorld(lx,ly,theta){
+  const c=Math.cos(theta), s=Math.sin(theta);
+  return { x: lx*c - ly*s, y: lx*s + ly*c };
+}
+// world -> local (inverse rotation by theta in radians)
+function rfobjWorldToLocal(wx,wy,theta){
+  const c=Math.cos(theta), s=Math.sin(theta);
+  return { x: wx*c + wy*s, y: -wx*s + wy*c };
+}
 function pickRfObjectCornerHandle(wx,wy){
   if(!selection||selection.type!=='rfobj') return null;
   const ro=selFloor().rfObjects.find(o=>o.id===selection.id);
   if(!ro) return null;
-  const tol=22/camera.zoom;
-  const cos=Math.cos(-ro.rotation*Math.PI/180), sin=Math.sin(-ro.rotation*Math.PI/180);
+  const tol=RFOBJ_HANDLE_HIT_PX/camera.zoom;
+  const theta=ro.rotation*Math.PI/180;
   const hw=ro.width/2, hd=ro.depth/2;
   const corners=[
     {x:-hw,y:-hd, idx:0}, {x:hw,y:-hd, idx:1},
@@ -2091,9 +2113,10 @@ function pickRfObjectCornerHandle(wx,wy){
   ];
   for(let i=0;i<4;i++){
     const c=corners[i];
-    const wx_c=ro.x+(c.x*cos-c.y*sin);
-    const wy_c=ro.y+(c.x*sin+c.y*cos);
-    if(dist(wx,wy,wx_c,wy_c)<=tol) return {idx:i, cx:c.x, cy:c.y};
+    // Rotate local -> world with the SAME convention used when drawing the
+    // handles. A -theta here made picking and drawing disagree at 45 degrees.
+    const p=rfobjLocalToWorld(c.x, c.y, theta);
+    if(dist(wx,wy,ro.x+p.x,ro.y+p.y)<=tol) return {idx:i, cx:c.x, cy:c.y};
   }
   return null;
 }
@@ -2101,13 +2124,18 @@ function selectedSingleWall(){
   if(!selection || selection.type!=='wall' || multiWalls.length) return null;
   return selFloor().walls.find(w=>w.id===selection.id) || null;
 }
+// Wall endpoint handles: visible radius 6 px (12 px diameter) drawn in screen
+// space; the pick radius stays 10 px so the hit target is comfortably larger
+// than the visible handle. Interaction semantics and snapping are unchanged.
+const WALL_ENDPOINT_HANDLE_PX = 6;
+const WALL_ENDPOINT_HIT_PX = 10;
 function drawWallEndpointHandles(){
   const w=selectedSingleWall();
   if(!w || view!=='2d') return;
   [[w.x1,w.y1],[w.x2,w.y2]].forEach(([x,y])=>{
     const p=W2S(x,y);
     ctx.save();
-    ctx.beginPath(); ctx.arc(p.x,p.y,5.5,0,Math.PI*2);
+    ctx.beginPath(); ctx.arc(p.x,p.y,WALL_ENDPOINT_HANDLE_PX,0,Math.PI*2);
     ctx.fillStyle='#0d1117'; ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#34d6c4'; ctx.stroke();
     ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2);
@@ -2119,7 +2147,7 @@ function pickWallEndpointHandle(sx,sy){
   const w=selectedSingleWall();
   if(!w || view!=='2d') return null;
   const handles=[{end:'a',x:w.x1,y:w.y1},{end:'b',x:w.x2,y:w.y2}];
-  let best=null, bd=10;
+  let best=null, bd=WALL_ENDPOINT_HIT_PX;
   handles.forEach(h=>{ const p=W2S(h.x,h.y), d=Math.hypot(sx-p.x,sy-p.y); if(d<bd){bd=d;best=h;} });
   return best;
 }
@@ -2266,25 +2294,34 @@ cv.addEventListener('pointerdown',e=>{
         start:{x1:wl.x1,y1:wl.y1,x2:wl.x2,y2:wl.y2}, committed:false,moved:false};
       return;
     }
+    // RF Object corner resize owns the pointer: it must win over body hit-testing
+    // and it must never fall through to a move/drag of the object body.
     const rfobjCorner=pickRfObjectCornerHandle(w.x,w.y);
     if(rfobjCorner){
       const ro=selFloor().rfObjects.find(o=>o.id===selection.id);
-      // Compute the fixed opposite corner world coordinates at drag start
-      const hw=ro.width/2, hd=ro.depth/2;
-      const cos_r=Math.cos(ro.rotation*Math.PI/180), sin_r=Math.sin(ro.rotation*Math.PI/180);
-      // Local coordinates of all four corners: idx 0=bl, 1=br, 2=tr, 3=tl
-      const corners_local=[
-        {x:-hw,y:-hd},{x:hw,y:-hd},{x:hw,y:hd},{x:-hw,y:hd}
-      ];
-      const idx=rfobjCorner.idx;
-      // Fixed corner is the opposite one
-      const fixed_idx=(idx+2)%4;
-      const fc=corners_local[fixed_idx];
-      const fx_w=ro.x + (fc.x*Math.cos(ro.rotation*Math.PI/180) - fc.y*Math.sin(ro.rotation*Math.PI/180));
-      const fy_w=ro.y + (fc.x*Math.sin(ro.rotation*Math.PI/180) + fc.y*Math.cos(ro.rotation*Math.PI/180));
-      dragging={type:'rfobj-corner',id:ro.id,cornerIdx:rfobjCorner.idx,
-        start:{fx_w:fx_w, fy_w:fy_w, cx0_w:ro.x, cy0_w:ro.y},
-        sx:e.offsetX,sy:e.offsetY,committed:false,moved:false};
+      if(ro){
+        // Immutable drag snapshot. Nothing below mutates geometry, so a bare
+        // pointerdown can never change x/y/width/depth/rotation.
+        const theta0=ro.rotation*Math.PI/180;
+        const hw0=ro.width/2, hd0=ro.depth/2;
+        const sg=RFOBJ_CORNER_SIGNS[rfobjCorner.idx];
+        const sx=sg[0], sy=sg[1];
+        // Exact world positions of the dragged corner D0 and the diagonally
+        // opposite corner F0, in the object's original local frame.
+        const dOff=rfobjLocalToWorld(sx*hw0, sy*hd0, theta0);
+        const D0x=ro.x+dOff.x, D0y=ro.y+dOff.y;
+        const F0x=ro.x-dOff.x, F0y=ro.y-dOff.y;
+        // M0 via the app's canonical screen->world conversion, using the same
+        // client-rect basis as the pointermove handler (never mix offset/client).
+        const hrect=cv.getBoundingClientRect();
+        const hox=e.clientX-hrect.left, hoy=e.clientY-hrect.top;
+        const M0=S2W(hox,hoy);
+        dragging={type:'rfobj-corner',id:ro.id,cornerIdx:rfobjCorner.idx,
+          start:{ C0x:ro.x, C0y:ro.y, w0:ro.width, d0:ro.depth, rot0:ro.rotation,
+            theta0:theta0, sx:sx, sy:sy, F0x:F0x, F0y:F0y, D0x:D0x, D0y:D0y,
+            grabOx:M0.x-D0x, grabOy:M0.y-D0y },
+          sx:hox, sy:hoy, committed:false, moved:false};
+      }
       return;
     }
     const ap=pickAP(w.x,w.y);
@@ -2427,42 +2464,29 @@ window.addEventListener('pointermove',e=>{
       const ro=(f.rfObjects||[]).find(o=>o.id===dragging.id);
       if(ro){
         const movedPx=Math.hypot(ox-dragging.sx,oy-dragging.sy);
-        if(movedPx>=4 || dragging.moved){
+        if(movedPx>0 || dragging.moved){
           if(!dragging.committed){ commit(); dragging.committed=true; }
           dragging.moved=true;
-          // Fixed opposite corner in world coordinates (stored at drag start)
-          const fx_w=dragging.start.fx_w, fy_w=dragging.start.fy_w;
-          // Object center at drag start (world)
-          const cx0_w=dragging.start.cx0_w, cy0_w=dragging.start.cy0_w;
-          // Current mouse in world
-          const wx=w.x, wy=w.y;
-          // Transform fixed corner and current mouse to local space using drag-start center
-          const cos_l=Math.cos(-ro.rotation*Math.PI/180), sin_l=Math.sin(-ro.rotation*Math.PI/180);
-          // Fixed corner local (constant during drag)
-          const fdx=fx_w-cx0_w, fdy=fy_w-cy0_w;
-          const flx=fdx*cos_l-fdy*sin_l, fly=fdx*sin_l+fdy*cos_l;
-          // Current mouse local
-          const mdx=wx-cx0_w, mdy=wy-cy0_w;
-          const mlx=mdx*cos_l-mdy*sin_l, mly=mdx*sin_l+mdy*cos_l;
-          // New half-width/depth from fixed to dragged corner in local space
-          let hw, hd;
-          const idx=dragging.cornerIdx;
-          if(idx===0){ hw=flx-mlx; hd=fly-mly; }      // bottom-left dragged, top-right fixed
-          else if(idx===1){ hw=mlx-flx; hd=fly-mly; }   // bottom-right dragged, top-left fixed
-          else if(idx===2){ hw=mlx-flx; hd=mly-fly; }   // top-right dragged, bottom-left fixed
-          else { hw=flx-mlx; hd=mly-fly; }              // top-left dragged, bottom-right fixed
-          hw=Math.max(0.1, hw); hd=Math.max(0.1, hd);
-          // New center in local space = midpoint between fixed and dragged corners
-          const cx_local=(flx+mlx)/2, cy_local=(fly+mly)/2;
-          // Transform new local center to world coordinates
-          const cos_r=Math.cos(ro.rotation*Math.PI/180), sin_r=Math.sin(ro.rotation*Math.PI/180);
-          const cx_w=cx_local*cos_r - cy_local*sin_r;
-          const cy_w=cx_local*sin_r + cy_local*cos_r;
-          // Set absolute world position (not delta)
-          ro.x = cx_w;
-          ro.y = cy_w;
-          ro.width = hw*2;
-          ro.depth = hd*2;
+          // Everything below derives from the immutable pointerdown snapshot.
+          // The object's current x/y/width/depth/rotation are never read as a
+          // basis, no deltas are accumulated and theta0 never changes.
+          const s=dragging.start;
+          // Desired dragged corner: mouse minus the grab offset, so the corner
+          // never snaps to the pointer when the grab was off-centre.
+          const Dx=w.x-s.grabOx, Dy=w.y-s.grabOy;
+          // Vector F0 -> D expressed in the ORIGINAL local frame.
+          const q=rfobjWorldToLocal(Dx-s.F0x, Dy-s.F0y, s.theta0);
+          // Clamp in the expected quadrant: crossing the fixed corner shrinks to
+          // the minimum size instead of flipping which corner is being dragged.
+          const qx=s.sx*Math.max(RFOBJ_MIN_SIZE, s.sx*q.x);
+          const qy=s.sy*Math.max(RFOBJ_MIN_SIZE, s.sy*q.y);
+          // New centre sits at F0 plus half the clamped edge, in world space.
+          const half=rfobjLocalToWorld(qx/2, qy/2, s.theta0);
+          ro.x = s.F0x + half.x;
+          ro.y = s.F0y + half.y;
+          ro.width = Math.abs(qx);
+          ro.depth = Math.abs(qy);
+          ro.rotation = s.rot0;
         }
       }
     }
