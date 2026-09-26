@@ -2396,7 +2396,7 @@ cv.addEventListener('pointerdown',e=>{
     const f=floor();
     if(!f.rfObjects)f.rfObjects=[];
     const ro={id:uid('rfobj'),name:'RF-Objekt '+(f.rfObjects.length+1),x:Math.round(w.x*4)/4,y:Math.round(w.y*4)/4,width:1,depth:1,height:1,rotation:0,materialId:state.activeMat,extraLossDb:0};
-    commit(); f.rfObjects.push(ro); select('rfobj',ro.id); if(view==='3d')build3d(); refreshStats();
+    commit(); f.rfObjects.push(ro); select('rfobj',ro.id); if(view==='3d')build3d(); refreshStats(); scheduleHeat();
   }
   else if(tool==='cable'){
     const f=floor();
@@ -2604,7 +2604,7 @@ function nudgeSelection(dx,dy){
   } else if(selection.type==='rfobj'){
     const ro=(f.rfObjects||[]).find(x=>x.id===selection.id); if(!ro)return false;
     beginNudgeGesture();
-    moveBy(ro,dx,dy); threeD=true; moved=true;
+    moveBy(ro,dx,dy); rf=true; threeD=true; moved=true;
   } else if(selection.type==='rack'){
     const r=(f.racks||[]).find(x=>x.id===selection.id); if(!r)return false;
     beginNudgeGesture();
@@ -2694,6 +2694,90 @@ function slabLossBetweenPoints(ax,ay,az, af, bx,by,bz, tf){
     if(t<0||t>1){ loss+=state.slabDb; continue; }
     const x=ax+(bx-ax)*t, y=ay+(by-ay)*t;
     if(!pointInOpening(state.floors[slabFloor],x,y)) loss+=state.slabDb;
+  }
+  return loss;
+}
+
+// ---------- RF OBJECTS (generic rotated prisms) ----------
+// One RF Object is one physical rotated rectangular prism:
+//   width/depth/rotation in the XY plane, base Z = floorElevation(owner floor),
+//   top Z = baseZ + height.
+// RF always evaluates the CANONICAL object, never the 2D floor projection:
+// every project's rfObjects are visited exactly once per AP->receiver path,
+// regardless of which floor the AP, the receiver or the active view is on. A
+// tall object on an intermediate floor attenuates a path whose real 3D segment
+// crosses its volume, and is charged once - never once per projected copy.
+//
+// Loss is a single material+extra contribution per traversal. It is NOT scaled
+// by width/depth/thickness/distance, and entry and exit are not charged apart.
+const RFOBJ_SLAB_EPS = 1e-9;
+// Segment vs rotated rectangular prism, via a 3-axis slab (AABB) test in the
+// object's local frame. Deterministic for tangent/grazing cases via RFOBJ_SLAB_EPS.
+function rfSegmentHitsPrism(ax,ay,az, bx,by,bz, o, baseZ){
+  const hw=o.width/2, hd=o.depth/2;
+  const th=(o.rotation||0)*Math.PI/180, c=Math.cos(th), sn=Math.sin(th);
+  // world -> object local frame: translate to the centre, then rotate XY by -rotation
+  const pax=ax-o.x, pay=ay-o.y, pbx=bx-o.x, pby=by-o.y;
+  const lax= pax*c + pay*sn, lay=-pax*sn + pay*c;
+  const lbx= pbx*c + pby*sn, lby=-pbx*sn + pby*c;
+  const topZ=baseZ+Math.max(0, o.height||0);
+  const E=RFOBJ_SLAB_EPS;
+  let tmin=0, tmax=1;
+  // X slab: [-width/2, +width/2]
+  {
+    const d=lbx-lax;
+    if(Math.abs(d)<E){ if(lax<-hw-E || lax>hw+E) return false; }
+    else{
+      let t1=(-hw-lax)/d, t2=(hw-lax)/d;
+      if(t1>t2){ const sw=t1; t1=t2; t2=sw; }
+      if(t1>tmin) tmin=t1; if(t2<tmax) tmax=t2;
+      if(tmin>tmax+E) return false;
+    }
+  }
+  // Y slab: [-depth/2, +depth/2]
+  {
+    const d=lby-lay;
+    if(Math.abs(d)<E){ if(lay<-hd-E || lay>hd+E) return false; }
+    else{
+      let t1=(-hd-lay)/d, t2=(hd-lay)/d;
+      if(t1>t2){ const sw=t1; t1=t2; t2=sw; }
+      if(t1>tmin) tmin=t1; if(t2<tmax) tmax=t2;
+      if(tmin>tmax+E) return false;
+    }
+  }
+  // Z slab: [baseZ, baseZ + height]
+  {
+    const d=bz-az;
+    if(Math.abs(d)<E){ if(az<baseZ-E || az>topZ+E) return false; }
+    else{
+      let t1=(baseZ-az)/d, t2=(topZ-az)/d;
+      if(t1>t2){ const sw=t1; t1=t2; t2=sw; }
+      if(t1>tmin) tmin=t1; if(t2<tmax) tmax=t2;
+      if(tmin>tmax+E) return false;
+    }
+  }
+  return tmax>=-E && tmin<=1+E;
+}
+// Effective extra loss of an RF Object. extraLossDb is ADDITIONAL ATTENUATION:
+// it can never create RF gain, so negatives clamp to 0 and invalid values
+// (NaN, Infinity, non-numeric, missing) contribute 0.
+function rfObjectExtraLoss(o){
+  const n=Number(o && o.extraLossDb);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+// Attenuation of one straight AP->receiver segment through every canonical RF
+// Object in the project. This is the single integration point used by Simple
+// RSSI and SINR alike, so the two can never disagree.
+function rfObjectLossOnSegment(ax,ay,az, bx,by,bz){
+  let loss=0;
+  for(let i=0;i<state.floors.length;i++){
+    const objs=state.floors[i].rfObjects;
+    if(!objs || !objs.length) continue;
+    const baseZ=floorElevation(i);
+    for(const o of objs){
+      if(!rfSegmentHitsPrism(ax,ay,az, bx,by,bz, o, baseZ)) continue;
+      loss += matById(o.materialId).db + rfObjectExtraLoss(o);
+    }
   }
   return loss;
 }
@@ -2800,6 +2884,9 @@ function rssiFromAP(ap, af, px,py, tf, mhz){
     pl += pillarLossOnFloor(state.floors[tf], ap.x,ap.y, px,py, apz,evz, tf)*0.5;
   }
   pl += slabLossBetweenPoints(ap.x,ap.y,apz,af,px,py,evz,tf);
+  // RF Objects: canonical 3D prisms, whole-project, once per traversal.
+  // With no RF Objects this adds exactly 0 and stays bit-identical.
+  pl += rfObjectLossOnSegment(ap.x,ap.y,apz, px,py,evz);
   return ap.txPower + antennaGain(ap,px,py,apz,evz) - pl; // dBm
 }
 
@@ -4053,20 +4140,23 @@ function renderProp(){
       <div class="field"><label>${t('rfobj.material')}</label><select id="pRfobjMat">
         ${state.materials.map(m=>`<option value="${m.id}" ${ro.materialId===m.id?'selected':''}>${escapeHtml(m.name)} · ${m.db} dB</option>`).join('')}
       </select></div>
-      <div class="field"><label>${t('rfobj.extraLoss')}</label><input id="pRfobjExtraLoss" type="number" step="0.5" min="0" value="${ro.extraLossDb}"></div>
+      <div class="field"><label>${t('rfobj.extraLoss')}</label><input id="pRfobjExtraLoss" type="number" step="0.5" min="0" value="${rfObjectExtraLoss(ro)}"></div>
       <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${ro.x.toFixed(2)}"></div>
         <div class="field"><label>Y (m)</label><input id="pY" type="number" step="0.1" value="${ro.y.toFixed(2)}"></div></div>
-      <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(ro.materialId).db} dB</b> ${ro.extraLossDb>0?`+ ${ro.extraLossDb} dB extra`:''}</div>
+      <div class="stat"><span>${t('pillar.attenuation')}</span><b>${matById(ro.materialId).db} dB</b> ${rfObjectExtraLoss(ro)>0?`+ ${rfObjectExtraLoss(ro)} dB extra`:''}</div>
       <button class="delbtn" id="pDel" ${isProj?'disabled':''}>${t('rfobj.remove')}</button>`;
     $('#pRfobjName').oninput=e=>{ro.name=e.target.value;draw2d();};
-    $('#pRfobjWidth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.width.toFixed(2); return; } commit(); ro.width=v; if(view==='3d')build3d(); draw2d(); };
-    $('#pRfobjDepth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.depth.toFixed(2); return; } commit(); ro.depth=v; if(view==='3d')build3d(); draw2d(); };
-    $('#pRfobjHeight').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.height.toFixed(2); return; } commit(); ro.height=v; if(view==='3d')build3d(); draw2d(); };
-    $('#pRfobjRot').onchange=e=>{ const v=(+e.target.value)%360; if(!Number.isFinite(v)){ e.target.value=ro.rotation; return; } commit(); ro.rotation=v; draw2d(); if(view==='3d')build3d(); };
-    $('#pRfobjMat').onchange=e=>{commit();ro.materialId=e.target.value;if(view==='3d')build3d();renderProp();};
-    $('#pRfobjExtraLoss').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)||v<0){ e.target.value=ro.extraLossDb; return; } commit(); ro.extraLossDb=v; renderProp(); };
-    $('#pX').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.x.toFixed(2); return; } commit(); ro.x=v; if(view==='3d')build3d(); draw2d(); };
-    $('#pY').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.y.toFixed(2); return; } commit(); ro.y=v; if(view==='3d')build3d(); draw2d(); };
+    // Every RF-affecting property invalidates the RF model through the existing
+    // debounced scheduler, so Simple RSSI/SINR refresh without a manual toggle.
+    // Numeric fields keep the approved Enter/blur (onchange) behaviour.
+    $('#pRfobjWidth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.width.toFixed(2); return; } commit(); ro.width=v; if(view==='3d')build3d(); scheduleHeat(); draw2d(); };
+    $('#pRfobjDepth').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.depth.toFixed(2); return; } commit(); ro.depth=v; if(view==='3d')build3d(); scheduleHeat(); draw2d(); };
+    $('#pRfobjHeight').onchange=e=>{ const v=parseFloat(e.target.value); if(!(v>0)){ e.target.value=ro.height.toFixed(2); return; } commit(); ro.height=v; if(view==='3d')build3d(); scheduleHeat(); draw2d(); };
+    $('#pRfobjRot').onchange=e=>{ const v=(+e.target.value)%360; if(!Number.isFinite(v)){ e.target.value=ro.rotation; return; } commit(); ro.rotation=v; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
+    $('#pRfobjMat').onchange=e=>{commit();ro.materialId=e.target.value;if(view==='3d')build3d();scheduleHeat();renderProp();};
+    $('#pRfobjExtraLoss').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)||v<0){ e.target.value=rfObjectExtraLoss(ro); return; } commit(); ro.extraLossDb=Math.max(0,v); scheduleHeat(); renderProp(); };
+    $('#pX').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.x.toFixed(2); return; } commit(); ro.x=v; if(view==='3d')build3d(); scheduleHeat(); draw2d(); };
+    $('#pY').onchange=e=>{const v=+e.target.value; if(!Number.isFinite(v)){ e.target.value=ro.y.toFixed(2); return; } commit(); ro.y=v; if(view==='3d')build3d(); scheduleHeat(); draw2d(); };
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='wall'){
