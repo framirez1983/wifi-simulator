@@ -3324,8 +3324,136 @@ function runRayTrace(onDone){
     }
     return best;
   }
+  // ---- RF Objects (Stage 3): transmission obstacles in the SAME nearest-event
+  // search as walls and pillars, so a farther object can never be processed
+  // before a nearer wall/pillar.
+  // The tracer is a 2.5D horizontal march at the receiver height, so the rotated
+  // 3D prism resolves as: exact rotated-rectangle entry/exit along the ray via
+  // the same local-frame slab clip and EPS as the Simple model, plus a Z
+  // containment test against [baseZ, baseZ+height]. Because the ray Z is
+  // constant, that pair is exactly a segment-vs-rotated-prism test.
+  // Returns [enterD, exitD] as distances along the (unit) ray direction.
+  function rfObjectRange(ax,ay,dx,dy,o){
+    const hw=o.width/2, hd=o.depth/2;
+    const th=(o.rotation||0)*Math.PI/180, c=Math.cos(th), s=Math.sin(th);
+    // ray origin and direction rotated into the object's local frame
+    const pax=ax-o.x, pay=ay-o.y;
+    const lax= pax*c + pay*s, lay=-pax*s + pay*c;
+    const ldx=  dx*c + dy*s, ldy= -dx*s + dy*c;
+    const E=RFOBJ_SLAB_EPS;
+    let tmin=0, tmax=Infinity;
+    // X slab: [-width/2, +width/2]
+    {
+      const d=ldx;
+      if(Math.abs(d)<E){ if(lax<-hw-E || lax>hw+E) return null; }
+      else{
+        let t1=(-hw-lax)/d, t2=(hw-lax)/d;
+        if(t1>t2){ const sw=t1; t1=t2; t2=sw; }
+        if(t1>tmin) tmin=t1; if(t2<tmax) tmax=t2;
+        if(tmin>tmax+E) return null;
+      }
+    }
+    // Y slab: [-depth/2, +depth/2]
+    {
+      const d=ldy;
+      if(Math.abs(d)<E){ if(lay<-hd-E || lay>hd+E) return null; }
+      else{
+        let t1=(-hd-lay)/d, t2=(hd-lay)/d;
+        if(t1>t2){ const sw=t1; t1=t2; t2=sw; }
+        if(t1>tmin) tmin=t1; if(t2<tmax) tmax=t2;
+        if(tmin>tmax+E) return null;
+      }
+    }
+    if(tmax<0) return null;
+    // A ray origin already inside the prism yields tmin<=0: keep the forward
+    // exit, do NOT invent an entry event behind the ray.
+    return [Math.max(0,tmin), tmax];
+  }
+  function rfObjectHitInStep(ray, ax,ay,bx,by){
+    const stepLen=Math.hypot(bx-ax, by-ay);
+    if(!(stepLen>0)) return null;
+    const rayZ=rayZAt(ray,ax,ay);
+    let best=null;
+    // canonical project objects only; 2D floor projections are never in state
+    for(let fi=0; fi<state.floors.length; fi++){
+      const objs=state.floors[fi].rfObjects;
+      if(!objs || !objs.length) continue;
+      const baseZ=floorElevation(fi);
+      for(const o of objs){
+        // already charged earlier on THIS ray: never charge the same prism twice
+        if(ray.rfDone && ray.rfDone[o.id]) continue;
+        const topZ=baseZ+Math.max(0, o.height||0);
+        // Z slab containment for the (constant-height) horizontal ray
+        if(rayZ<baseZ-RFOBJ_SLAB_EPS || rayZ>topZ+RFOBJ_SLAB_EPS) continue;
+        const r=rfObjectRange(ax,ay,ray.dx,ray.dy,o);
+        if(!r) continue;
+        let enterD=r[0];
+        const exitD=r[1];
+        if(exitD<1e-6) continue;        // degenerate chord: no material crossed
+        if(enterD>stepLen) continue;    // entry lies beyond this step
+        const t=enterD/stepLen;
+        if(best && t>=best.t) continue;
+        best={o:o, t:t, enterD:enterD, exitD:exitD,
+              x:ax+ray.dx*enterD, y:ay+ray.dy*enterD,
+              exitX:ax+ray.dx*exitD, exitY:ay+ray.dy*exitD};
+      }
+    }
+    return best;
+  }
+  // Is the world point (x,y) at the ray's height inside the prism? Same local
+  // frame and EPS as rfObjectRange.
+  function rfObjectHolds(x,y,rayZ,o,baseZ){
+    const topZ=baseZ+Math.max(0, o.height||0);
+    if(rayZ<baseZ-RFOBJ_SLAB_EPS || rayZ>topZ+RFOBJ_SLAB_EPS) return false;
+    const th=(o.rotation||0)*Math.PI/180, c=Math.cos(th), s=Math.sin(th);
+    const pax=x-o.x, pay=y-o.y;
+    const lax= pax*c + pay*s, lay=-pax*s + pay*c;
+    return Math.abs(lax)<=o.width/2+RFOBJ_SLAB_EPS && Math.abs(lay)<=o.depth/2+RFOBJ_SLAB_EPS;
+  }
+  // Prisms this ray is currently inside AND has already paid for. Ids are
+  // pruned as the ray leaves each prism, so a genuine later re-entry (for
+  // example via a reflection) is charged again, while a single continuous
+  // traversal is charged exactly once. Such interior space is not sampled: it
+  // is physical material, matching the existing convention that obstacle
+  // interiors are never deposited.
+  function rfRayInsideCharged(ray, x, y){
+    if(!ray.rfDone) return false;
+    const rayZ=rayZAt(ray,x,y);
+    let inside=false;
+    for(let fi=0; fi<state.floors.length; fi++){
+      const objs=state.floors[fi].rfObjects;
+      if(!objs || !objs.length) continue;
+      const baseZ=floorElevation(fi);
+      for(const o of objs){
+        if(!ray.rfDone[o.id]) continue;
+        if(rfObjectHolds(x,y,rayZ,o,baseZ)) inside=true;
+        else delete ray.rfDone[o.id];   // left the prism: re-entry may charge again
+      }
+    }
+    return inside;
+  }
+  // A reflected branch is a NEW propagation path, but it can be born inside a
+  // prism the parent already paid for. It inherits ONLY the prisms that
+  // actually contain its spawn point, so it neither re-charges them on spawn
+  // nor carries a permanent blacklist that would suppress a real re-entry.
+  function rfRayInheritAt(ray, x, y){
+    const out={};
+    if(!ray.rfDone) return out;
+    const rayZ=rayZAt(ray,x,y);
+    for(let fi=0; fi<state.floors.length; fi++){
+      const objs=state.floors[fi].rfObjects;
+      if(!objs || !objs.length) continue;
+      const baseZ=floorElevation(fi);
+      for(const o of objs){
+        if(!ray.rfDone[o.id]) continue;
+        if(rfObjectHolds(x,y,rayZ,o,baseZ)) out[o.id]=true;
+      }
+    }
+    return out;
+  }
   function marchRay(ray, walls, sameFloor, tx){
     let {x,y,dx,dy,dB,dist:dst,refl}=ray; let steps=0, transmissionEvents=ray.transmissions||0;
+    if(!ray.rfDone) ray.rfDone={};   // per-ray: prisms already charged on this path
     const apz=floorElevation(ray._af)+(ray._ap.mount||2.6);
     const evz=floorElevation(state.activeFloor)+receiverHeight();
     const verticalDelta=Math.abs(apz-evz);
@@ -3341,6 +3469,29 @@ function runRayTrace(onDone){
       let hitW=null, hitT=2;
       if(sameFloor){ for(const w of walls){ const tt=segCrossT(x,y,nx,ny,w.x1,w.y1,w.x2,w.y2); if(tt>=0&&tt<hitT){hitT=tt;hitW=w;} } }
       const hitP=pillarHitInStep(ray,x,y,nx,ny);
+      const hitR=rfObjectHitInStep(ray,x,y,nx,ny);
+      // Nearest-event ordering across all three obstacle types. An RF Object is
+      // only taken when it is nearer than BOTH the nearest wall and the nearest
+      // pillar; otherwise the existing wall/pillar precedence is unchanged.
+      if(hitR && (!hitP || hitR.t<hitP.t) && (!hitW || hitR.t<hitT)){
+        const entryDist=dst+hitR.enterD;
+        depositCell(hitR.x,hitR.y, tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(entryDist)))+dB+slabAt(hitR.x,hitR.y)));
+        // one traversal, one charge: material + clamped extra loss
+        dB+=matById(hitR.o.materialId).db + rfObjectExtraLoss(hitR.o); transmissionEvents++;
+        // Remember the charge and resume marching normally from just inside the
+        // entry. We deliberately do NOT jump to the exit: a wall, pillar or a
+        // second prism may lie inside this chord and must still be searched for
+        // and charged. Re-entry of THIS prism is blocked while the ray is inside
+        // it (ray.rfDone, pruned on exit by rfRayInsideCharged), so one
+        // continuous traversal is charged exactly once and a genuine re-entry
+        // later is charged again. The interior is not sampled.
+        if(!ray.rfDone) ray.rfDone={};
+        ray.rfDone[hitR.o.id]=true;
+        dst+=hitR.enterD;
+        x=hitR.x+dx*1e-3; y=hitR.y+dy*1e-3;
+        dst+=1e-3; steps++;
+        continue;
+      }
       if(hitP && (!hitW || hitP.t<hitT)){
         const entryDist=dst+hitP.enterD;
         depositCell(hitP.x,hitP.y, tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(entryDist)))+dB+slabAt(hitP.x,hitP.y)));
@@ -3359,15 +3510,20 @@ function runRayTrace(onDone){
           const wdx=hitW.x2-hitW.x1, wdy=hitW.y2-hitW.y1, wl=Math.hypot(wdx,wdy)||1;
           const nxn=-wdy/wl, nyn=wdx/wl, dot=dx*nxn+dy*nyn;
           const rdx=dx-2*dot*nxn, rdy=dy-2*dot*nyn;
-          rayQueue.push({x:hx+rdx*1e-3,y:hy+rdy*1e-3,dx:rdx,dy:rdy,dB:dB+mdb*0.5+REFL_LOSS,dist:dst,refl:refl+1,transmissions:transmissionEvents,_w:walls,_s:sameFloor,_t:tx,_ap:ray._ap,_af:ray._af});
+          rayQueue.push({x:hx+rdx*1e-3,y:hy+rdy*1e-3,dx:rdx,dy:rdy,dB:dB+mdb*0.5+REFL_LOSS,dist:dst,refl:refl+1,transmissions:transmissionEvents,rfDone:rfRayInheritAt(ray,hx,hy),_w:walls,_s:sameFloor,_t:tx,_ap:ray._ap,_af:ray._af});
         }
         dB+=mdb; transmissionEvents++;
         x=hx+dx*1e-3; y=hy+dy*1e-3; continue;
       }
       dst+=stepM;
-      const rssi=tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(dst)))+dB+slabAt(nx,ny));
-      if(rssi<RT_FLOOR_DBM){ continueBelowFloor(nx,ny,dx,dy,dst,steps); break; }
-      depositCell(nx,ny, rssi);
+      // Interior of an already-charged prism is physical material: march through
+      // it without sampling, exactly as the tracer never samples inside a pillar
+      // or wall. Events inside are still found by the search above.
+      if(!rfRayInsideCharged(ray,nx,ny)){
+        const rssi=tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(dst)))+dB+slabAt(nx,ny));
+        if(rssi<RT_FLOOR_DBM){ continueBelowFloor(nx,ny,dx,dy,dst,steps); break; }
+        depositCell(nx,ny, rssi);
+      }
       x=nx;y=ny;steps++;
       if(x<b.minx-1||x>b.maxx+1||y<b.miny-1||y>b.maxy+1) break;
     }
