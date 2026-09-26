@@ -299,6 +299,18 @@ höger·drag · panorera</div>
         <div class="field"><label data-i18n="floor.ceiling">Takhöjd</label>
           <div class="slider"><input type="range" id="planH" min="2" max="6" step="0.1"><span class="val" id="planHV">—</span></div></div>
         <div class="hint" data-i18n="floor.sizeHint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
+        <div id="slabPanel">
+          <h3 data-i18n="slab.section">Losa hacia planta inferior</h3>
+          <div class="hint" data-i18n="slab.none" id="slabNone" style="display:none">Esta planta no tiene losa debajo.</div>
+          <div id="slabFields" style="display:none">
+            <div class="field"><label data-i18n="slab.material">Material</label>
+              <select id="slabMaterial"></select></div>
+            <div class="field"><label data-i18n="slab.extra">Atenuación adicional (dB)</label>
+              <input id="slabExtra" type="number" step="0.5" min="0" value="0"></div>
+            <div class="stat"><span data-i18n="slab.effective">Pérdida efectiva</span><b id="slabEffectiveV">—</b></div>
+            <div class="hint" data-i18n="slab.hint">La losa pertenece a esta planta y está en su cota base.</div>
+          </div>
+        </div>
       </div>
       <div class="grp" id="refPanel">
         <h3 data-i18n="section.reference">Projektreferens</h3>
@@ -417,6 +429,13 @@ const translations = {
     "floor.width": "Anchura (X)",
     "floor.depth": "Profundidad (Y)",
     "floor.ceiling": "Altura del techo",
+    "slab.section": "Losa hacia planta inferior",
+    "slab.none": "Esta planta no tiene losa debajo.",
+    "slab.material": "Material",
+    "slab.default": "Predeterminado",
+    "slab.extra": "Atenuación adicional (dB)",
+    "slab.effective": "Pérdida efectiva",
+    "slab.hint": "La losa pertenece a esta planta y está en su cota base. Los huecos de esta planta anulan la pérdida en el punto de cruce.",
     "floor.sizeHint": "El tamaño define la superficie, el marco de la cuadrícula y el área de la malla de cobertura. Las paredes fuera del marco amplían el área automáticamente.",
     "section.coverage": "Cobertura y visualización",
     "coverage.metric": "Magnitud mostrada",
@@ -690,6 +709,13 @@ const translations = {
     "floor.width": "Width (X)",
     "floor.depth": "Depth (Y)",
     "floor.ceiling": "Ceiling height",
+    "slab.section": "Slab to floor below",
+    "slab.none": "This floor has no slab below it.",
+    "slab.material": "Material",
+    "slab.default": "Default",
+    "slab.extra": "Additional attenuation (dB)",
+    "slab.effective": "Effective loss",
+    "slab.hint": "The slab belongs to this floor and sits at its base elevation. Openings on this floor void the loss at the crossing point.",
     "floor.sizeHint": "The size sets the floor area, grid boundary and coverage grid area. Walls outside the boundary automatically extend the area.",
     "section.coverage": "Coverage & display",
     "coverage.metric": "Displayed metric",
@@ -963,6 +989,13 @@ const translations = {
     "floor.width": "Bredd (X)",
     "floor.depth": "Djup (Y)",
     "floor.ceiling": "Takhöjd",
+    "slab.section": "Bjälklag mot våningen under",
+    "slab.none": "Denna våning har inget bjälklag under sig.",
+    "slab.material": "Material",
+    "slab.default": "Standard",
+    "slab.extra": "Extra dämpning (dB)",
+    "slab.effective": "Effektiv förlust",
+    "slab.hint": "Bjälklaget tillhör denna våning och ligger på dess basnivå. Öppningar på denna våning tar bort förlusten vid korsningspunkten.",
     "floor.sizeHint": "Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.",
     "section.coverage": "Täckning & visning",
     "coverage.metric": "Visad storhet",
@@ -2683,6 +2716,20 @@ function activeRfApCount(){ return state.floors.reduce((n,f)=>n+f.aps.filter(apP
 function pointInOpening(f,x,y){
   return (f.openings||[]).some(o=>pointInPolygon(x,y,o.points)||pointOnPolygonEdge(x,y,o.points,1e-9));
 }
+// Effective attenuation of ONE crossing of the structural inter-floor slab owned
+// by floor f. Ownership: every non-bottom floor owns the slab at its own base
+// elevation, separating it from the floor below; floor 0 owns none.
+//   base  = explicit material when selected, else the inherited global default
+//   extra = additional attenuation, never negative, invalid values ignored
+// state.slabDb stays the compatibility default, so floors without the new
+// optional fields are numerically unchanged. Absence is resolved HERE, not by
+// injecting defaults into stored floors, so old projects need no migration.
+function slabLossForFloor(f){
+  const base=(f && f.slabMaterialId!=null) ? matById(f.slabMaterialId).db : state.slabDb;
+  const n=Number(f && f.slabExtraLossDb);
+  const extra=Number.isFinite(n) ? Math.max(0,n) : 0;
+  return base + extra;
+}
 function slabLossBetweenPoints(ax,ay,az, af, bx,by,bz, tf){
   if(af===tf) return 0;
   const lo=Math.min(af,tf), hi=Math.max(af,tf);
@@ -2691,9 +2738,11 @@ function slabLossBetweenPoints(ax,ay,az, af, bx,by,bz, tf){
     const z=floorElevation(slabFloor);
     const denom=bz-az;
     const t=Math.abs(denom)<1e-12 ? -1 : (z-az)/denom;
-    if(t<0||t>1){ loss+=state.slabDb; continue; }
+    // this floor owns the slab plane at its base elevation
+    const slabLoss=slabLossForFloor(state.floors[slabFloor]);
+    if(t<0||t>1){ loss+=slabLoss; continue; }
     const x=ax+(bx-ax)*t, y=ay+(by-ay)*t;
-    if(!pointInOpening(state.floors[slabFloor],x,y)) loss+=state.slabDb;
+    if(!pointInOpening(state.floors[slabFloor],x,y)) loss+=slabLoss;
   }
   return loss;
 }
@@ -3954,6 +4003,31 @@ function syncFloorPanel(){
   $('#planW').value=f.w; $('#planWV').textContent=(f.w||20).toFixed(1)+' m';
   $('#planD').value=f.d; $('#planDV').textContent=(f.d||14).toFixed(1)+' m';
   $('#planH').value=f.height; $('#planHV').textContent=f.height.toFixed(1)+' m';
+  syncSlabPanel(f);
+}
+// Floor 0 owns no slab (it is the bottom floor). Every other floor owns the
+// structural slab at its own base elevation.
+function syncSlabPanel(f){
+  const sel=$('#slabMaterial'), fields=$('#slabFields'), none=$('#slabNone');
+  if(!sel||!fields||!none) return;
+  const owns = state.activeFloor>0;
+  fields.style.display=owns?'':'none';
+  none.style.display=owns?'none':'';
+  if(!owns){ return; }
+  // keep the option list in step with the project's material list
+  if(sel.dataset.matCount!==String(state.materials.length)){
+    sel.innerHTML = `<option value=""></option>` + state.materials.map(m=>
+      `<option value="${m.id}">${escapeHtml(m.name)} · ${m.db} dB</option>`).join('');
+    sel.dataset.matCount=String(state.materials.length);
+  }
+  // the default option always shows the CURRENT inherited global value
+  const defOpt=sel.querySelector('option[value=""]');
+  if(defOpt) defOpt.textContent = t('slab.default')+' ('+state.slabDb+' dB)';
+  sel.value = f.slabMaterialId!=null ? f.slabMaterialId : '';
+  if(!sel.querySelector('option[value="'+sel.value+'"]')) sel.value='';
+  const ex=f.slabExtraLossDb;
+  $('#slabExtra').value = (Number.isFinite(Number(ex))&&Number(ex)>0) ? String(Number(ex)) : '0';
+  $('#slabEffectiveV').textContent = slabLossForFloor(f).toFixed(1)+' dB';
 }
 function removeFloor(i){
   if(state.floors.length<=1){ showToast(true,uiMessage('error.lastFloor'),null,1400); return; }
@@ -5290,7 +5364,15 @@ function wireGlobals(){
   $('#btnPlanPng').onclick=exportFloorPlanPNG;
   $('#btnGltf').onclick=exportGLTF;
   $('#plExp').oninput=e=>{ state.plExp=+e.target.value; $('#plExpV').textContent=state.plExp.toFixed(1); scheduleHeat(); };
-  $('#slabDb').oninput=e=>{ state.slabDb=+e.target.value; $('#slabDbV').textContent=state.slabDb+' dB'; scheduleHeat(); };
+  $('#slabDb').oninput=e=>{ state.slabDb=+e.target.value; $('#slabDbV').textContent=state.slabDb+' dB'; syncSlabPanel(floor()); scheduleHeat(); };
+  // Per-floor slab: floor 0 owns no slab, so the section is inert there.
+  $('#slabMaterial').onchange=e=>{ if(state.activeFloor<=0) return; const f=floor();
+    commit(); const v=e.target.value; if(v) f.slabMaterialId=v; else delete f.slabMaterialId;
+    scheduleHeat(); syncSlabPanel(f); };
+  $('#slabExtra').onchange=e=>{ if(state.activeFloor<=0) return; const f=floor();
+    const v=parseFloat(e.target.value);
+    if(!Number.isFinite(v)||v<0){ syncSlabPanel(f); return; }   // never RF gain
+    commit(); f.slabExtraLossDb=v; scheduleHeat(); syncSlabPanel(f); };
   $('#receiverHeight').oninput=e=>{ state.receiverHeight=+e.target.value; $('#receiverHeightV').textContent=state.receiverHeight.toFixed(1)+' m'; scheduleHeat(); if(view==='3d')refresh3dHeat(); };
   $('#planW').oninput=e=>{ floor().w=+e.target.value; $('#planWV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planD').oninput=e=>{ floor().d=+e.target.value; $('#planDV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
