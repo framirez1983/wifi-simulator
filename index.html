@@ -5294,7 +5294,7 @@ function wireGlobals(){
   $('#receiverHeight').oninput=e=>{ state.receiverHeight=+e.target.value; $('#receiverHeightV').textContent=state.receiverHeight.toFixed(1)+' m'; scheduleHeat(); if(view==='3d')refresh3dHeat(); };
   $('#planW').oninput=e=>{ floor().w=+e.target.value; $('#planWV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planD').oninput=e=>{ floor().d=+e.target.value; $('#planDV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
-  $('#planH').oninput=e=>{ floor().height=+e.target.value; $('#planHV').textContent=(+e.target.value).toFixed(1)+' m'; if(view==='3d')build3d(); renderProp(); };
+  $('#planH').oninput=e=>{ floor().height=+e.target.value; $('#planHV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); if(view==='3d')build3d(); renderProp(); };
   $('#refX0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originX=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
   $('#refY0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originY=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
   $('#refNorth').oninput=e=>{ state.northAngle=normAngleDeg(+e.target.value); $('#refNorthV').textContent=Math.round(northDeg())+'°'; draw2d(); };
