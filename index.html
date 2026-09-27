@@ -1420,12 +1420,49 @@ function defaultChannels(){ return {'2.4':1,'5':36,'6':37}; }
 // must not float above the floor it belongs to. floorHeight may be omitted or
 // non-positive when the owning floor is unknown, in which case only the lower
 // bound is enforced.
+const AP_MOUNT_DEFAULT=2.6;   // used when no usable stored value exists
+const AP_MOUNT_MIN=0.5;       // mount slider minimum / geometric floor
+const AP_MOUNT_ABS_MAX=1000;  // non-physical ceiling, only reachable from corrupt state
 function clampApMount(v, floorHeight){
   const n=Number(v);
-  const base=Number.isFinite(n) ? n : 2.6;
-  const lo=Math.max(base, 0.5);
+  const base=Number.isFinite(n) ? n : AP_MOUNT_DEFAULT;
+  const lo=Math.max(base, AP_MOUNT_MIN);
   if(!(floorHeight>0)) return lo;
   return Math.min(lo, floorHeight);
+}
+// Canonical READ of an AP's mounting height, and the only supported way to read
+// it. Total and read-only: it always returns a finite number, so no caller can
+// perform arithmetic on undefined, a string, NaN or Infinity. The old inline
+// "ap.mount || 2.6" reads mis-handled all of those: a legitimate 0 became 2.6,
+// numeric strings produced string concatenation in the RF engine, and a
+// non-numeric value produced a NaN z that silently removed the AP from the
+// whole coverage map.
+//
+// Semantics:
+//   missing / unusable  (undefined, null, NaN, +/-Infinity, non-numeric or
+//                        blank string, non-number type) -> AP_MOUNT_DEFAULT
+//   a real measurement (finite number or numeric string) -> sanitized:
+//                        below AP_MOUNT_MIN -> AP_MOUNT_MIN (so 0 -> 0.5)
+//                        above AP_MOUNT_ABS_MAX -> AP_MOUNT_ABS_MAX
+//                        otherwise unchanged
+//
+// This accessor deliberately takes NO floor height, so it cannot clamp to the
+// owning floor. A legacy project may legitimately hold a mount above its floor
+// (e.g. height 2.0 with mount 3.5); that value is preserved verbatim so its
+// historical RF results survive until the user explicitly edits geometry.
+// The upper bound of the modern invariant is enforced on WRITE by
+// clampApMount() only.
+function apMount(ap){
+  const v=ap ? ap.mount : undefined;
+  if(typeof v==='number'){
+    if(!Number.isFinite(v)) return AP_MOUNT_DEFAULT;
+    return Math.min(Math.max(v,AP_MOUNT_MIN),AP_MOUNT_ABS_MAX);
+  }
+  if(typeof v==='string' && v.trim()!==''){
+    const n=Number(v);
+    if(Number.isFinite(n)) return Math.min(Math.max(n,AP_MOUNT_MIN),AP_MOUNT_ABS_MAX);
+  }
+  return AP_MOUNT_DEFAULT;
 }
 function makeAP(x,y,name, floorHeight){
   return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:clampApMount(2.6, floorHeight), mountType:'ceiling',
@@ -2937,7 +2974,7 @@ function antennaGain(ap, px,py, apz,evz){
 
 // RSSI at world point (px,py) on target floor index tf, from a single AP on floor af
 function rssiFromAP(ap, af, px,py, tf, mhz){
-  const apz = floorElevation(af) + (ap.mount||2.6);
+  const apz = floorElevation(af) + apMount(ap);
   const evz = floorElevation(tf) + receiverHeight();
   const dh = dist(ap.x,ap.y, px,py);
   const dz = Math.abs(apz-evz);
@@ -3520,7 +3557,7 @@ function runRayTrace(onDone){
   function marchRay(ray, walls, sameFloor, tx){
     let {x,y,dx,dy,dB,dist:dst,refl}=ray; let steps=0, transmissionEvents=ray.transmissions||0;
     if(!ray.rfDone) ray.rfDone={};   // per-ray: prisms already charged on this path
-    const apz=floorElevation(ray._af)+(ray._ap.mount||2.6);
+    const apz=floorElevation(ray._af)+apMount(ray._ap);
     const evz=floorElevation(state.activeFloor)+receiverHeight();
     const verticalDelta=Math.abs(apz-evz);
     // Cross-floor RT remains a 2.5D horizontal trace; use the traced horizontal
@@ -3907,14 +3944,14 @@ function build3d(){
       const col=!apRfEnabled(ap)?0x6b7280:(soloApId===ap.id?0xf4a83a:(ap.bands.includes(state.band)?0x34d6c4:0x6b7a8c));
       const mm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:.5});
       const s=new THREE.Mesh(g,mm);
-      s.position.set(ap.x-cx, (ap.mount||2.6), ap.y-cz);
+      s.position.set(ap.x-cx, apMount(ap), ap.y-cz);
       fl.add(s);
       // signal halo rings
       for(let k=1;k<=2;k++){
         const rg=new THREE.RingGeometry(0.25*k,0.27*k,24);
         const rm=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.4-k*.1,side:THREE.DoubleSide});
         const rr=new THREE.Mesh(rg,rm); rr.rotation.x=-Math.PI/2;
-        rr.position.set(ap.x-cx,(ap.mount||2.6)-0.05,ap.y-cz); fl.add(rr);
+        rr.position.set(ap.x-cx,apMount(ap)-0.05,ap.y-cz); fl.add(rr);
       }
     });
 
@@ -4218,7 +4255,7 @@ function renderProp(){
     // enough to represent it, so the browser can never silently show a
     // clamped thumb beside a different label. The widened range is display
     // only; the first explicit edit normalises the stored value.
-    const mnt=ap.mount||2.6;
+    const mnt=apMount(ap);
     const mountMax=Math.max(f.height, Math.ceil(mnt*10)/10).toFixed(1);
     body.innerHTML=`
       <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
@@ -5240,7 +5277,7 @@ function exportGLTF(){
       builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, -ro.rotation*Math.PI/180, hexToRgb(m.color), 'rfobj_'+ro.name);
     });
     f.aps.forEach(ap=>{
-      builder.addBox(0.3,0.3,0.3, ap.x, elev+(ap.mount||2.6), ap.y, 0, [0.2,0.84,0.77], 'AP_'+ap.name);
+      builder.addBox(0.3,0.3,0.3, ap.x, elev+apMount(ap), ap.y, 0, [0.2,0.84,0.77], 'AP_'+ap.name);
     });
   });
   const gltf=builder.finish();
@@ -5250,7 +5287,7 @@ function exportGLTF(){
     plExp:state.plExp, slabDb:state.slabDb, receiverHeight_m:receiverHeight(),
     materials:state.materials.map(m=>({name:m.name,attenuation_dB:m.db})),
     floors:state.floors.map((f,i)=>({name:f.name,elevation:floorElevation(i),height:f.height,
-      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+(a.mount||2.6),mountType:apMountType(a),rfEnabled:apRfEnabled(a),bands:a.bands,txPower_dBm:a.txPower})),
+      aps:f.aps.map(a=>({name:a.name,x:a.x,y:a.y,z:floorElevation(i)+apMount(a),mountType:apMountType(a),rfEnabled:apRfEnabled(a),bands:a.bands,txPower_dBm:a.txPower})),
       walls:f.walls.map(w=>({x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2,height:w.height,material:matById(w.materialId).name,attenuation_dB:matById(w.materialId).db})),
       pillars:(f.pillars||[]).map(p=>({x:p.x,y:p.y,diameter:p.diameter||0.6,height:p.height,material:matById(p.materialId).name,attenuation_dB:matById(p.materialId).db})),
       rfObjects:(f.rfObjects||[]).map(o=>({name:o.name,x:o.x,y:o.y,width:o.width,depth:o.depth,height:o.height,rotation:o.rotation,material:matById(o.materialId).name,attenuation_dB:matById(o.materialId).db,extraLoss_dB:o.extraLossDb})),
