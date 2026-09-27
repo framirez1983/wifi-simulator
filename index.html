@@ -416,7 +416,6 @@ const translations = {
     "ref.hint": "X0/Y0 y el norte son solo referencias de planificación. No modifican la geometría ni la RF.",
     "section.settings": "Ajustes",
     "settings.appearance": "Apariencia del editor",
-    "settings.wallVisualWidth": "Grosor visual de pared",
     "settings.showGrid": "Mostrar cuadrícula",
     "settings.heatmapSmoothing": "Suavizado del mapa",
     "settings.heatmapRaw": "Crudo",
@@ -509,6 +508,8 @@ const translations = {
     "wall.heightMode": "Altura RF",
     "wall.fullHeight": "Altura completa",
     "wall.heightMeters": "Altura (m)",
+    "wall.thicknessMeters": "Espesor (m)",
+    "wall.thicknessHint": "Espesor físico de la pared. La línea central y los extremos no cambian; el cuerpo se extiende por igual a ambos lados. No afecta a la atenuación RF.",
     "wall.snapTitle": "Ajuste de paredes",
     "wall.snapMaster": "Activar ajustes",
     "wall.endpointSnap": "Ajuste a extremos",
@@ -696,7 +697,6 @@ const translations = {
     "ref.hint": "X0/Y0 and North are planning references only. They do not change geometry or RF.",
     "section.settings": "Settings",
     "settings.appearance": "Editor appearance",
-    "settings.wallVisualWidth": "Visual wall thickness",
     "settings.showGrid": "Show grid",
     "settings.heatmapSmoothing": "Map smoothing",
     "settings.heatmapRaw": "Raw",
@@ -789,6 +789,8 @@ const translations = {
     "wall.heightMode": "RF height",
     "wall.fullHeight": "Full height",
     "wall.heightMeters": "Height (m)",
+    "wall.thicknessMeters": "Thickness (m)",
+    "wall.thicknessHint": "Physical wall thickness. The centerline and endpoints do not change; the body extends equally to both sides. It does not affect RF attenuation.",
     "wall.snapTitle": "Wall snapping",
     "wall.snapMaster": "Enable snapping",
     "wall.endpointSnap": "Endpoint snapping",
@@ -976,7 +978,6 @@ const translations = {
     "ref.hint": "X0/Y0 och norr är endast planeringsreferenser. De ändrar inte geometri eller RF.",
     "section.settings": "Inställningar",
     "settings.appearance": "Redigerarens utseende",
-    "settings.wallVisualWidth": "Visuell väggtjocklek",
     "settings.showGrid": "Visa rutnät",
     "settings.heatmapSmoothing": "Kartutjämning",
     "settings.heatmapRaw": "Rå",
@@ -1069,6 +1070,8 @@ const translations = {
     "wall.heightMode": "RF-höjd",
     "wall.fullHeight": "Full höjd",
     "wall.heightMeters": "Höjd (m)",
+    "wall.thicknessMeters": "Tjocklek (m)",
+    "wall.thicknessHint": "Fysisk väggtjocklek. Mittlinjen och ändpunkterna ändras inte; kroppen sträcker sig lika mycket åt båda håll. Den påverkar inte RF-dämpningen.",
     "wall.snapTitle": "Väggsnäppning",
     "wall.snapMaster": "Aktivera snäppning",
     "wall.endpointSnap": "Snäpp till ändpunkter",
@@ -1330,18 +1333,15 @@ function saveWallSnapPref(key,value){
   try{ localStorage.setItem(wallSnapStoragePrefix+key, String(value)); }catch(_){}
 }
 const editorPrefs = {
-  wallVisualWidth: 5,
   showGrid: true,
   heatmapSmoothing: 50,
   rtQuality: 'normal',
 };
 function loadEditorPrefs(){
   try{
-    const ww=parseFloat(localStorage.getItem(wallSnapStoragePrefix+'wallVisualWidth'));
     const sg=localStorage.getItem(wallSnapStoragePrefix+'showGrid');
     const hs=localStorage.getItem(wallSnapStoragePrefix+'heatmapSmoothing');
     const rq=localStorage.getItem(wallSnapStoragePrefix+'rtQuality');
-    if(Number.isFinite(ww)) editorPrefs.wallVisualWidth=clamp(ww,2,14);
     if(sg!==null) editorPrefs.showGrid = sg !== 'false';
     if(hs!==null){
       if(hs==='true'||hs==='false') editorPrefs.heatmapSmoothing = hs==='false' ? 0 : 50;
@@ -1367,6 +1367,30 @@ const dist=(ax,ay,bx,by)=>Math.hypot(bx-ax,by-ay);
 const wallAngleDeg=w=>Math.atan2(w.y2-w.y1,w.x2-w.x1)*180/Math.PI;
 function normAngleDeg(a){ return ((a%360)+360)%360; }
 function wallLen(w){ return dist(w.x1,w.y1,w.x2,w.y2); }
+// Physical wall thickness, in meters. The wall centerline and endpoints are
+// canonical and unaffected by this value: thickness extends equally to both
+// sides of the centerline, so it is purely a body/geometry property.
+const DEFAULT_WALL_THICKNESS_M = 0.15;  // legacy walls resolve to this
+const WALL_THICKNESS_MIN_M = 0.01;       // modern UI input minimum
+// Canonical READ of a wall's physical thickness. Legacy walls carry no
+// thickness field and resolve to the centralized default; nothing is injected
+// into stored walls on load, so old projects need no migration. Read-side
+// acceptance is deliberately permissive (any finite value > 0) so a legacy
+// thickness is preserved exactly; the minimum is enforced on WRITE only.
+// Thickness is NOT an RF attenuation multiplier: material.db remains the
+// effective loss per crossing, independent of thickness.
+function wallThickness(w){
+  const v = w ? w.thickness : undefined;
+  if(typeof v === 'number' && Number.isFinite(v) && v>0) return v;
+  if(typeof v === 'string' && v.trim()!==''){
+    const n=Number(v);
+    if(Number.isFinite(n) && n>0) return n;
+  }
+  return DEFAULT_WALL_THICKNESS_M;
+}
+// World meters -> CSS pixels for the 2D view. camera.zoom is px per meter and
+// the canvas is dpr-scaled, so all drawing here is in CSS pixels.
+function wallThicknessPx(w){ return wallThickness(w)*camera.zoom; }
 function setWallFromLengthAngle(w,len,deg){
   const rad=deg*Math.PI/180;
   w.x2=w.x1+Math.cos(rad)*len;
@@ -1652,18 +1676,25 @@ function draw2d(){
   (f.openings||[]).forEach(o=>drawOpeningPoly(o.points,selection&&selection.type==='opening'&&selection.id===o.id,o.name));
   if(openingDraft) drawOpeningPoly(openingDraft,true,t('opening.closeHint'));
 
-  // walls
+  // walls. The body is world-scaled from the physical thickness in meters, so
+  // it keeps a constant size relative to the blueprint at every zoom. No
+  // screen-space minimum is applied: a thin wall that becomes sub-pixel at low
+  // zoom is the correct physical rendering.
   f.walls.forEach(wl=>{
     const a=W2S(wl.x1,wl.y1), b=W2S(wl.x2,wl.y2);
     const m=matById(wl.materialId);
     const selW = (selection&&selection.type==='wall'&&selection.id===wl.id) || multiWalls.includes(wl.id);
-    const visualWidth=editorPrefs.wallVisualWidth||5;
+    const bodyPx=wallThicknessPx(wl);
     ctx.lineCap='round';
-    ctx.lineWidth = selW?visualWidth+2:visualWidth;
+    ctx.lineWidth = selW?bodyPx+WALL_SELECTED_EXTRA_PX:bodyPx;
     ctx.strokeStyle = selW? '#7aa2ff' : m.color;
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-    ctx.lineWidth = Math.max(1,visualWidth*0.44); ctx.strokeStyle = shade(m.color,-0.25);
-    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    // Decorative inner highlight, proportional to the body and only drawn when
+    // the body is wide enough for it to be meaningful. Never widens the body.
+    if(bodyPx>=2){
+      ctx.lineWidth = bodyPx*0.44; ctx.strokeStyle = shade(m.color,-0.25);
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
   });
   drawWallEndpointHandles();
   // projected spanning walls owned by other floors (same canonical objects, never copies)
@@ -1672,11 +1703,11 @@ function draw2d(){
     const wl=e.o, a=W2S(wl.x1,wl.y1), b=W2S(wl.x2,wl.y2);
     const m=matById(wl.materialId);
     const selW=selection&&selection.type==='wall'&&selection.id===wl.id&&(selection.floorId||floor().id)===e.ownerId;
-    const visualWidth=editorPrefs.wallVisualWidth||5;
+    const bodyPx=wallThicknessPx(wl);
     ctx.save();
     ctx.globalAlpha=selW?0.95:0.5;
     ctx.lineCap='round';
-    ctx.lineWidth=selW?visualWidth+2:visualWidth;
+    ctx.lineWidth=selW?bodyPx+WALL_SELECTED_EXTRA_PX:bodyPx;
     ctx.strokeStyle=selW?'#7aa2ff':m.color;
     if(!selW)ctx.setLineDash([6,4]);
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
@@ -1850,7 +1881,9 @@ function draw2d(){
   // wall draft preview
   if(draft){
     const a=W2S(draft.x1,draft.y1), b=W2S(draft.x2,draft.y2);
-    ctx.strokeStyle='#34d6c4';ctx.lineWidth=4;ctx.setLineDash([2,5]);ctx.lineCap='round';
+    // draft ghost: a wall that does not exist yet, so it previews the default
+    // physical thickness, world-scaled like a real wall body.
+    ctx.strokeStyle='#34d6c4';ctx.lineWidth=wallThicknessPx(null);ctx.setLineDash([2,5]);ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
     const d=dist(draft.x1,draft.y1,draft.x2,draft.y2);
     ctx.fillStyle='#34d6c4';ctx.font='11px '+'monospace';
@@ -2108,21 +2141,27 @@ function distToSeg(px,py,x1,y1,x2,y2){
   return dist(px,py, x1+t*dx, y1+t*dy);
 }
 function pickWall(wx,wy){
-  const f=floor(); const tol=8/camera.zoom;
+  const f=floor();
   for(let i=f.walls.length-1;i>=0;i--){
     const w=f.walls[i];
+    // The physical body plus a screen-space grab padding. Physical half
+    // thickness is converted to world units so the total stays usable at any
+    // zoom: a 0.10 m wall is still comfortably clickable when zoomed out.
+    const tol=wallThickness(w)/2 + WALL_GRAB_PADDING_PX/camera.zoom;
     if(distToSeg(wx,wy,w.x1,w.y1,w.x2,w.y2)<tol) return w;
   }
   return null;
 }
 // Projected spanning walls/pillars owned by other floors ({o,ownerId} refs, never copies).
 function pickProjectedWall(wx,wy){
-  const tol=8/camera.zoom, ai=state.activeFloor, sl=floorSlice(ai);
+  const ai=state.activeFloor, sl=floorSlice(ai);
   let best=null;
   state.floors.forEach((g,gi)=>{ if(gi===ai)return;
     (g.walls||[]).forEach(w=>{ if(!hasExplicitHeight(w))return;
       const s=spanInterval(w,gi);
       if(!spansOverlap(s.base,s.top,sl.base,sl.top))return;
+      // same physical body + screen-space padding as pickWall
+      const tol=wallThickness(w)/2 + WALL_GRAB_PADDING_PX/camera.zoom;
       if(distToSeg(wx,wy,w.x1,w.y1,w.x2,w.y2)<tol) best={o:w,ownerId:g.id}; }); });
   return best;
 }
@@ -2212,6 +2251,12 @@ function selectedSingleWall(){
 // than the visible handle. Interaction semantics and snapping are unchanged.
 const WALL_ENDPOINT_HANDLE_PX = 6;
 const WALL_ENDPOINT_HIT_PX = 10;
+// Screen-space emphasis added to a selected wall body. This is an editor
+// affordance only and is never confused with the physical thickness.
+const WALL_SELECTED_EXTRA_PX = 2;
+// Screen-space grab padding on top of the physical wall half-thickness, so a
+// very thin wall stays easy to grab at any zoom.
+const WALL_GRAB_PADDING_PX = 8;
 function drawWallEndpointHandles(){
   const w=selectedSingleWall();
   if(!w || view!=='2d') return;
@@ -2509,7 +2554,8 @@ cv.addEventListener('pointerdown',e=>{
     else{
       const s=snapWallPoint(w.x,w.y,{fixed:{x:draft.x1,y:draft.y1},altKey:e.altKey});
       commit();
-      floor().walls.push({id:uid('wl'),x1:draft.x1,y1:draft.y1,x2:s.x,y2:s.y,materialId:state.activeMat});
+      floor().walls.push({id:uid('wl'),x1:draft.x1,y1:draft.y1,x2:s.x,y2:s.y,
+        materialId:state.activeMat, thickness:DEFAULT_WALL_THICKNESS_M});
       draft={x1:s.x,y1:s.y,x2:s.x,y2:s.y}; // chain
       scheduleHeat(); refreshStats();
     }
@@ -3903,7 +3949,8 @@ function build3d(){
       const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
       const m=matById(w.materialId);
       const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
-      const geo=new THREE.BoxGeometry(len,h,0.12);
+      // physical thickness in meters, identical to the 2D body
+      const geo=new THREE.BoxGeometry(len,h,wallThickness(w));
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
         transparent:true,opacity:(0.78)*dim+0.18,roughness:.8,metalness:m.db>20?0.5:0.05});
       const mesh=new THREE.Mesh(geo,mat);
@@ -4223,14 +4270,11 @@ function buildEditorSettings(){
         <option value="high" ${editorPrefs.rtQuality==='high'?'selected':''}>${t('settings.rtHigh')}</option>
       </select>
       <div class="hint" id="sRtQualityHint">${rayTraceQualitySummary()}</div>
-      <label>${t('settings.wallVisualWidth')}</label>
-      <div class="slider"><input id="sWallVisualWidth" type="range" min="2" max="14" step="1" value="${editorPrefs.wallVisualWidth}"><span class="val" id="sWallVisualWidthV">${editorPrefs.wallVisualWidth.toFixed(0)} px</span></div>
     </div>
     ${wallSnapControlsHtml('s')}`;
   $('#sShowGrid').onchange=e=>{ editorPrefs.showGrid=e.target.checked; saveEditorPref('showGrid',editorPrefs.showGrid); draw2d(); };
   $('#sHeatmapSmoothing').oninput=e=>{ editorPrefs.heatmapSmoothing=+e.target.value; $('#sHeatmapSmoothingV').textContent=editorPrefs.heatmapSmoothing.toFixed(0); saveEditorPref('heatmapSmoothing',editorPrefs.heatmapSmoothing); paintHeat(); draw2d(); if(view==='3d')refresh3dHeat(); };
   $('#sRtQuality').onchange=e=>{ editorPrefs.rtQuality=e.target.value; saveEditorPref('rtQuality',editorPrefs.rtQuality); $('#sRtQualityHint').textContent=rayTraceQualitySummary(); };
-  $('#sWallVisualWidth').oninput=e=>{ editorPrefs.wallVisualWidth=+e.target.value; $('#sWallVisualWidthV').textContent=editorPrefs.wallVisualWidth.toFixed(0)+' px'; saveEditorPref('wallVisualWidth',editorPrefs.wallVisualWidth); draw2d(); };
   wireWallSnapControls('s');
 }
 function renderProp(){
@@ -4483,6 +4527,9 @@ function renderProp(){
         <label><input type="checkbox" id="pWallFullHeight" ${w.height==null?'checked':''}> ${t('wall.fullHeight')}</label></div>
       <div class="field" id="pWallHeightField" style="${w.height==null?'display:none':''}"><label>${t('wall.heightMeters')}</label>
         <input id="pWallHeight" type="number" step="0.1" min="0" value="${(w.height==null?f.height:w.height).toFixed(2)}"></div>
+      <div class="field"><label>${t('wall.thicknessMeters')}</label>
+        <input id="pWallThick" type="number" step="0.01" min="${WALL_THICKNESS_MIN_M}" value="${wallThickness(w).toFixed(2)}"></div>
+      <div class="hint">${t('wall.thicknessHint')}</div>
       <div class="hint">${t('wall.angleHint')}</div>
       <div class="stat"><span>${t('wall.attenuation')}</span><b>${matById(w.materialId).db} dB</b></div>
       <button class="tbtn" id="pStraighten" style="width:100%;justify-content:center;margin:8px 0">${t('wall.straighten')}</button>
@@ -4510,6 +4557,17 @@ function renderProp(){
       const v=parseFloat(e.target.value);
       if(!Number.isFinite(v)||v<0){ e.target.value=(w.height||0).toFixed(2); return; }
       commit(); w.height=v; geometryChanged(); renderProp();
+    };
+    // Physical thickness only: it changes the wall body, not RF. Wall
+    // attenuation stays material.db per crossing, so neither the RF scheduler
+    // nor the wall geometry helper is invoked from here. Keeps the approved
+    // Enter/blur numeric pattern and reverts invalid input to the effective
+    // value. commit() gives it its own undo entry.
+    $('#pWallThick').onchange=e=>{
+      const v=parseFloat(e.target.value);
+      if(!Number.isFinite(v)||v<WALL_THICKNESS_MIN_M){
+        e.target.value=wallThickness(w).toFixed(2); return; }
+      commit(); w.thickness=v; draw2d(); if(view==='3d')build3d();
     };
     $('#pStraighten').onclick=()=>{
       const a=normAngleDeg(wallAngleDeg(w));
@@ -4802,7 +4860,8 @@ function snapEndpoints(segs, tol){
 function commitAnalyze(){
   if(!analyzeState)return; const f=floor(); let added=0;
   commit();
-  analyzeState.detected.forEach(s=>{ f.walls.push({id:uid('wl'),x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,materialId:state.activeMat}); added++; });
+  analyzeState.detected.forEach(s=>{ f.walls.push({id:uid('wl'),x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,
+      materialId:state.activeMat, thickness:DEFAULT_WALL_THICKNESS_M}); added++; });
   cancelAnalyze(); scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
   showToast(true, uiMessage('analysis.created',{count:added}),null,2400);
 }
@@ -5082,10 +5141,13 @@ function drawCleanPlan(g,f,b,W,H){
     g.restore();
   }
   f.walls.forEach(w=>{ const m=matById(w.materialId);
-    g.strokeStyle=m.color; g.lineWidth=5; g.lineCap='round';
+    // physical thickness in meters at this export's scale; sx==sy because the
+    // export is aspect-preserving
+    const bodyPx=wallThickness(w)*sx;
+    g.strokeStyle=m.color; g.lineWidth=bodyPx; g.lineCap='round';
     g.beginPath(); g.moveTo(wx2p(w.x1),wy2p(w.y1)); g.lineTo(wx2p(w.x2),wy2p(w.y2)); g.stroke();
-    g.strokeStyle=shade(m.color,-0.25); g.lineWidth=2;
-    g.beginPath(); g.moveTo(wx2p(w.x1),wy2p(w.y1)); g.lineTo(wx2p(w.x2),wy2p(w.y2)); g.stroke(); });
+    if(bodyPx>=2){ g.strokeStyle=shade(m.color,-0.25); g.lineWidth=bodyPx*0.44;
+      g.beginPath(); g.moveTo(wx2p(w.x1),wy2p(w.y1)); g.lineTo(wx2p(w.x2),wy2p(w.y2)); g.stroke(); } });
   (f.pillars||[]).forEach(p=>{ const m=matById(p.materialId);
     const rx=(p.diameter||0.6)/2*sx, ry=(p.diameter||0.6)/2*sy;
     g.fillStyle=hexToRgba(m.color,0.35); g.strokeStyle=m.color; g.lineWidth=3;
@@ -5176,7 +5238,10 @@ function exportPNG(withBackground=false){
   const wx2p=x=>(x-b.minx)/(b.maxx-b.minx)*W, wy2p=y=>(y-b.miny)/(b.maxy-b.miny)*H;
   // walls
   f.walls.forEach(w=>{ const m=matById(w.materialId);
-    g.strokeStyle=m.color;g.lineWidth=4;g.lineCap='round';
+    // physical thickness in meters at this export's scale (aspect-preserving,
+    // so sx==sy); never an editor handle size or hit tolerance
+    const bodyPx=wallThickness(w)*(W/(b.maxx-b.minx));
+    g.strokeStyle=m.color;g.lineWidth=bodyPx;g.lineCap='round';
     g.beginPath();g.moveTo(wx2p(w.x1),wy2p(w.y1));g.lineTo(wx2p(w.x2),wy2p(w.y2));g.stroke();});
   // pillars
   (f.pillars||[]).forEach(p=>{ const m=matById(p.materialId);
@@ -5266,7 +5331,7 @@ function exportGLTF(){
       const m=matById(w.materialId); const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
       const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
       const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
-      builder.addBox(len,h,0.12, mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
+      builder.addBox(len,h,wallThickness(w), mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
     });
     (f.pillars||[]).forEach(p=>{
       const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
@@ -5501,9 +5566,12 @@ function seedDemo(){
   const f=floor(); const mWall=state.materials[4].id, mGlass=state.materials[2].id;
   const W=10,H=7;
   const pts=[[-W,-H],[W,-H],[W,H],[-W,H]];
-  for(let i=0;i<4;i++){ const a=pts[i],b=pts[(i+1)%4]; f.walls.push({id:uid('wl'),x1:a[0],y1:a[1],x2:b[0],y2:b[1],materialId:mWall}); }
-  f.walls.push({id:uid('wl'),x1:0,y1:-H,x2:0,y2:2,materialId:state.materials[0].id});
-  f.walls.push({id:uid('wl'),x1:0,y1:4,x2:0,y2:H,materialId:mGlass});
+  for(let i=0;i<4;i++){ const a=pts[i],b=pts[(i+1)%4]; f.walls.push({id:uid('wl'),x1:a[0],y1:a[1],x2:b[0],y2:b[1],materialId:mWall,
+      thickness:DEFAULT_WALL_THICKNESS_M}); }
+  f.walls.push({id:uid('wl'),x1:0,y1:-H,x2:0,y2:2,materialId:state.materials[0].id,
+    thickness:DEFAULT_WALL_THICKNESS_M});
+  f.walls.push({id:uid('wl'),x1:0,y1:4,x2:0,y2:H,materialId:mGlass,
+    thickness:DEFAULT_WALL_THICKNESS_M});
   const a1=makeAP(-5,0,'AP-1', f.height), a2=makeAP(5,0,'AP-2', f.height); a2.channels={'2.4':6,'5':44,'6':53};
   f.aps.push(a1, a2);
   refreshStats();
