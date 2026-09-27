@@ -1414,8 +1414,21 @@ function freshState(){
   return s;
 }
 function defaultChannels(){ return {'2.4':1,'5':36,'6':37}; }
-function makeAP(x,y,name){
-  return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:2.6, mountType:'ceiling',
+// Canonical mounting-height bounds for AP state created or modified by this
+// application: 0.5 <= mount <= owningFloor.height. 0.5 is the mount slider's
+// own minimum; the upper bound is the owning floor's ceiling, because an AP
+// must not float above the floor it belongs to. floorHeight may be omitted or
+// non-positive when the owning floor is unknown, in which case only the lower
+// bound is enforced.
+function clampApMount(v, floorHeight){
+  const n=Number(v);
+  const base=Number.isFinite(n) ? n : 2.6;
+  const lo=Math.max(base, 0.5);
+  if(!(floorHeight>0)) return lo;
+  return Math.min(lo, floorHeight);
+}
+function makeAP(x,y,name, floorHeight){
+  return {id:uid('ap'), name, x,y, bands:['2.4','5','6'], txPower:20, mount:clampApMount(2.6, floorHeight), mountType:'ceiling',
           rfEnabled:true,
           manufacturer:'', model:'',
           antenna:{type:'omni',az:0,tilt:0,gain:3}, channels:defaultChannels()};
@@ -2404,7 +2417,7 @@ cv.addEventListener('pointerdown',e=>{
   else if(tool==='zone'){ zoneDraft={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; }
   else if(tool==='ap'){
     const f=floor();
-    const ap=makeAP(Math.round(w.x*4)/4, Math.round(w.y*4)/4, 'AP-'+(f.aps.length+1));
+    const ap=makeAP(Math.round(w.x*4)/4, Math.round(w.y*4)/4, 'AP-'+(f.aps.length+1), f.height);
     commit(); f.aps.push(ap); select('ap',ap.id); scheduleHeat(); refreshStats();
   }
   else if(tool==='pillar'){
@@ -3987,7 +4000,11 @@ function duplicateFloor(i){
   (copy.openings||[]).forEach(o=>o.id=uid('opn'));
   const rackIds={}, apIds={};
   (copy.racks||[]).forEach(r=>{ const old=r.id; r.id=uid('rck'); rackIds[old]=r.id; });
-  copy.aps.forEach(a=>{ const old=a.id; a.id=uid('ap'); apIds[old]=a.id; if(a.sourceRackId&&rackIds[a.sourceRackId])a.sourceRackId=rackIds[a.sourceRackId]; });
+  // Duplicating is a new application action, so the copy must not introduce
+  // fresh invalid AP state. A legacy source floor may hold mounts above its
+  // height; those are clamped in the COPY only, so the source keeps its exact
+  // historical values. A valid source duplicates bit-identically.
+  copy.aps.forEach(a=>{ const old=a.id; a.id=uid('ap'); apIds[old]=a.id; if(a.sourceRackId&&rackIds[a.sourceRackId])a.sourceRackId=rackIds[a.sourceRackId]; if(!(a.mount<=copy.height)) a.mount=copy.height; });
   (copy.cableRoutes||[]).forEach(c=>{ c.id=uid('cab'); if(rackIds[c.rackId])c.rackId=rackIds[c.rackId]; if(apIds[c.apId])c.apId=apIds[c.apId]; });
   (copy.rfObjects||[]).forEach(o=>o.id=uid('rfobj'));
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
@@ -4195,6 +4212,14 @@ function renderProp(){
     setUiText(title,'tool.ap');
     const mountType=apMountType(ap);
     const showDirection=mountType==='wall'||ap.antenna.type!=='omni';
+    // One canonical value for slider, label and model. A legacy project may
+    // hold a mount above its floor height; that value is preserved verbatim
+    // (restoreState never clamps it) and the display range is widened just
+    // enough to represent it, so the browser can never silently show a
+    // clamped thumb beside a different label. The widened range is display
+    // only; the first explicit edit normalises the stored value.
+    const mnt=ap.mount||2.6;
+    const mountMax=Math.max(f.height, Math.ceil(mnt*10)/10).toFixed(1);
     body.innerHTML=`
       <div class="field"><label data-i18n="ap.name">Namn</label><input id="pName" type="text" value="${escapeHtml(ap.name)}"></div>
       <div class="row2"><div class="field"><label data-i18n="ap.manufacturer">Tillverkare</label><input id="pManufacturer" type="text" value="${escapeHtml(ap.manufacturer||'')}"></div>
@@ -4209,7 +4234,7 @@ function renderProp(){
       <div class="field"><label data-i18n="ap.power">Sändareffekt</label>
         <div class="slider"><input id="pTx" type="range" min="0" max="30" step="1" value="${ap.txPower}"><span class="val" id="pTxV">${ap.txPower} dBm</span></div></div>
       <div class="field"><label data-i18n="ap.mount">Monteringshöjd</label>
-        <div class="slider"><input id="pMt" type="range" min="0.5" max="${f.height.toFixed(1)}" step="0.1" value="${ap.mount||2.6}"><span class="val" id="pMtV">${(ap.mount||2.6).toFixed(1)} m</span></div></div>
+        <div class="slider"><input id="pMt" type="range" min="0.5" max="${mountMax}" step="0.1" value="${mnt}"><span class="val" id="pMtV">${mnt.toFixed(1)} m</span></div></div>
       <div class="field"><label data-i18n="ap.mountType">Monteringstyp</label><select id="pMountType">
         <option value="ceiling" ${mountType==='ceiling'?'selected':''} data-i18n="ap.mountCeiling">${t('ap.mountCeiling')}</option>
         <option value="wall" ${mountType==='wall'?'selected':''} data-i18n="ap.mountWall">${t('ap.mountWall')}</option>
@@ -4246,7 +4271,18 @@ function renderProp(){
       pb.appendChild(btn);
     });
     $('#pTx').oninput=e=>{ap.txPower=+e.target.value;$('#pTxV').textContent=ap.txPower+' dBm';scheduleHeat();draw2d();};
-    $('#pMt').oninput=e=>{ap.mount=+e.target.value;$('#pMtV').textContent=(+e.target.value).toFixed(1)+' m';scheduleHeat();if(view==='3d')build3d();};
+    // The slider range already limits normal input, but the canonical model
+    // must not depend on browser clamping: constrain the stored value to
+    // [0.5, owningFloor.height] and write the same number back to the thumb
+    // and the label. On a legacy AP whose display range was widened, an edit
+    // above the ceiling is normalised here. No commit() is added: the global
+    // pointerdown -> commitThrottled() listener owns the undo snapshot.
+    $('#pMt').oninput=e=>{
+      const v=clampApMount(+e.target.value, f.height);
+      ap.mount=v; e.target.value=v;
+      $('#pMtV').textContent=v.toFixed(1)+' m';
+      scheduleHeat(); if(view==='3d')build3d();
+    };
     $('#pMountType').onchange=e=>{commit();ap.mountType=e.target.value==='wall'?'wall':'ceiling';scheduleHeat();draw2d();renderProp();};
     $('#pAnt').onchange=e=>{ap.antenna.type=e.target.value;scheduleHeat();draw2d();renderProp();};
     $('#pAz').oninput=e=>{ap.antenna.az=+e.target.value;$('#pAzV').textContent=e.target.value+'°';scheduleHeat();draw2d();};
@@ -4792,13 +4828,13 @@ function autoPlaceAPs(target, maxAP){
   while(cov<target/100 && added<maxAP){
     let bestC=null,bestCov=cov,bestGrid=null;
     for(const c of cand){
-      const trial=makeAP(c.x,c.y,'t');
+      const trial=makeAP(c.x,c.y,'t', f.height);
       const g=Float32Array.from(cur);
       for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){ const r=rssiFromAP(trial,state.activeFloor,gx(i),gy(j),state.activeFloor,mhz); if(r>g[j*cols+i])g[j*cols+i]=r; }
       const cv=covOf(g); if(cv>bestCov+0.001){bestCov=cv;bestC=c;bestGrid=g;}
     }
     if(!bestC)break;
-    const ap=makeAP(Math.round(bestC.x*4)/4, Math.round(bestC.y*4)/4, 'AP-'+(f.aps.length+placed.length+1));
+    const ap=makeAP(Math.round(bestC.x*4)/4, Math.round(bestC.y*4)/4, 'AP-'+(f.aps.length+placed.length+1), f.height);
     placed.push(ap); cur.set(bestGrid); cov=bestCov; added++;
   }
   placed.forEach(ap=>f.aps.push(ap));
@@ -5380,7 +5416,17 @@ function wireGlobals(){
   $('#receiverHeight').oninput=e=>{ state.receiverHeight=+e.target.value; $('#receiverHeightV').textContent=state.receiverHeight.toFixed(1)+' m'; scheduleHeat(); if(view==='3d')refresh3dHeat(); };
   $('#planW').oninput=e=>{ floor().w=+e.target.value; $('#planWV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planD').oninput=e=>{ floor().d=+e.target.value; $('#planDV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
-  $('#planH').oninput=e=>{ floor().height=+e.target.value; $('#planHV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); if(view==='3d')build3d(); renderProp(); };
+  $('#planH').oninput=e=>{
+    const f=floor(); const h=+e.target.value;
+    f.height=h; $('#planHV').textContent=h.toFixed(1)+' m';
+    // An AP cannot sit above the ceiling of the floor that owns it. Every AP
+    // this change invalidates is clamped here, inside the same user action.
+    // The floor height and all AP mounts therefore form ONE logical mutation,
+    // already covered by the single pre-pointerdown commitThrottled() snapshot,
+    // so Undo/Redo restores all of them together and no per-AP commit is added.
+    (f.aps||[]).forEach(a=>{ if(!(a.mount<=h)) a.mount=h; });
+    scheduleHeat(); if(view==='3d')build3d(); renderProp();
+  };
   $('#refX0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originX=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
   $('#refY0').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)){ syncProjectRef(); return; } state.originY=Math.round(v*1000)/1000; syncProjectRef(); draw2d(); };
   $('#refNorth').oninput=e=>{ state.northAngle=normAngleDeg(+e.target.value); $('#refNorthV').textContent=Math.round(northDeg())+'°'; draw2d(); };
@@ -5421,7 +5467,7 @@ function seedDemo(){
   for(let i=0;i<4;i++){ const a=pts[i],b=pts[(i+1)%4]; f.walls.push({id:uid('wl'),x1:a[0],y1:a[1],x2:b[0],y2:b[1],materialId:mWall}); }
   f.walls.push({id:uid('wl'),x1:0,y1:-H,x2:0,y2:2,materialId:state.materials[0].id});
   f.walls.push({id:uid('wl'),x1:0,y1:4,x2:0,y2:H,materialId:mGlass});
-  const a1=makeAP(-5,0,'AP-1'), a2=makeAP(5,0,'AP-2'); a2.channels={'2.4':6,'5':44,'6':53};
+  const a1=makeAP(-5,0,'AP-1', f.height), a2=makeAP(5,0,'AP-2', f.height); a2.channels={'2.4':6,'5':44,'6':53};
   f.aps.push(a1, a2);
   refreshStats();
 }
