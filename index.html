@@ -3910,6 +3910,19 @@ function build3d(){
   three.orbit.tx=0; three.orbit.tz=0; three.orbit.ty=floorElevation(state.activeFloor)+1.5;
 
   state.floors.forEach((f,idx)=>{
+    // Active-floor cutaway. Visualization only: floors ABOVE the active floor are
+    // not drawn, so they cannot occlude coverage analysis on the active floor.
+    // This is the canonical ownership rule, not a span or projection rule: every
+    // mesh below is created from floor idx's own arrays and added to that
+    // floor's group, so skipping the block hides exactly this floor's plate,
+    // background plane, walls, pillars, RF Objects, APs and AP halos together
+    // and nothing can be left floating. Cross-floor objects keep their existing
+    // behaviour: a spanning wall is drawn once, in its owner floor's group, so
+    // it stays visible whenever its owner is visible.
+    // Hidden means not drawn, never removed from the project: RF on every floor
+    // is untouched, and the Escena 3D export is built independently from state
+    // and therefore still contains the complete building.
+    if(idx>state.activeFloor) return;
     const elev=floorElevation(idx);
     const b=floorBounds(f);
     const fl=new THREE.Group();
