@@ -2738,9 +2738,13 @@ function slabLossBetweenPoints(ax,ay,az, af, bx,by,bz, tf){
     const z=floorElevation(slabFloor);
     const denom=bz-az;
     const t=Math.abs(denom)<1e-12 ? -1 : (z-az)/denom;
+    // The AP->receiver segment is finite. If its intersection with this slab
+    // plane falls outside t in [0,1], the plane is never reached, so the slab
+    // contributes nothing. This also makes the degenerate az==bz case (t=-1)
+    // contribute zero. t==0 and t==1 remain inclusive and are still charged.
+    if(t<0||t>1) continue;
     // this floor owns the slab plane at its base elevation
     const slabLoss=slabLossForFloor(state.floors[slabFloor]);
-    if(t<0||t>1){ loss+=slabLoss; continue; }
     const x=ax+(bx-ax)*t, y=ay+(by-ay)*t;
     if(!pointInOpening(state.floors[slabFloor],x,y)) loss+=slabLoss;
   }
