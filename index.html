@@ -1629,6 +1629,39 @@ function labelStrokePx(lb){
     Math.max(LABEL_STROKE_MIN_PX, labelBaseSizePx(lb) * LABEL_STROKE_RATIO);
   return referenceStrokePx * camera.zoom / CAMERA_REFERENCE_ZOOM;
 }
+
+// ---- semantic zoom: 2D AP symbols ----------------------------------------
+// AP symbols are device symbols, not document annotations, so they must NOT
+// scale linearly all the way to invisibility -- but neither may they stay fixed
+// in screen pixels. On a very large plan (e.g. S4Optik) a fixed 46 px azimuth
+// arc covers a large fraction of a room once zoomed out and buries the exact AP
+// installation point. Each piece therefore scales SUB-linearly with zoom: it
+// shrinks meaningfully when the plan shrinks, but is floored so it never
+// disappears.
+//
+// Every `base` below is the value the renderer used before this change, i.e. the
+// value at 100% (CAMERA_REFERENCE_ZOOM), so at exactly 100% the AP
+// representation is pixel-identical to before. These are pure screen values:
+// azimuth, beamwidth, direction, gain, mount and all RF are untouched, and no
+// calculated value is ever stored in AP state.
+const AP_VISUAL = {
+  azimuthRadius:   { base:46, exponent:0.60, min:12, max:48 },
+  omniOuterRadius: { base:23, exponent:0.60, min: 8, max:24 },
+  iconRadius:      { base: 7, exponent:0.25, min: 5, max: 9 },
+  nameFont:        { base:11, exponent:0.25, min: 9, max:12 },
+  detailFont:      { base:10, exponent:0.25, min: 8, max:11 },
+};
+// Generic sub-linear semantic scaling for screen-space symbols. Display only:
+// it never rewrites stored values, project geometry, or export output.
+function semanticScreenPx(basePx, exponent, minPx, maxPx){
+  const scale = Math.pow(camera.zoom / CAMERA_REFERENCE_ZOOM, exponent);
+  return clamp(basePx * scale, minPx, maxPx);
+}
+// The display size of one AP artwork piece, in screen px.
+function apVisualPx(key){
+  const s = AP_VISUAL[key];
+  return semanticScreenPx(s.base, s.exponent, s.min, s.max);
+}
 let mouse = {x:0,y:0, wx:0, wy:0, down:false, button:0};
 let draft = null;     // wall drafting {x1,y1,x2,y2}
 let dragging = null;  // {type, id, ox,oy, ...}
@@ -2002,27 +2035,47 @@ function draw2d(){
     const sel = selection&&selection.type==='ap'&&selection.id===ap.id;
     const ant=ap.antenna||{type:'omni'};
     const wallMount=apMountType(ap)==='wall';
+    // Semantic screen sizes. All of these are exactly their pre-change values at
+    // 100% zoom, and are pure presentation -- the AP world coordinate, azimuth,
+    // beamwidth and RF are untouched.
+    const arcR = apVisualPx('azimuthRadius');
+    const iconR = apVisualPx('iconRadius');
+    // ONE factor for the whole omni family, so ring spacing/proportions are
+    // preserved instead of each ring being clamped independently.
+    const omniK = apVisualPx('omniOuterRadius') / AP_VISUAL.omniOuterRadius.base;
+    // One factor for the core disc and its outline, which are a single mark.
+    const iconK = iconR / AP_VISUAL.iconRadius.base;
     if(ant.type!=='omni'||wallMount){
+      // bw is the physical beamwidth in radians and a0 the physical azimuth:
+      // unchanged. Only the drawn screen radius R is a visual symbol.
       const bw=(ant.type==='sector'?120:(ant.type==='patch'?65:180))*Math.PI/180;
-      const a0=(ant.az||0)*Math.PI/180, R=46;
+      const a0=(ant.az||0)*Math.PI/180, R=arcR;
       ctx.fillStyle=sel?'rgba(122,162,255,.18)':'rgba(52,214,196,.16)';
       ctx.strokeStyle=sel?'rgba(122,162,255,.5)':'rgba(52,214,196,.45)';ctx.lineWidth=1.2;
       ctx.beginPath();ctx.moveTo(p.x,p.y);
       ctx.arc(p.x,p.y,R, a0-bw/2, a0+bw/2);ctx.closePath();ctx.fill();ctx.stroke();
     } else {
+      // historic radii 11/17/23 (5+i*6), scaled as one family
       ctx.strokeStyle='rgba(52,214,196,.35)';ctx.lineWidth=1.5;
-      for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(p.x,p.y,5+i*6,-Math.PI*0.85,-Math.PI*0.15);ctx.stroke();}
+      for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(p.x,p.y,(5+i*6)*omniK,-Math.PI*0.85,-Math.PI*0.15);ctx.stroke();}
     }
-    ctx.beginPath();ctx.arc(p.x,p.y,7,0,7);
+    ctx.beginPath();ctx.arc(p.x,p.y,iconR,0,7);
     ctx.fillStyle=!apRfEnabled(ap)?'#6b7280':(soloApId===ap.id?'#f4a83a':(sel?'#7aa2ff':'#34d6c4'));ctx.fill();
-    ctx.lineWidth=2;ctx.strokeStyle='#04201d';ctx.stroke();
+    ctx.lineWidth=2*iconK;ctx.strokeStyle='#04201d';ctx.stroke();
     if(!apRfEnabled(ap)){
-      ctx.strokeStyle='#0b0f15';ctx.lineWidth=2;
-      ctx.beginPath();ctx.moveTo(p.x-5,p.y-5);ctx.lineTo(p.x+5,p.y+5);ctx.moveTo(p.x+5,p.y-5);ctx.lineTo(p.x-5,p.y+5);ctx.stroke();
+      // part of the core mark, so it scales with the core
+      ctx.strokeStyle='#0b0f15';ctx.lineWidth=2*iconK;
+      ctx.beginPath();ctx.moveTo(p.x-5*iconK,p.y-5*iconK);ctx.lineTo(p.x+5*iconK,p.y+5*iconK);ctx.moveTo(p.x+5*iconK,p.y-5*iconK);ctx.lineTo(p.x-5*iconK,p.y+5*iconK);ctx.stroke();
     }
-    ctx.fillStyle=sel?'#7aa2ff':'#bfeee8';ctx.font='600 11px '+'sans-serif';
+    // Captions are device annotations, so they use their own flatter semantic
+    // curve rather than the linear document scaling used by generic labels. The
+    // 12/8/6 px offsets stay fixed screen-space spacing, so captions keep a
+    // stable gutter and do not jitter as the symbol breathes.
+    ctx.fillStyle=sel?'#7aa2ff':'#bfeee8';
+    ctx.font=`600 ${apVisualPx('nameFont')}px `+'sans-serif';
     ctx.fillText(ap.name, p.x+12, p.y-8);
-    ctx.fillStyle='#7d8a9c';ctx.font='10px monospace';
+    ctx.fillStyle='#7d8a9c';
+    ctx.font=`${apVisualPx('detailFont')}px `+'monospace';
     ctx.fillText(ap.txPower+' dBm · '+apBandLabel(ap), p.x+12, p.y+6);
   });
 
