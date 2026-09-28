@@ -5499,28 +5499,80 @@ function exportFloorPlanPNG(){
 }
 
 // ---- glTF scene export (hand-built, embedded buffer) ----
+// Every canonical object becomes its own named glTF node:
+//   Scene > Floor <i> <name> > Walls | Pillars | RF Objects | APs > <object>
+// Geometry is untouched; only the scene organisation is structured.
+function gltfObjId(o,type,i){ return (o&&o.id!=null&&String(o.id)!=='')?String(o.id):type+'-'+i; }
+function gltfFloorName(idx,f){
+  const n=(f&&f.name!=null)?String(f.name).trim():'';
+  return 'Floor '+idx+(n?' '+n:'');
+}
+function gltfExtras(type,id,fi,more){
+  const e={rfPlannerType:type, id, floorIndex:fi};
+  if(more)Object.keys(more).forEach(k=>{ if(more[k]!==undefined&&more[k]!==null)e[k]=more[k]; });
+  return e;
+}
 function exportGLTF(){
   const builder=new GltfBuilder();
   state.floors.forEach((f,idx)=>{
     const elev=floorElevation(idx);
-    f.walls.forEach(w=>{
-      const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
-      const m=matById(w.materialId); const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
-      const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
-      const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
-      builder.addBox(len,h,wallThickness(w), mx, elev+h/2, mz, ang, hexToRgb(m.color), 'wall_'+m.name);
-    });
-    (f.pillars||[]).forEach(p=>{
-      const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
-      builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color), 'pillar_'+m.name);
-    });
-    (f.rfObjects||[]).forEach(ro=>{
-      const m=matById(ro.materialId);
-      builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, -ro.rotation*Math.PI/180, hexToRgb(m.color), 'rfobj_'+ro.name);
-    });
-    f.aps.forEach(ap=>{
-      builder.addBox(0.3,0.3,0.3, ap.x, elev+apMount(ap), ap.y, 0, [0.2,0.84,0.77], 'AP_'+ap.name);
-    });
+    builder.beginGroup(gltfFloorName(idx,f), {id:f.id, floorIndex:idx});
+    // walls
+    const walls=f.walls.filter(w=>dist(w.x1,w.y1,w.x2,w.y2)>=0.01);
+    if(walls.length){
+      builder.beginGroup('Walls');
+      walls.forEach((w,i)=>{
+        const m=matById(w.materialId); const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
+        const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
+        const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
+        const id=gltfObjId(w,'wall',i);
+        builder.beginObject('Wall '+id, gltfExtras('wall',id,idx,{materialId:w.materialId}));
+        builder.addBox(dist(w.x1,w.y1,w.x2,w.y2),h,wallThickness(w), mx, elev+h/2, mz, ang, hexToRgb(m.color));
+        builder.endObject();
+      });
+      builder.endGroup();
+    }
+    // pillars
+    const pillars=f.pillars||[];
+    if(pillars.length){
+      builder.beginGroup('Pillars');
+      pillars.forEach((p,i)=>{
+        const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
+        const id=gltfObjId(p,'pillar',i);
+        builder.beginObject('Pillar '+id, gltfExtras('pillar',id,idx,{materialId:p.materialId}));
+        builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color));
+        builder.endObject();
+      });
+      builder.endGroup();
+    }
+    // RF objects
+    const rfObjects=f.rfObjects||[];
+    if(rfObjects.length){
+      builder.beginGroup('RF Objects');
+      rfObjects.forEach((ro,i)=>{
+        const m=matById(ro.materialId);
+        const id=gltfObjId(ro,'rfObject',i);
+        const extra=Number(ro.extraLossDb);
+        builder.beginObject('RF Object'+(ro.name?' '+ro.name:'')+' ['+id+']',
+          gltfExtras('rfObject',id,idx,{materialId:ro.materialId, extraLossDb:Number.isFinite(extra)?extra:undefined}));
+        builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, -ro.rotation*Math.PI/180, hexToRgb(m.color));
+        builder.endObject();
+      });
+      builder.endGroup();
+    }
+    // access points
+    if(f.aps.length){
+      builder.beginGroup('APs');
+      f.aps.forEach((ap,i)=>{
+        const id=gltfObjId(ap,'ap',i);
+        builder.beginObject('AP'+(ap.name?' '+ap.name:'')+' ['+id+']',
+          gltfExtras('ap',id,idx,{name:ap.name, rfEnabled:apRfEnabled(ap), mountType:apMountType(ap)}));
+        builder.addBox(0.3,0.3,0.3, ap.x, elev+apMount(ap), ap.y, 0, [0.2,0.84,0.77]);
+        builder.endObject();
+      });
+      builder.endGroup();
+    }
+    builder.endGroup();
   });
   const gltf=builder.finish();
   download(new Blob([JSON.stringify(gltf)],{type:'model/gltf+json'}),'rf-scen.gltf');
@@ -5539,11 +5591,35 @@ function exportGLTF(){
 }
 function hexToRgb(hex){const c=hex.replace('#','');return [parseInt(c.substr(0,2),16)/255,parseInt(c.substr(2,2),16)/255,parseInt(c.substr(4,2),16)/255];}
 
-// minimal glTF builder: merges boxes into one mesh with vertex colors
+// minimal glTF builder: one mesh per canonical object (wall / pillar / RF Object /
+// AP), grouped in a node tree, all sharing one embedded buffer. Vertex colors.
+// Geometry math lives in addBox / addCylinder and is object-local.
 function GltfBuilder(){
-  this.pos=[]; this.idx=[]; this.col=[]; this.nrm=[]; this.vcount=0; this.names=[];
+  this.root=[]; this.parent=null; this.stack=[]; this.cur=null;
 }
-GltfBuilder.prototype.addBox=function(sx,sy,sz, tx,ty,tz, ry, rgb, name){
+// open a group node (floor, or an object class inside a floor)
+GltfBuilder.prototype.beginGroup=function(name, extras){
+  const g={group:true, name, extras, children:[]};
+  (this.parent||this.root).push(g);
+  this.stack.push(this.parent||this.root); this.parent=g.children;
+  return g;
+};
+GltfBuilder.prototype.endGroup=function(){
+  if(!this.parent)throw new Error('gltf: endGroup without beginGroup');
+  this.parent=this.stack.pop()||null;
+};
+// open an object node; addBox / addCylinder then fill its local geometry
+GltfBuilder.prototype.beginObject=function(name, extras){
+  if(this.cur)throw new Error('gltf: beginObject while another object is open');
+  this.cur={name, extras, pos:[], nrm:[], col:[], idx:[], vcount:0};
+  return this.cur;
+};
+GltfBuilder.prototype.endObject=function(){
+  if(!this.cur)throw new Error('gltf: endObject without beginObject');
+  (this.parent||this.root).push(this.cur); this.cur=null;
+};
+GltfBuilder.prototype.addBox=function(sx,sy,sz, tx,ty,tz, ry, rgb){
+  const o=this.cur; if(!o)throw new Error('gltf: addBox outside beginObject');
   // 8 corners of the box; rotated around Y and translated to world space
   const hx=sx/2,hy=sy/2,hz=sz/2;
   const corners=[[-hx,-hy,-hz],[hx,-hy,-hz],[hx,hy,-hz],[-hx,hy,-hz],
@@ -5565,42 +5641,80 @@ GltfBuilder.prototype.addBox=function(sx,sy,sz, tx,ty,tz, ry, rgb, name){
     const map={};                       // corner index -> vertex index in this face
     f.t.forEach(tr=>tr.forEach(ci=>{
       if(map[ci]!==undefined)return;
-      map[ci]=this.vcount++;
+      map[ci]=o.vcount++;
       const c=corners[ci];
       const x=c[0]*ca - c[2]*sa, z=c[0]*sa + c[2]*ca;
-      this.pos.push(x+tx, c[1]+ty, z+tz);
+      o.pos.push(x+tx, c[1]+ty, z+tz);
       // face normal rotated with the box, renormalized against float error
       let nx=f.n[0]*ca - f.n[2]*sa, ny=f.n[1], nz=f.n[0]*sa + f.n[2]*ca;
       const nl=Math.sqrt(nx*nx+ny*ny+nz*nz);
-      this.nrm.push(nx/nl, ny/nl, nz/nl);
-      this.col.push(rgb[0],rgb[1],rgb[2],1);
+      o.nrm.push(nx/nl, ny/nl, nz/nl);
+      o.col.push(rgb[0],rgb[1],rgb[2],1);
     }));
-    f.t.forEach(tr=>this.idx.push(map[tr[0]],map[tr[1]],map[tr[2]]));
+    f.t.forEach(tr=>o.idx.push(map[tr[0]],map[tr[1]],map[tr[2]]));
   });
 };
-GltfBuilder.prototype.addCylinder=function(r,h, tx,ty,tz, rgb, name){
-  const seg=32, base=this.vcount;
-  this.pos.push(tx,ty+h/2,tz, tx,ty-h/2,tz);
-  this.nrm.push(0,1,0, 0,-1,0);
-  this.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
+GltfBuilder.prototype.addCylinder=function(r,h, tx,ty,tz, rgb){
+  const o=this.cur; if(!o)throw new Error('gltf: addCylinder outside beginObject');
+  const seg=32, base=o.vcount;
+  o.pos.push(tx,ty+h/2,tz, tx,ty-h/2,tz);
+  o.nrm.push(0,1,0, 0,-1,0);
+  o.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
   for(let i=0;i<seg;i++){
     const a=i/seg*Math.PI*2, x=Math.cos(a)*r, z=Math.sin(a)*r;
-    this.pos.push(tx+x,ty+h/2,tz+z, tx+x,ty-h/2,tz+z);
-    this.nrm.push(x/r,0,z/r, x/r,0,z/r);
-    this.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
+    o.pos.push(tx+x,ty+h/2,tz+z, tx+x,ty-h/2,tz+z);
+    o.nrm.push(x/r,0,z/r, x/r,0,z/r);
+    o.col.push(rgb[0],rgb[1],rgb[2],1, rgb[0],rgb[1],rgb[2],1);
   }
   for(let i=0;i<seg;i++){
     const j=(i+1)%seg, top=base+2+i*2, bot=top+1, ntop=base+2+j*2, nbot=ntop+1;
-    this.idx.push(base,top,ntop, base+1,nbot,bot, top,bot,nbot, top,nbot,ntop);
+    o.idx.push(base,top,ntop, base+1,nbot,bot, top,bot,nbot, top,nbot,ntop);
   }
-  this.vcount+=2+seg*2;
+  o.vcount+=2+seg*2;
 };
 GltfBuilder.prototype.finish=function(){
-  const pos=new Float32Array(this.pos), nrm=new Float32Array(this.nrm),
-        col=new Float32Array(this.col), idx=new Uint32Array(this.idx);
-  // bounds
-  let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
-  for(let i=0;i<pos.length;i+=3){for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],pos[i+k]);mx[k]=Math.max(mx[k],pos[i+k]);}}
+  const nodes=[], meshes=[], objects=[], accessors=[];
+  // depth-first walk: one node per group and per object, in scene order
+  const walk=entries=>entries.map(e=>{
+    if(e.group){
+      const kids=walk(e.children), node={name:e.name, children:kids};
+      if(e.extras)node.extras=e.extras;
+      nodes.push(node); return nodes.length-1;
+    }
+    objects.push(e);
+    const node={name:e.name};
+    if(e.extras)node.extras=e.extras;
+    nodes.push(node); e.nodeIndex=nodes.length-1;
+    return e.nodeIndex;
+  });
+  const roots=walk(this.root);
+  // concatenate every object into one shared buffer; indices stay object-local
+  let nPos=0,nNrm=0,nCol=0,nIdx=0;
+  objects.forEach(o=>{ nPos+=o.pos.length; nNrm+=o.nrm.length; nCol+=o.col.length; nIdx+=o.idx.length; });
+  const pos=new Float32Array(nPos), nrm=new Float32Array(nNrm),
+        col=new Float32Array(nCol), idx=new Uint32Array(nIdx);
+  let oPos=0,oNrm=0,oCol=0,oIdx=0;
+  objects.forEach(o=>{
+    // indices stay object-local: a primitive indexes into its own POSITION accessor,
+    // whose byteOffset already selects this object's vertices in the shared buffer
+    pos.set(o.pos,oPos); nrm.set(o.nrm,oNrm); col.set(o.col,oCol); idx.set(o.idx,oIdx);
+    // object bounds for the POSITION accessor, taken from the stored float32 data
+    let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
+    for(let i=oPos;i<oPos+o.pos.length;i+=3)for(let k=0;k<3;k++){
+      const v=pos[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v;
+    }
+    const aPos=accessors.length;
+    accessors.push({bufferView:0, byteOffset:oPos*4, componentType:5126, count:o.pos.length/3, type:'VEC3', min:mn, max:mx});
+    const aNrm=accessors.length;
+    accessors.push({bufferView:1, byteOffset:oNrm*4, componentType:5126, count:o.nrm.length/3, type:'VEC3'});
+    const aCol=accessors.length;
+    accessors.push({bufferView:2, byteOffset:oCol*4, componentType:5126, count:o.col.length/4, type:'VEC4'});
+    const aIdx=accessors.length;
+    accessors.push({bufferView:3, byteOffset:oIdx*4, componentType:5125, count:o.idx.length, type:'SCALAR'});
+    meshes.push({primitives:[{attributes:{POSITION:aPos,NORMAL:aNrm,COLOR_0:aCol}, indices:aIdx, material:0}]});
+    nodes[o.nodeIndex].mesh=meshes.length-1;
+    oPos+=o.pos.length; oNrm+=o.nrm.length; oCol+=o.col.length; oIdx+=o.idx.length;
+  });
   const parts=[pos,nrm,col,idx];
   // align each to 4 bytes
   const offsets=[]; let total=0;
@@ -5610,22 +5724,17 @@ GltfBuilder.prototype.finish=function(){
   const b64=base64(buf);
   const gltf={
     asset:{version:'2.0',generator:'RF Planner'},
-    scenes:[{nodes:[0]}], scene:0, nodes:[{mesh:0}],
-    meshes:[{primitives:[{attributes:{POSITION:0,NORMAL:1,COLOR_0:2},indices:3,material:0}]}],
+    scenes:[{nodes:roots}], scene:0, nodes,
+    meshes,
     materials:[{pbrMetallicRoughness:{baseColorFactor:[1,1,1,1],metallicFactor:0,roughnessFactor:0.9}}],
     buffers:[{byteLength:buf.length, uri:'data:application/octet-stream;base64,'+b64}],
     bufferViews:[
-      {buffer:0,byteOffset:offsets[0],byteLength:pos.byteLength,target:34962},
-      {buffer:0,byteOffset:offsets[1],byteLength:nrm.byteLength,target:34962},
-      {buffer:0,byteOffset:offsets[2],byteLength:col.byteLength,target:34962},
+      {buffer:0,byteOffset:offsets[0],byteLength:pos.byteLength,byteStride:12,target:34962},
+      {buffer:0,byteOffset:offsets[1],byteLength:nrm.byteLength,byteStride:12,target:34962},
+      {buffer:0,byteOffset:offsets[2],byteLength:col.byteLength,byteStride:16,target:34962},
       {buffer:0,byteOffset:offsets[3],byteLength:idx.byteLength,target:34963},
     ],
-    accessors:[
-      {bufferView:0,componentType:5126,count:pos.length/3,type:'VEC3',min:mn,max:mx},
-      {bufferView:1,componentType:5126,count:nrm.length/3,type:'VEC3'},
-      {bufferView:2,componentType:5126,count:col.length/4,type:'VEC4'},
-      {bufferView:3,componentType:5125,count:idx.length,type:'SCALAR'},
-    ],
+    accessors,
   };
   return gltf;
 };
