@@ -3939,6 +3939,294 @@ function resize3d(){
   three.cam.aspect=r.width/r.height; three.cam.updateProjectionMatrix();
 }
 
+// ============================================================
+//  FLOOR FOOTPRINT  (physical slab extent: 3D + export only)
+// ============================================================
+// The plan area a floor's slab actually covers. This is a NEW physical concept,
+// fully independent from floorBounds(f), which stays the RF / heatmap /
+// auto-placement grid extent and is deliberately never changed by this model.
+//
+// Optional per-floor field, reusing the project's existing point convention
+// (the same {x,y} world plan points the floor openings already store):
+//
+//   f.footprint = { parts: [ { outer: [{x,y},...],
+//                              holes: [ [{x,y},...], ... ] } ] }
+//
+//   outer  one simple ring. May be convex, or concave (an L-shaped mezzanine).
+//   holes  inner rings cut out of that part: atria, courtyards, light wells.
+//   parts  two or more entries express two or more DISCONNECTED slab regions.
+//
+// ABSENCE is meaningful and is the legacy case. Nothing is injected during
+// load/migration, so a project that never sets a footprint does not gain the
+// field by being saved. floorFootprint() resolves absence at READ time to
+// today's exact floorBounds(f) rectangle, so an old project keeps byte-identical
+// slab geometry and the legacy rectangular builders stay in charge of it.
+//
+// RF is untouched by this whole model. Openings keep their existing meaning in
+// pointInOpening()/slabLossBetweenPoints(); a footprint only shapes the slab
+// solid. Making RF slab attenuation respect the footprint is a separate
+// follow-up and is deliberately NOT done here.
+
+// Canonical READ of a stored footprint ring: drops non-finite points, merges
+// consecutive duplicates and a repeated closing point, and rejects rings with
+// fewer than 3 distinct vertices or no area. Winding is deliberately left as
+// authored - every consumer below is winding-agnostic (even-odd crossing and
+// point-in-polygon), so forcing an orientation would only add a way for the
+// stored data and the geometry to disagree.
+function cleanFootprintRing(points){
+  const src=(points||[]).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y));
+  const r=[];
+  src.forEach(p=>{ const l=r[r.length-1];
+    if(!l||Math.abs(p.x-l.x)>1e-9||Math.abs(p.y-l.y)>1e-9) r.push({x:p.x,y:p.y}); });
+  while(r.length>1&&Math.abs(r[0].x-r[r.length-1].x)<1e-9&&Math.abs(r[0].y-r[r.length-1].y)<1e-9) r.pop();
+  if(r.length<3) return null;
+  let a=0;
+  for(let i=0;i<r.length;i++){ const p=r[i],q=r[(i+1)%r.length]; a+=p.x*q.y-q.x*p.y; }
+  if(Math.abs(a/2)<1e-12) return null;   // zero-area ring carries no boundary
+  return r;
+}
+// Canonical READ of one floor's footprint. Returns {explicit, parts}.
+// explicit=false means "no footprint was authored", and the single returned
+// part is the exact floorBounds(f) rectangle, i.e. today's behaviour.
+function floorFootprint(f){
+  const b=floorBounds(f);
+  const legacy=[{x:b.minx,y:b.miny},{x:b.maxx,y:b.miny},{x:b.maxx,y:b.maxy},{x:b.minx,y:b.maxy}];
+  const raw=f&&f.footprint;
+  // canonical is {parts:[...]}; a bare array is accepted as a tolerant alias
+  const list=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.parts)?raw.parts:null);
+  if(!list||!list.length) return {explicit:false, parts:[{outer:legacy, holes:[]}]};
+  const parts=[];
+  list.forEach(p=>{
+    if(!p) return;
+    const outer=cleanFootprintRing(p.outer||p.points);   // {points} tolerated
+    if(!outer) return;
+    const holes=[];
+    (Array.isArray(p.holes)?p.holes:[]).forEach(h=>{ const c=cleanFootprintRing(h); if(c) holes.push(c); });
+    parts.push({outer, holes});
+  });
+  // an authored footprint that cleans down to nothing is treated as absent
+  if(!parts.length) return {explicit:false, parts:[{outer:legacy, holes:[]}]};
+  return {explicit:true, parts};
+}
+// Canonical slab PLAN for one floor: the footprint with the floor's explicit
+// openings folded in as extra holes, so the slab is exactly footprint - openings.
+//
+// Every opening is attached to every part on purpose. An opening that lies
+// outside a given part contributes nothing there, because slabSolidForPlan()
+// intersects each band with that part's outer ring, so no polygon clipping and
+// no per-opening part assignment is needed.
+//
+// Openings are deliberately NOT pre-clipped to the footprint: the solid builder
+// resolves every crossing exactly, which reproduces the legacy "opening past an
+// edge becomes a real edge notch" behaviour for rectangular footprints and
+// generalises it to any outline.
+function slabPlanForFloor(f){
+  const fp=floorFootprint(f);
+  const op=[];
+  ((f&&f.openings)||[]).forEach(o=>{ const c=cleanFootprintRing(o&&o.points); if(c) op.push(c); });
+  return {explicit:fp.explicit, parts:fp.parts.map(p=>({outer:p.outer, holes:p.holes.concat(op)}))};
+}
+
+// ---- general slab solid: arbitrary rings -> triangles + boundary edges ----
+// Triangulation is a strip (trapezoidal) decomposition, a direct generalisation
+// of the vertical-strip method the glTF slab already used for rectangles. It was
+// chosen over THREE.ShapeUtils.triangulateShape (earcut) on purpose:
+//   * earcut needs every hole strictly inside its outer ring, so an opening that
+//     reaches the footprint boundary - a required case here - would need a
+//     separate polygon clipper first. The strip method handles it natively.
+//   * earcut would add a CDN-global THREE dependency to the glTF export path,
+//     which is currently pure JS and works without the 3D library.
+//   * the strip method needs no ear clipping at all, so there is no fragile
+//     degeneracy handling to get wrong.
+// The solid is produced ONCE in plan coordinates and both the interactive 3D
+// mesh and the glTF export are built from that same data, so the two readings
+// cannot drift apart.
+const FP_EPS=1e-9;
+// Split every ring edge at its crossings with the OTHER rings. Cuts are then
+// placed on every sub-edge endpoint, so inside one vertical strip no two ring
+// edges cross and every band is bounded by exactly two straight edges across
+// the whole strip. That is what makes each band an exact quad.
+function fpNodeRings(rings){
+  const edges=[];
+  rings.forEach((r,ri)=>{ for(let k=0;k<r.length;k++) edges.push({ri,ax:r[k].x,ay:r[k].y,bx:r[(k+1)%r.length].x,by:r[(k+1)%r.length].y,xs:[0,1]}); });
+  for(let i=0;i<edges.length;i++)for(let j=i+1;j<edges.length;j++){
+    const A=edges[i],B=edges[j];
+    if(A.ri===B.ri) continue;                                  // a simple ring never self-intersects
+    const dx=A.bx-A.ax, dy=A.by-A.ay, ex=B.bx-B.ax, ey=B.by-B.ay;
+    const den=dx*ey-dy*ex;
+    if(Math.abs(den)<1e-15) continue;                          // parallel or collinear
+    const wx=B.ax-A.ax, wy=B.ay-A.ay;
+    const t=(wx*ey-wy*ex)/den, u=(wx*dy-wy*dx)/den;
+    // both parameters must be interior: that is a real crossing, not a
+    // near-miss. Testing them separately would split A at the infinite
+    // extension of B and shatter every long edge into useless pieces.
+    if(t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9){ A.xs.push(t); B.xs.push(u); }
+  }
+  const out=[];
+  edges.forEach(e=>{
+    const ts=[...new Set(e.xs.map(v=>Math.round(v*1e9)/1e9))].sort((a,b)=>a-b);
+    for(let k=0;k+1<ts.length;k++){
+      const t0=ts[k],t1=ts[k+1];
+      out.push({ri:e.ri, p0:{x:e.ax+dx0(e,t0),y:e.ay+dy0(e,t0)}, p1:{x:e.ax+dx0(e,t1),y:e.ay+dy0(e,t1)}});
+    }
+  });
+  return out;
+  function dx0(e,t){ return (e.bx-e.ax)*t; }
+  function dy0(e,t){ return (e.by-e.ay)*t; }
+}
+// y of a non-vertical sub-edge at abscissa x (linear; the strip guarantees the
+// edge spans the whole strip).
+function fpEdgeY(e,x){ return e.p0.y+(e.p1.y-e.p0.y)*((x-e.p0.x)/(e.p1.x-e.p0.x)); }
+
+// One slab part -> its solid, in plan coordinates (x, y). y here is PLAN y,
+// which becomes glTF z and three.js Z. Returns {tris, walls, area} where
+//   tris  CCW (x,y) triangles, the exact solid, no degenerate slivers
+//   walls boundary edges {ax,ay,bx,by,nx,ny} with nx,ny the OUTWARD normal
+//
+// Solid = (even-odd interior of ALL rings) INTERSECT (interior of the outer ring
+// alone). That intersection is plain interval arithmetic on the strip's centre
+// line, and it is what makes the hard cases fall out for free:
+//   * a hole fully inside     -> removed
+//   * a hole crossing an edge -> only the overlapping part is removed, so the
+//                                opening becomes a real edge notch
+//   * a hole outside the part -> contributes nothing at all
+// Wall edges fall out of the same decomposition: every boundary of a solid band
+// is solid on one side and open on the other, and even-odd bands strictly
+// alternate, so no edge can have solid on both sides. Ring winding is never
+// consulted, so the result does not depend on how a ring was authored.
+function fpPartSolid(outer, holes){
+  const rings=[outer].concat(holes);
+  const sub=fpNodeRings(rings);
+  if(!sub.length) return null;
+  // cut lines: every sub-edge endpoint abscissa
+  const xs=[];
+  sub.forEach(e=>{ xs.push(e.p0.x, e.p1.x); });
+  xs.sort((a,b)=>a-b);
+  const cut=[];
+  xs.forEach(x=>{ if(!cut.length||x-cut[cut.length-1]>FP_EPS) cut.push(x); });
+  if(cut.length<2) return null;
+  // vertical sub-edges bucketed by abscissa: a vertical edge never crosses a
+  // strip interior, so it can only ever appear as a strip cut side
+  const vert=new Map();
+  sub.forEach((e,i)=>{ if(Math.abs(e.p1.x-e.p0.x)<=FP_EPS){
+    const k=Math.round(e.p0.x*1e6);
+    if(!vert.has(k)) vert.set(k,[]);
+    vert.get(k).push({i, lo:Math.min(e.p0.y,e.p1.y), hi:Math.max(e.p0.y,e.p1.y)}); } });
+  const tris=[];
+  const wallSeg=new Map();   // sub-edge index -> wall runs, merged at the end
+  const pushTri=(a,b,c)=>{ if(Math.abs(fpTriArea(a,b,c))>1e-14) tris.push([a,b,c]); };
+  const addWallSeg=(src,ax,ay,bx,by,nx,ny)=>{
+    const e=sub[src], L2=(e.p1.x-e.p0.x)*(e.p1.x-e.p0.x)+(e.p1.y-e.p0.y)*(e.p1.y-e.p0.y);
+    if(!(L2>0)) return;
+    const t0=((ax-e.p0.x)*(e.p1.x-e.p0.x)+(ay-e.p0.y)*(e.p1.y-e.p0.y))/L2;
+    const t1=((bx-e.p0.x)*(e.p1.x-e.p0.x)+(by-e.p0.y)*(e.p1.y-e.p0.y))/L2;
+    if(!wallSeg.has(src)) wallSeg.set(src,[]);
+    wallSeg.get(src).push({lo:Math.min(t0,t1), hi:Math.max(t0,t1), nx, ny});
+  };
+  for(let s=0;s+1<cut.length;s++){
+    const xa=cut[s], xb=cut[s+1];
+    if(xb-xa<=FP_EPS) continue;
+    const xm=(xa+xb)/2;
+    // crossings of the strip interior by every non-vertical sub-edge
+    const cross=[];
+    sub.forEach((e,i)=>{
+      if(Math.abs(e.p1.x-e.p0.x)<=FP_EPS) return;
+      if((e.p0.x<=xm&&e.p1.x>xm)||(e.p1.x<=xm&&e.p0.x>xm)) cross.push({y:fpEdgeY(e,xm), i});
+    });
+    if(cross.length<2) continue;
+    cross.sort((p,q)=>p.y-q.y);
+    // footprint bands: the OUTER ring's own crossings, paired among themselves
+    const oc=cross.filter(c=>sub[c.i].ri===0);
+    if(oc.length<2) continue;
+    const ob=[];
+    for(let k=0;k+1<oc.length;k+=2) ob.push([oc[k],oc[k+1]]);
+    // even-odd bands over ALL rings, intersected with the footprint bands
+    for(let k=0;k+1<cross.length;k+=2){
+      const aLo=cross[k], aHi=cross[k+1];
+      for(const o of ob){
+        if(aHi.y<=o[0].y+FP_EPS || aLo.y>=o[1].y-FP_EPS) continue;
+        // each surviving boundary is the crossing that won the max / min
+        const bIdx=(aLo.y>=o[0].y)?aLo.i:o[0].i;
+        const tIdx=(aHi.y<=o[1].y)?aHi.i:o[1].i;
+        const be=sub[bIdx], te=sub[tIdx];
+        const bl0=fpEdgeY(be,xa), bl1=fpEdgeY(be,xb);
+        const tl0=fpEdgeY(te,xa), tl1=fpEdgeY(te,xb);
+        // the band is the convex quad (xa,bl0)-(xb,bl1)-(xb,tl1)-(xa,tl0)
+        const raw=[{x:xa,y:bl0},{x:xb,y:bl1},{x:xb,y:tl1},{x:xa,y:tl0}];
+        const pts=raw.filter((p,i)=>i===0||Math.abs(p.x-raw[i-1].x)>FP_EPS||Math.abs(p.y-raw[i-1].y)>FP_EPS);
+        for(let q=1;q+1<pts.length;q++) pushTri(pts[0],pts[q],pts[q+1]);
+        // band edges, oriented by increasing x: the solid is ABOVE the band's
+        // bottom edge and BELOW its top edge, which fixes both outward normals
+        const wdx=xb-xa;
+        if(Math.abs(be.p1.x-be.p0.x)>FP_EPS){
+          const blen=Math.hypot(wdx,bl1-bl0);
+          if(blen>FP_EPS) addWallSeg(bIdx, xa,bl0, xb,bl1, (bl1-bl0)/blen, -wdx/blen);
+        }
+        if(Math.abs(te.p1.x-te.p0.x)>FP_EPS){
+          const tlen=Math.hypot(wdx,tl1-tl0);
+          if(tlen>FP_EPS) addWallSeg(tIdx, xa,tl0, xb,tl1, -(tl1-tl0)/tlen, wdx/tlen);
+        }
+        // cut sides, only where a vertical ring edge really coincides. This is
+        // what clips a vertical hole/opening edge exactly to the solid part.
+        cutSide(xa, Math.min(bl0,tl0), Math.max(bl0,tl0), +1);
+        cutSide(xb, Math.min(bl1,tl1), Math.max(bl1,tl1), -1);
+      }
+    }
+  }
+  if(!tris.length) return null;
+  // merge the per-strip wall runs back into one wall per source sub-edge, so a
+  // long edge cut by several strips stays a single side quad
+  const walls=[];
+  wallSeg.forEach((segs,src)=>{
+    const e=sub[src];
+    const at=t=>({x:e.p0.x+(e.p1.x-e.p0.x)*t, y:e.p0.y+(e.p1.y-e.p0.y)*t});
+    segs.sort((a,b)=>a.lo-b.lo);
+    let run=null;
+    const flush=()=>{
+      const r=run; run=null;
+      if(!r) return;
+      const a=at(r.lo), b=at(r.hi);
+      if(Math.hypot(b.x-a.x,b.y-a.y)<=FP_EPS) return;
+      // orient so the quad winding matches the outward normal: d ~ (-ny, nx)
+      let ax=a.x, ay=a.y, bx=b.x, by=b.y;
+      if((bx-ax)*(-r.ny)+(by-ay)*r.nx<0){ ax=b.x; ay=b.y; bx=a.x; by=a.y; }
+      walls.push({ax,ay,bx,by,nx:r.nx,ny:r.ny});
+    };
+    segs.forEach(sg=>{
+      if(run && sg.lo<=run.hi+1e-7 && Math.abs(sg.nx-run.nx)<1e-9 && Math.abs(sg.ny-run.ny)<1e-9){
+        if(sg.hi>run.hi) run.hi=sg.hi;
+      } else { flush(); run={lo:sg.lo, hi:sg.hi, nx:sg.nx, ny:sg.ny}; }
+    });
+    flush();
+  });
+  // fpTriArea is the shoelace CROSS PRODUCT, i.e. twice the signed area
+  const area=tris.reduce((s,t)=>s+fpTriArea(t[0],t[1],t[2]),0)/2;
+  return {tris, walls, area};
+  // A cut side is a boundary only where a vertical ring edge lies on it.
+  // side>0: the band lies to the RIGHT of the cut, so the outward normal is -x.
+  function cutSide(x,lo,hi,side){
+    const list=vert.get(Math.round(x*1e6));
+    if(!list) return;
+    list.forEach(v=>{
+      const a=Math.max(lo,v.lo), b=Math.min(hi,v.hi);
+      if(b-a<=FP_EPS) return;
+      if(side>0) addWallSeg(v.i, x,a, x,b, -1, 0);
+      else        addWallSeg(v.i, x,b, x,a,  1, 0);
+    });
+  }
+}
+function fpTriArea(a,b,c){ return (b.x-a.x)*(c.y-a.y)-(c.x-a.x)*(b.y-a.y); }
+// The whole slab for one floor: every part as an independent closed solid, so a
+// multi-part footprint needs no polygon union and can never self-overlap.
+function slabSolidForPlan(plan){
+  const parts=[];
+  (plan&&plan.parts||[]).forEach(p=>{
+    const s=fpPartSolid(p.outer, p.holes);
+    if(s) parts.push(s);
+  });
+  return parts;
+}
+
 // world(x,y meters) -> three(x, z).  We map world.x->X, world.y->Z, elevation->Y
 // Valid opening rings shared by the 3D slab/bg builders (visual only; RF untouched).
 // Returns world-coordinate points normalized to three.js canonical hole winding
@@ -4031,6 +4319,42 @@ function bgPlaneGeometryClipped(f){
     return {geo};
   }catch(_){ return null; }
 }
+// Slab geometry for an EXPLICIT footprint, built straight from the canonical
+// {tris,walls} solid so it is the same geometry the glTF export writes. Local
+// space matches the legacy slab exactly: world x,z as authored, y from
+// -SLAB_THICKNESS_M to 0, so the group elevation still places the plate top on
+// the floor elevation. Returns null when the plan yields no usable solid, in
+// which case the caller falls back to the legacy rectangular slab.
+// (THREE is guaranteed here: this is only called from build3d.)
+function slabGeometryForPlan(plan, thickness){
+  const parts=slabSolidForPlan(plan);
+  if(!parts.length) return null;
+  const th=(thickness==null)?0.12:thickness;
+  const pos=[], nrm=[], idx=[];
+  const v=(x,y,z,nx,ny,nz)=>{ pos.push(x,y,z); nrm.push(nx,ny,nz); return pos.length/3-1; };
+  parts.forEach(part=>{
+    // A CCW plan triangle has a -Y normal, so the bottom keeps the order and
+    // the top is reversed. Same convention as GltfBuilder.addSlabSolid.
+    part.tris.forEach(t=>{
+      const b0=v(t[0].x,-th,t[0].y,0,-1,0), b1=v(t[1].x,-th,t[1].y,0,-1,0), b2=v(t[2].x,-th,t[2].y,0,-1,0);
+      idx.push(b0,b1,b2);
+      const t0=v(t[2].x,0,t[2].y,0,1,0), t1=v(t[1].x,0,t[1].y,0,1,0), t2=v(t[0].x,0,t[0].y,0,1,0);
+      idx.push(t0,t1,t2);
+    });
+    part.walls.forEach(w=>{
+      const n=[w.nx,0,w.ny];
+      const i0=v(w.ax,0,w.ay,n[0],n[1],n[2]), i1=v(w.bx,0,w.by,n[0],n[1],n[2]);
+      const i2=v(w.bx,-th,w.by,n[0],n[1],n[2]), i3=v(w.ax,-th,w.ay,n[0],n[1],n[2]);
+      idx.push(i0,i1,i2,i0,i2,i3);
+    });
+  });
+  if(!idx.length) return null;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('normal',   new THREE.Float32BufferAttribute(nrm,3));
+  geo.setIndex(idx);
+  return geo;
+}
 // Slab geometry with real holes for slab openings (visual only; RF untouched).
 // Shape coords use (worldX, -worldY); after rotateX(-PI/2) + translate the mesh
 // occupies world x∈[minx,maxx], y∈[-0.12,0], z(worldY)∈[miny,maxy] — exactly the
@@ -4094,12 +4418,23 @@ function build3d(){
     // floor slab (slab openings cut real holes through the slab thickness)
     const fw=b.maxx-b.minx, fd=b.maxy-b.miny;
     const slabMat=new THREE.MeshStandardMaterial({color:0x1b2430,transparent:true,opacity:0.55*dim+0.12,roughness:.95});
-    const holedSlabGeo=slabGeometryForFloor(b, f.openings);
-    let slab;
-    if(holedSlabGeo){ slab=new THREE.Mesh(holedSlabGeo,slabMat); slab.position.set(-cx,0,-cz); }
-    else {
-      slab=new THREE.Mesh(new THREE.BoxGeometry(fw,0.12,fd),slabMat);
-      slab.position.set((b.minx+b.maxx)/2-cx, -0.06, (b.miny+b.maxy)/2-cz);
+    // An explicit footprint is built from the canonical slab solid: the same
+    // {tris,walls} data the glTF export emits, so the 3D view and the export
+    // are one solid rather than two independent approximations. Without an
+    // explicit footprint the legacy rectangular path runs unchanged, so an old
+    // project renders and exports exactly as it did before.
+    const fpPlan=slabPlanForFloor(f);
+    const fpGeo=fpPlan.explicit?slabGeometryForPlan(fpPlan):null;
+    let slab=null;
+    if(fpGeo){
+      slab=new THREE.Mesh(fpGeo,slabMat); slab.position.set(-cx,0,-cz);
+    } else {
+      const holedSlabGeo=slabGeometryForFloor(b, f.openings);
+      if(holedSlabGeo){ slab=new THREE.Mesh(holedSlabGeo,slabMat); slab.position.set(-cx,0,-cz); }
+      else {
+        slab=new THREE.Mesh(new THREE.BoxGeometry(fw,0.12,fd),slabMat);
+        slab.position.set((b.minx+b.maxx)/2-cx, -0.06, (b.miny+b.maxy)/2-cz);
+      }
     }
     fl.add(slab);
 
@@ -5512,11 +5847,121 @@ function gltfExtras(type,id,fi,more){
   if(more)Object.keys(more).forEach(k=>{ if(more[k]!==undefined&&more[k]!==null)e[k]=more[k]; });
   return e;
 }
+// ---- floor slab geometry for the export ----
+// Mirrors the interactive 3D slab: a 0.12 m plate whose top sits on the floor
+// elevation and whose plan area is floorBounds(f) minus the floor openings, cut as
+// real holes. Interactive 3D builds the same solid with THREE.ExtrudeGeometry;
+// the export triangulates it in plain 2D, using the same ring cleaning and the same
+// plan bounds, so both readings agree. Plan (x,y) maps to glTF (x, elevation, z).
+const GLTF_SLAB_THICKNESS=0.12;
+const GLTF_SLAB_COLOR=[0x1b/255,0x24/255,0x30/255];   // #1b2430, same as interactive 3D
+// Outer rectangle + opening rings for one floor, in plan coordinates. Openings are
+// cleaned exactly like the interactive helper and clipped to the footprint, so an
+// opening that runs past an edge becomes a real edge notch instead of corrupt
+// geometry. Returns null when there is no usable footprint.
+function gltfSlabRings(b, openings){
+  const fw=b.maxx-b.minx, fd=b.maxy-b.miny;
+  if(!(fw>0)||!(fd>0)) return null;
+  const outer=[{x:b.minx,z:b.miny},{x:b.maxx,z:b.miny},{x:b.maxx,z:b.maxy},{x:b.minx,z:b.maxy}];
+  const holes=[];
+  (openings||[]).forEach(o=>{
+    const ring=cleanOpeningRing(o&&o.points);
+    if(!ring) return;                                  // malformed: ignore it
+    const clipped=clipRingToRect(ring.map(p=>({x:p.x,y:p.y})),{x:b.minx,y:b.miny,w:fw,h:fd});
+    if(clipped.length<3) return;                       // misses the footprint
+    const h=clipped.map(p=>({x:p.x, z:p.y}));
+    if(Math.abs(g2RingArea(h))<1e-9) return;           // degenerate after clipping
+    if(Math.abs(g2RingArea(h))>=fw*fd*(1-1e-6)) return; // swallows the whole plate
+    holes.push(h);
+  });
+  return {outer, holes, fw, fd};
+}
+// ---- minimal planar helpers, (u,v) = (x,z). Positive area = CCW in (x,z). ----
+function g2RingArea(r){ let a=0; for(let i=0;i<r.length;i++){ const p=r[i],q=r[(i+1)%r.length]; a+=p.x*q.z-q.x*p.z; } return a/2; }
+// Vertical cross-section of a ring at abscissa x: the y-intervals it occupies.
+// Half-open edge test so ring vertices are counted exactly once.
+function g2CrossSection(ring,x){
+  const ys=[];
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i], b=ring[(i+1)%ring.length];
+    if((a.x<=x&&b.x>x)||(b.x<=x&&a.x>x)) ys.push(a.z+(b.z-a.z)*((x-a.x)/(b.x-a.x)));
+  }
+  ys.sort((p,q)=>p-q);
+  const out=[];
+  for(let i=0;i+1<ys.length;i+=2) if(ys[i+1]-ys[i]>1e-12) out.push([ys[i],ys[i+1]]);
+  return out;
+}
+function g2MergeIntervals(list){
+  const s=list.slice().sort((a,b)=>a[0]-b[0]), out=[];
+  s.forEach(iv=>{
+    const last=out[out.length-1];
+    if(last&&iv[0]<=last[1]+1e-12) last[1]=Math.max(last[1],iv[1]);
+    else out.push([iv[0],iv[1]]);
+  });
+  return out;
+}
+// Horizontal faces of the plate (rectangle minus holes), as CCW (x,z) triangles.
+// The plate is cut into vertical strips at every opening vertex abscissa; inside a
+// strip no opening edge can start or end, so the solid part is exactly a set of
+// axis-aligned rectangles. Every opening is therefore a real gap, with no ear
+// clipping and no degenerate bridging.
+function g2PlateFaces(minx,maxx,miny,maxy, holes){
+  const xs=[minx,maxx];
+  (holes||[]).forEach(h=>h.forEach(p=>{ if(p.x>minx+1e-9&&p.x<maxx-1e-9) xs.push(p.x); }));
+  xs.sort((a,b)=>a-b);
+  const tris=[];
+  for(let i=0;i<xs.length-1;i++){
+    const xa=xs[i], xb=xs[i+1];
+    if(xb-xa<1e-9) continue;
+    const xm=(xa+xb)/2, blocked=[];
+    (holes||[]).forEach(h=>g2CrossSection(h,xm).forEach(iv=>blocked.push(iv)));
+    // solid part of this strip = plate minus the blocked intervals
+    const solids=[]; let cur=miny;
+    g2MergeIntervals(blocked).forEach(iv=>{
+      if(iv[0]>cur+1e-9) solids.push([cur,iv[0]]);
+      if(iv[1]>cur) cur=iv[1];
+    });
+    if(maxy>cur+1e-9) solids.push([cur,maxy]);
+    solids.forEach(iv=>{
+      const y0=iv[0], y1=iv[1];
+      if(y1-y0<1e-9) return;
+      tris.push([{x:xa,z:y0},{x:xb,z:y0},{x:xb,z:y1}]);
+      tris.push([{x:xa,z:y0},{x:xb,z:y1},{x:xa,z:y1}]);
+    });
+  }
+  return tris;
+}
 function exportGLTF(){
   const builder=new GltfBuilder();
   state.floors.forEach((f,idx)=>{
     const elev=floorElevation(idx);
     builder.beginGroup(gltfFloorName(idx,f), {id:f.id, floorIndex:idx});
+    // Floor slab. Both branches read the SAME canonical plan (footprint minus
+    // openings) and are consumed by the SAME solid builder, so this export and
+    // the interactive 3D mesh cannot disagree. Only the geometry assembly
+    // differs, and only because it has to: a legacy floor has no explicit
+    // footprint and keeps the proven rectangular builders byte-for-byte.
+    const plan=slabPlanForFloor(f);
+    const parts=plan.explicit?slabSolidForPlan(plan):null;
+    if(parts&&parts.length){
+      const sid=(f.id!=null&&String(f.id)!=='')?'slab_'+String(f.id):'slab-'+idx;
+      builder.beginObject('Slab', gltfExtras('slab',sid,idx));
+      builder.addSlabSolid(parts, elev, GLTF_SLAB_THICKNESS, GLTF_SLAB_COLOR);
+      builder.endObject();
+    } else {
+      // legacy: no explicit footprint -> the exact rectangular slab as before
+      const sb=floorBounds(f);
+      const rings=gltfSlabRings(sb, f.openings);
+      if(rings){
+        const sid=(f.id!=null&&String(f.id)!=='')?'slab_'+String(f.id):'slab-'+idx;
+        builder.beginObject('Slab', gltfExtras('slab',sid,idx));
+        if(rings.holes.length) builder.addSlab(rings.outer[0].x,rings.outer[2].x,rings.outer[0].z,rings.outer[2].z,
+                                               elev, GLTF_SLAB_THICKNESS, rings.holes, GLTF_SLAB_COLOR);
+        else builder.addBox(rings.fw,GLTF_SLAB_THICKNESS,rings.fd,
+                            (sb.minx+sb.maxx)/2, elev-GLTF_SLAB_THICKNESS/2, (sb.miny+sb.maxy)/2, 0, GLTF_SLAB_COLOR);
+        builder.endObject();
+      }
+    }
     // walls
     const walls=f.walls.filter(w=>dist(w.x1,w.y1,w.x2,w.y2)>=0.01);
     if(walls.length){
@@ -5671,6 +6116,80 @@ GltfBuilder.prototype.addCylinder=function(r,h, tx,ty,tz, rgb){
     o.idx.push(base,top,ntop, base+1,nbot,bot, top,bot,nbot, top,nbot,ntop);
   }
   o.vcount+=2+seg*2;
+};
+// Horizontal slab: rectangular footprint between yTop-thickness and yTop, with
+// every opening cut as a genuine hole through the thickness. Hard-edged: the top
+// face (+Y), the bottom face (-Y) and one outward-facing wall quad per boundary
+// edge of the outer rectangle and of every opening.
+GltfBuilder.prototype.addSlab=function(minx,maxx,miny,maxy, yTop, thickness, holes, rgb){
+  const o=this.cur; if(!o)throw new Error('gltf: addSlab outside beginObject');
+  const yBot=yTop-thickness;
+  const put=(x,y,z,nx,ny,nz)=>{ o.pos.push(x,y,z); o.nrm.push(nx,ny,nz); o.col.push(rgb[0],rgb[1],rgb[2],1); return o.vcount++; };
+  const tri=(a,b,c,n)=>{
+    const i0=put(a[0],a[1],a[2],n[0],n[1],n[2]), i1=put(b[0],b[1],b[2],n[0],n[1],n[2]), i2=put(c[0],c[1],c[2],n[0],n[1],n[2]);
+    o.idx.push(i0,i1,i2);
+  };
+  const outer=[{x:minx,z:miny},{x:maxx,z:miny},{x:maxx,z:maxy},{x:minx,z:maxy}];
+  const top=(p)=>[p.x,yTop,p.z], bot=(p)=>[p.x,yBot,p.z];
+  const UP=[0,1,0], DOWN=[0,-1,0];
+  // faces: CCW in (x,z) points down, so the bottom keeps it and the top is reversed
+  g2PlateFaces(minx,maxx,miny,maxy, holes||[]).forEach(t=>{
+    tri(bot(t[0]),bot(t[1]),bot(t[2]),DOWN);
+    tri(top(t[2]),top(t[1]),top(t[0]),UP);
+  });
+  // walls follow the real boundary only: the outer rectangle and every opening.
+  // Edges lying on the footprint border are skipped, the plate edge already covers them.
+  const sameBorder=(a,b)=>
+    (Math.abs(a.x-minx)<1e-9&&Math.abs(b.x-minx)<1e-9)||(Math.abs(a.x-maxx)<1e-9&&Math.abs(b.x-maxx)<1e-9)||
+    (Math.abs(a.z-miny)<1e-9&&Math.abs(b.z-miny)<1e-9)||(Math.abs(a.z-maxy)<1e-9&&Math.abs(b.z-maxy)<1e-9);
+  const wall=(loop, skipBorderEdges)=>{
+    for(let i=0;i<loop.length;i++){
+      const a=loop[i], b=loop[(i+1)%loop.length];
+      if(skipBorderEdges&&sameBorder(a,b)) continue;
+      const ex=b.x-a.x, ez=b.z-a.z, L=Math.hypot(ex,ez); if(L<1e-9) continue;
+      const nx=ez/L, nz=-ex/L;                       // outward for a CCW (x,z) loop
+      const n=[nx,0,nz];
+      const i0=put(a.x,yTop,a.z,n[0],n[1],n[2]), i1=put(b.x,yTop,b.z,n[0],n[1],n[2]),
+            i2=put(b.x,yBot,b.z,n[0],n[1],n[2]), i3=put(a.x,yBot,a.z,n[0],n[1],n[2]);
+      o.idx.push(i0,i1,i2,i0,i2,i3);
+    }
+  };
+  wall(outer, false);
+  (holes||[]).forEach(h=>{ const r=h.slice(); if(g2RingArea(r)>0) r.reverse(); wall(r, true); });
+};
+// General slab solid from fpPartSolid(): any footprint outline, any number of
+// disconnected parts, any number of holes. It consumes exactly the same
+// {tris, walls} data as the interactive 3D mesh, so the two readings of one
+// floor are the same solid by construction rather than by agreement.
+// Hard-edged, like addSlab: top face (+Y), bottom face (-Y), one outward quad
+// per boundary edge. Plan (x,y) maps to glTF (x, elevation, z=y).
+GltfBuilder.prototype.addSlabSolid=function(parts, yTop, thickness, rgb){
+  const o=this.cur; if(!o)throw new Error('gltf: addSlabSolid outside beginObject');
+  if(!parts||!parts.length) return;
+  const yBot=yTop-thickness;
+  const put=(x,y,z,nx,ny,nz)=>{ o.pos.push(x,y,z); o.nrm.push(nx,ny,nz); o.col.push(rgb[0],rgb[1],rgb[2],1); return o.vcount++; };
+  const UP=[0,1,0], DOWN=[0,-1,0];
+  parts.forEach(part=>{
+    // A CCW (x,y) triangle has a -Y normal by the right-hand rule, so the
+    // bottom face keeps the order and the top face is reversed. Identical to
+    // addSlab, so the two agree on orientation conventions too.
+    part.tris.forEach(t=>{
+      let i0=put(t[0].x,yBot,t[0].y,DOWN[0],DOWN[1],DOWN[2]);
+      let i1=put(t[1].x,yBot,t[1].y,DOWN[0],DOWN[1],DOWN[2]);
+      let i2=put(t[2].x,yBot,t[2].y,DOWN[0],DOWN[1],DOWN[2]);
+      o.idx.push(i0,i1,i2);
+      i0=put(t[2].x,yTop,t[2].y,UP[0],UP[1],UP[2]);
+      i1=put(t[1].x,yTop,t[1].y,UP[0],UP[1],UP[2]);
+      i2=put(t[0].x,yTop,t[0].y,UP[0],UP[1],UP[2]);
+      o.idx.push(i0,i1,i2);
+    });
+    part.walls.forEach(w=>{
+      const n=[w.nx,0,w.ny];
+      const i0=put(w.ax,yTop,w.ay,n[0],n[1],n[2]), i1=put(w.bx,yTop,w.by,n[0],n[1],n[2]);
+      const i2=put(w.bx,yBot,w.by,n[0],n[1],n[2]), i3=put(w.ax,yBot,w.ay,n[0],n[1],n[2]);
+      o.idx.push(i0,i1,i2,i0,i2,i3);
+    });
+  });
 };
 GltfBuilder.prototype.finish=function(){
   const nodes=[], meshes=[], objects=[], accessors=[];
