@@ -558,6 +558,7 @@ const translations = {
     "label.title": "Etiqueta",
     "label.text": "Texto",
     "label.size": "Tamaño",
+    "label.sizeHint": "Tamaño a zoom 100%; escala con el plano.",
     "label.rotation": "Rotación",
     "label.remove": "Eliminar etiqueta",
     "rack.title": "Rack / sitio",
@@ -840,6 +841,7 @@ const translations = {
     "label.title": "Label",
     "label.text": "Text",
     "label.size": "Size",
+    "label.sizeHint": "Size at 100% zoom; scales with the plan.",
     "label.rotation": "Rotation",
     "label.remove": "Remove label",
     "rack.title": "Rack / site",
@@ -1122,6 +1124,7 @@ const translations = {
     "label.title": "Etikett",
     "label.text": "Text",
     "label.size": "Storlek",
+    "label.sizeHint": "Storlek vid 100 % zoom; skalas med ritningen.",
     "label.rotation": "Rotation",
     "label.remove": "Ta bort etikett",
     "rack.title": "Rack / plats",
@@ -1577,6 +1580,55 @@ $('#zoomPct').onclick=()=>{
   draw2d();
 };
 updateZoomIndicator();
+
+// ---- document-relative text scaling (generic plan labels) -----------------
+// A generic label (Warehouse 78, Office, Storage Area) is an annotation that
+// belongs to the DRAWING, so it must behave like text inserted into a vector
+// editor: zoom out and it becomes proportionally smaller, zoom in and it becomes
+// proportionally larger. Scaling is therefore LINEAR in zoom.
+//
+// label.size keeps its historical meaning and storage: the user's base text
+// size in CSS pixels AT 100% (CAMERA_REFERENCE_ZOOM). No new state field and no
+// migration; at exactly 100% every existing label renders pixel-identically to
+// before, because the scale factor is then exactly 1.
+//
+// Deliberately NO visual clamp: no minimum or maximum rendered size, no
+// exponent, no logarithmic curve. Zoomed far out a label may become very small
+// or effectively unreadable -- that is correct document behaviour, and the zoom
+// indicator gives the user the context for it. Interaction affordances stay
+// screen-space (see pickLabel) instead of inflating the rendered text.
+const LABEL_BASE_MIN_PX = 8;    // historical read clamp, unchanged
+const LABEL_BASE_MAX_PX = 96;   // historical read clamp, unchanged
+// Historical text-outline shape, preserved: the renderer used
+// Math.max(2, size*0.16) in FIXED screen pixels. The 2 px floor is kept, but it
+// is now the floor at 100% rather than a permanent screen-space minimum.
+const LABEL_STROKE_RATIO = 0.16;
+const LABEL_STROKE_MIN_PX = 2;
+// Canonical READ of a label's stored base size, in pixels. This is the exact
+// historical read expression, just named and shared.
+function labelBaseSizePx(lb){
+  return clamp(lb.size || 16, LABEL_BASE_MIN_PX, LABEL_BASE_MAX_PX);
+}
+// The size the 2D editor draws, and what pickLabel hit-tests against. Linear in
+// zoom relative to 100%, and deliberately unclamped.
+function labelDisplayPx(lb){
+  return labelBaseSizePx(lb) * camera.zoom / CAMERA_REFERENCE_ZOOM;
+}
+// The width of the text outline. The historical expression is evaluated against
+// the BASE size, i.e. what the stroke would be at 100%, and that reference value
+// is then scaled linearly. So at 100% the outline is numerically identical to
+// what it always was, and below/above 100% it shrinks/grows with the text
+// instead of staying a heavy fixed 2 px -- which previously turned a correct
+// 3 px glyph into a blob at extreme zoom-out.
+//
+// Only the VISIBLE artwork scales here. Editor affordances deliberately stay in
+// screen space: the hit-test grab padding, the selection rect's 4 px padding and
+// its 1 px selection line, and the dashed pattern are all unchanged.
+function labelStrokePx(lb){
+  const referenceStrokePx =
+    Math.max(LABEL_STROKE_MIN_PX, labelBaseSizePx(lb) * LABEL_STROKE_RATIO);
+  return referenceStrokePx * camera.zoom / CAMERA_REFERENCE_ZOOM;
+}
 let mouse = {x:0,y:0, wx:0, wy:0, down:false, button:0};
 let draft = null;     // wall drafting {x1,y1,x2,y2}
 let dragging = null;  // {type, id, ox,oy, ...}
@@ -1995,7 +2047,10 @@ function draw2d(){
   (f.labels||[]).forEach(lb=>{
     const p=W2S(lb.x,lb.y);
     const sel=selection&&selection.type==='label'&&selection.id===lb.id;
-    const size=clamp(lb.size||16,8,96);
+    // base size at 100%, scaled LINEARLY with zoom, no visual clamp.
+    // The selection rect below derives from this same `size`, so the decoration
+    // always surrounds the text that is actually rendered.
+    const size=labelDisplayPx(lb);
     ctx.save();
     ctx.translate(p.x,p.y);
     ctx.rotate((lb.rotation||0)*Math.PI/180);
@@ -2003,10 +2058,13 @@ function draw2d(){
     ctx.textBaseline='middle';
     ctx.fillStyle=sel?'#7aa2ff':'#e8eef7';
     ctx.strokeStyle='rgba(6,10,16,.82)';
-    ctx.lineWidth=Math.max(2,size*0.16);
+    // outline is document-relative too: at 100% it is exactly the historical
+    // Math.max(2, size*0.16), and it scales linearly with the text
+    ctx.lineWidth=labelStrokePx(lb);
     ctx.strokeText(lb.text||'Label',0,0);
     ctx.fillText(lb.text||'Label',0,0);
     if(sel){
+      // selection decoration stays screen-space: 1 px line, 4 px pad, fixed dash
       const m=ctx.measureText(lb.text||'Label');
       const pad=4, h=size*1.25;
       ctx.strokeStyle='#7aa2ff'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
@@ -2107,7 +2165,13 @@ function pickLabel(wx,wy){
   const f=floor(); const labels=f.labels||[];
   const sp=W2S(wx,wy);
   for(let i=labels.length-1;i>=0;i--){
-    const lb=labels[i], p=W2S(lb.x,lb.y), size=clamp(lb.size||16,8,96);
+    // Hit test the ACTUAL linearly-scaled text bounds, then add the pre-existing
+    // fixed screen-space editor padding (6 px on every side, plus the 24 px
+    // minimum width). So a label rendered only a few px tall at extreme zoom-out
+    // still has a comfortable screen-space grab area -- the affordance stays
+    // usable without inflating the rendered text. Same principle as metric wall
+    // thickness: the document scales physically, interaction stays screen-usable.
+    const lb=labels[i], p=W2S(lb.x,lb.y), size=labelDisplayPx(lb);
     ctx.save(); ctx.font=`600 ${size}px sans-serif`;
     const w=Math.max(24,ctx.measureText(lb.text||'Label').width), h=size*1.25;
     ctx.restore();
@@ -4484,6 +4548,7 @@ function renderProp(){
       <div class="field"><label>${t('label.text')}</label><input id="pLabelText" type="text" value="${escapeHtml(lb.text||'Label')}"></div>
       <div class="field"><label>${t('label.size')}</label>
         <div class="slider"><input id="pLabelSize" type="range" min="8" max="72" step="1" value="${clamp(lb.size||18,8,72)}"><span class="val" id="pLabelSizeV">${clamp(lb.size||18,8,72)} px</span></div></div>
+      <div class="hint">${t('label.sizeHint')}</div>
       <div class="field"><label>${t('label.rotation')}</label>
         <div class="slider"><input id="pLabelRot" type="range" min="-180" max="180" step="1" value="${lb.rotation||0}"><span class="val" id="pLabelRotV">${lb.rotation||0}°</span></div></div>
       <div class="row2"><div class="field"><label>X (m)</label><input id="pX" type="number" step="0.1" value="${lb.x.toFixed(2)}"></div>
