@@ -5544,21 +5544,39 @@ function GltfBuilder(){
   this.pos=[]; this.idx=[]; this.col=[]; this.nrm=[]; this.vcount=0; this.names=[];
 }
 GltfBuilder.prototype.addBox=function(sx,sy,sz, tx,ty,tz, ry, rgb, name){
-  // 8 corners
+  // 8 corners of the box; rotated around Y and translated to world space
   const hx=sx/2,hy=sy/2,hz=sz/2;
   const corners=[[-hx,-hy,-hz],[hx,-hy,-hz],[hx,hy,-hz],[-hx,hy,-hz],
                  [-hx,-hy,hz],[hx,-hy,hz],[hx,hy,hz],[-hx,hy,hz]];
   const ca=Math.cos(ry),sa=Math.sin(ry);
-  const base=this.vcount;
-  corners.forEach(c=>{
-    const x=c[0]*ca - c[2]*sa, z=c[0]*sa + c[2]*ca;
-    this.pos.push(x+tx, c[1]+ty, z+tz);
-    this.nrm.push(0,1,0);
-    this.col.push(rgb[0],rgb[1],rgb[2],1);
+  // Hard-edged box: 6 faces x 4 vertices = 24 vertices, each face carrying its own
+  // constant outward normal (corners cannot be shared, they would need 3 normals).
+  // Winding is outward (CCW seen from outside), so geometric normal == face normal
+  // and a viewer with backface culling shows the exterior of the box.
+  const faces=[
+    {n:[0,0,-1], t:[[0,2,1],[0,3,2]]},  // -Z
+    {n:[0,0,1],  t:[[4,5,6],[4,6,7]]},  // +Z
+    {n:[0,-1,0], t:[[0,5,4],[0,1,5]]},  // -Y
+    {n:[0,1,0],  t:[[2,7,6],[2,3,7]]},  // +Y
+    {n:[1,0,0],  t:[[1,6,5],[1,2,6]]},  // +X
+    {n:[-1,0,0], t:[[0,7,3],[0,4,7]]},  // -X
+  ];
+  faces.forEach(f=>{
+    const map={};                       // corner index -> vertex index in this face
+    f.t.forEach(tr=>tr.forEach(ci=>{
+      if(map[ci]!==undefined)return;
+      map[ci]=this.vcount++;
+      const c=corners[ci];
+      const x=c[0]*ca - c[2]*sa, z=c[0]*sa + c[2]*ca;
+      this.pos.push(x+tx, c[1]+ty, z+tz);
+      // face normal rotated with the box, renormalized against float error
+      let nx=f.n[0]*ca - f.n[2]*sa, ny=f.n[1], nz=f.n[0]*sa + f.n[2]*ca;
+      const nl=Math.sqrt(nx*nx+ny*ny+nz*nz);
+      this.nrm.push(nx/nl, ny/nl, nz/nl);
+      this.col.push(rgb[0],rgb[1],rgb[2],1);
+    }));
+    f.t.forEach(tr=>this.idx.push(map[tr[0]],map[tr[1]],map[tr[2]]));
   });
-  const faces=[[0,1,2,0,2,3],[4,6,5,4,7,6],[0,4,5,0,5,1],[2,6,7,2,7,3],[1,5,6,1,6,2],[0,3,7,0,7,4]];
-  faces.forEach(f=>f.forEach(v=>this.idx.push(base+v)));
-  this.vcount+=8;
 };
 GltfBuilder.prototype.addCylinder=function(r,h, tx,ty,tz, rgb, name){
   const seg=32, base=this.vcount;
