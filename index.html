@@ -123,6 +123,12 @@
     padding:5px 11px;font-family:var(--mono);font-size:11px;color:var(--muted);
     backdrop-filter:blur(6px)}
   .chip b{color:var(--accent);font-weight:600}
+  /* zoom indicator: screen-anchored overlay just below the north compass
+     (compass centre is 34px from the right edge, y=46, r=20). Clickable. */
+  #zoomPct{position:absolute;right:34px;top:74px;transform:translateX(50%);
+    z-index:6;appearance:none;-webkit-appearance:none;padding:4px 10px;
+    font-size:11px;line-height:1.2}
+  #zoomPct:hover{color:var(--accent);border-color:var(--accent)}
   #coords{position:absolute;right:12px;bottom:12px;font-family:var(--mono);font-size:11px;
     color:var(--faint);background:rgba(13,17,23,.7);padding:4px 9px;border-radius:6px;
     border:1px solid var(--line);pointer-events:none;z-index:5}
@@ -272,6 +278,9 @@
 scroll · zoom
 höger·drag · panorera</div>
       <div id="coords">—</div>
+      <button id="zoomPct" class="chip" title="Restablecer vista al 100%"
+        data-i18n-title="zoom.reset" aria-label="Restablecer vista al 100%"
+        data-i18n-aria-label="zoom.reset">100%</button>
       <div id="legend">
         <div class="lt" data-i18n="coverage.signal">Signal (RSSI)</div>
         <div class="bar" id="legendBar"></div>
@@ -387,6 +396,7 @@ const translations = {
     "app.title": "RF Planner — Simulador de cobertura WiFi",
     "app.tagline": "cobertura wifi",
     "language.label": "Idioma",
+    "zoom.reset": "Restablecer vista al 100%",
     "view.plan": "Plano 2D",
     "view.scene": "Vista 3D",
     "toolbar.undo": "Deshacer (Ctrl/Cmd+Z)",
@@ -668,6 +678,7 @@ const translations = {
     "app.title": "RF Planner — WiFi coverage simulator",
     "app.tagline": "wifi coverage",
     "language.label": "Language",
+    "zoom.reset": "Reset view to 100%",
     "view.plan": "2D floor plan",
     "view.scene": "3D view",
     "toolbar.undo": "Undo (Ctrl/Cmd+Z)",
@@ -949,6 +960,7 @@ const translations = {
     "app.title": "RF Planner — WiFi-täckningssimulator",
     "app.tagline": "wifi-täckning",
     "language.label": "Språk",
+    "zoom.reset": "Återställ vy till 100 %",
     "view.plan": "Planritning 2D",
     "view.scene": "Vy 3D",
     "toolbar.undo": "Ångra (Ctrl/Cmd+Z)",
@@ -1532,7 +1544,39 @@ const ctx = cv.getContext('2d');
 let dpr = Math.min(window.devicePixelRatio||1, 2);
 
 // view transform: world(meters) -> screen(px).  px = (world*ppm)*zoom + pan
-const camera = { x:0, y:0, zoom:34 }; // px per meter at zoom baseline; we just use zoom directly as ppm
+// camera.x / camera.y are NOT a pixel offset: W2S is
+//   (w - camera.xy) * zoom + canvasCentre
+// so camera.xy IS the world point under the viewport centre, at any zoom. That
+// is why the wheel handler can nudge camera.xy to keep the point under the
+// cursor fixed, and why Reset View below simply zeroes it.
+// CAMERA_REFERENCE_ZOOM is the editor's 100% zoom (px per metre). It is the
+// single source of truth for both the default camera zoom and the zoom
+// indicator, so there is only ever one 34.
+const CAMERA_REFERENCE_ZOOM = 34;
+const camera = { x:0, y:0, zoom:CAMERA_REFERENCE_ZOOM }; // zoom doubles as ppm
+// Current zoom as an integer percentage of the reference zoom.
+// Purely an editor/view readout: never persisted, never in project state or
+// undo history.
+function zoomPercent(){ return Math.round(camera.zoom/CAMERA_REFERENCE_ZOOM*100); }
+// Single source of truth for the indicator: always derived from camera.zoom, so
+// it can never drift from the real zoom and no duplicate state is kept.
+function updateZoomIndicator(){
+  const el=$('#zoomPct'); if(!el) return;
+  const s=zoomPercent()+'%';
+  if(el.textContent!==s) el.textContent=s;
+}
+// Reset view: restore the canonical default 2D camera (100% zoom, world centre
+// at the origin). This is Reset View using the app's own default camera state --
+// it deliberately does NOT fit the project or compute any bounds. Pan, active
+// floor, selection, background plan, project state, undo history and RF are all
+// left untouched; only the camera changes.
+$('#zoomPct').onclick=()=>{
+  camera.x=0; camera.y=0;
+  camera.zoom=CAMERA_REFERENCE_ZOOM;
+  updateZoomIndicator();
+  draw2d();
+};
+updateZoomIndicator();
 let mouse = {x:0,y:0, wx:0, wy:0, down:false, button:0};
 let draft = null;     // wall drafting {x1,y1,x2,y2}
 let dragging = null;  // {type, id, ox,oy, ...}
@@ -2697,6 +2741,7 @@ cv.addEventListener('wheel',e=>{
   camera.zoom=clamp(camera.zoom*k, 6, 220);
   const after=S2W(e.offsetX,e.offsetY);
   camera.x += before.x-after.x; camera.y += before.y-after.y;
+  updateZoomIndicator();
   draw2d();
 },{passive:false});
 function insideBg(wx,wy){
@@ -5038,6 +5083,7 @@ function setView(v){
   $('#view3d').style.display   = v==='3d'?'block':'none';
   $('#nav3dhint').style.display= v==='3d'?'block':'none';
   $('#coords').style.display   = v==='2d'?'block':'none';
+  $('#zoomPct').style.display  = v==='2d'?'block':'none';
   if(v==='3d'){ init3d(); resize3d(); build3d(); }
   else { draw2d(); }
 }
