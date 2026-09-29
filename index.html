@@ -178,11 +178,22 @@
   #analyzePanel .at,#autoDlg .at{font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--sel)}
   #analyzePanel .arow,#autoDlg .arow{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted)}
   #analyzePanel .arow label,#autoDlg .arow label{flex:1}
+  /* The Ceiling dialog is a floating copy of the PROPERTY PANEL, so it reuses
+     .field / .row2 / .tbtn and only needs the container chrome of its own.
+     Deliberately NOT a member of the .arow/.av/.abtns row system above: that is
+     the auto-analysis dialog's layout, and reusing it is what left the ceiling
+     inputs rendering as native white browser controls. */
+  #ceilingDlg{position:absolute;left:50%;top:60px;transform:translateX(-50%);z-index:32;display:none;
+    flex-direction:column;width:266px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:var(--r);padding:13px 15px;box-shadow:0 14px 44px rgba(0,0,0,.55)}
+  #ceilingDlg .cdlg-t{font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--sel);margin-bottom:11px}
+  #ceilingDlg .cdlg-btns{display:flex;gap:8px;margin-top:4px}
+  #ceilingDlg .cdlg-btns .tbtn{flex:1;justify-content:center}
   #analyzePanel input[type=range],#autoDlg input[type=range]{flex:1.6;accent-color:var(--sel)}
   #analyzePanel .av,#autoDlg .av{font-family:var(--mono);font-size:11px;color:var(--sel);width:50px;text-align:right}
   #analyzePanel .acount,#autoDlg .acount{font-size:12px;color:var(--ink);padding:2px 0}
   #analyzePanel .acount b,#autoDlg .acount b{color:var(--sel)}
-  #analyzePanel .abtns,#autoDlg .abtns{display:flex;gap:8px;margin-top:2px}
   #analyzePanel button,#autoDlg button{flex:1;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:8px;color:var(--ink);font-size:12px}
   #analyzePanel button.au,#autoDlg button.au{background:var(--sel);color:#04122e;border-color:var(--sel);font-weight:600}
   #analyzePanel button.ax:hover,#autoDlg button.ax:hover{border-color:var(--danger);color:var(--danger)}
@@ -292,6 +303,7 @@ höger·drag · panorera</div>
       <div id="calibBar"></div>
       <div id="originBar"></div>
       <div id="analyzePanel"></div>
+      <div id="ceilingDlg"></div>
     </div>
 
     <!-- RIGHT -->
@@ -503,6 +515,32 @@ const translations = {
     "section.summary": "Resumen",
     "tool.select": "Seleccionar",
     "tool.wall": "Pared",
+    "tool.ceiling": "Techo",
+    "ceiling.title": "Propiedades del techo",
+    "ceiling.height": "Altura (m)",
+    "ceiling.thickness": "Espesor (m)",
+    "ceiling.volume": "Volumen (m)",
+    "ceiling.material": "Material",
+    "ceiling.extraLoss": "Atenuación adicional (dB)",
+    "ceiling.effectiveLoss": "Pérdida efectiva",
+    "ceiling.delete": "Eliminar techo",
+    "ceiling.selectWalls": "Selecciona muros para el techo",
+    "ceiling.selected": "Muros seleccionados",
+    "ceiling.virtualEdges": "Cierres virtuales",
+    "ceiling.confirmTitle": "Nuevo techo",
+    "ceiling.create": "Crear",
+    "ceiling.cancel": "Cancelar",
+    "ceiling.created": "Techo creado",
+    "ceiling.hint": "Haz clic en muros para alternarlos. Intro crea · Esc cancela",
+    "ceiling.err.tooFewWalls": "Selecciona al menos 2 muros.",
+    "ceiling.err.tooManyChains": "La selección es demasiado compleja para un cierre automático. Selecciona una región más pequeña.",
+    "ceiling.err.tooFewVertices": "Los muros seleccionados no forman una región.",
+    "ceiling.err.branchNode": "Un punto donde se encuentran 3 o más muros seleccionados no puede ser un techo simple. Selecciona otro conjunto.",
+    "ceiling.err.oddFreeEnds": "No se puede determinar un cierre único. Selecciona más muros.",
+    "ceiling.err.noValidClosure": "No se puede determinar un cierre único. Selecciona más muros.",
+    "ceiling.err.ambiguous": "No se puede determinar un cierre único. Selecciona más muros.",
+    "ceiling.err.degenerate": "Los muros seleccionados son degenerados.",
+    "ceiling.err.tooManyFreeEnds": "Demasiados extremos libres para un cierre automático. Selecciona una región más pequeña.",
     "tool.pillar": "Pilar",
     "tool.ap": "Punto de acceso",
     "tool.label": "Etiqueta",
@@ -801,6 +839,32 @@ const translations = {
     "section.summary": "Summary",
     "tool.select": "Select",
     "tool.wall": "Wall",
+    "tool.ceiling": "Ceiling",
+    "ceiling.title": "Ceiling properties",
+    "ceiling.height": "Height (m)",
+    "ceiling.thickness": "Thickness (m)",
+    "ceiling.volume": "Volume (m)",
+    "ceiling.material": "Material",
+    "ceiling.extraLoss": "Additional attenuation (dB)",
+    "ceiling.effectiveLoss": "Effective loss",
+    "ceiling.delete": "Delete ceiling",
+    "ceiling.selectWalls": "Select walls for the ceiling",
+    "ceiling.selected": "Selected walls",
+    "ceiling.virtualEdges": "Virtual closing edges",
+    "ceiling.confirmTitle": "New ceiling",
+    "ceiling.create": "Create",
+    "ceiling.cancel": "Cancel",
+    "ceiling.created": "Ceiling created",
+    "ceiling.hint": "Click walls to toggle them. Enter creates · Esc cancels",
+    "ceiling.err.tooFewWalls": "Select at least 2 walls.",
+    "ceiling.err.tooManyChains": "The selection is too complex for an automatic closure. Select a smaller region.",
+    "ceiling.err.tooFewVertices": "The selected walls do not form a region.",
+    "ceiling.err.branchNode": "A point where 3 or more selected walls meet cannot be a simple ceiling. Select a different set.",
+    "ceiling.err.oddFreeEnds": "A unique closure cannot be determined. Select more walls.",
+    "ceiling.err.noValidClosure": "A unique closure cannot be determined. Select more walls.",
+    "ceiling.err.ambiguous": "A unique closure cannot be determined. Select more walls.",
+    "ceiling.err.degenerate": "The selected walls are degenerate.",
+    "ceiling.err.tooManyFreeEnds": "Too many free ends for an automatic closure. Select a smaller region.",
     "tool.pillar": "Pillar",
     "tool.ap": "Access point",
     "tool.label": "Label",
@@ -1099,6 +1163,32 @@ const translations = {
     "section.summary": "Sammanställning",
     "tool.select": "Markera",
     "tool.wall": "Vägg",
+    "tool.ceiling": "Tak",
+    "ceiling.title": "Takets egenskaper",
+    "ceiling.height": "Höjd (m)",
+    "ceiling.thickness": "Tjocklek (m)",
+    "ceiling.volume": "Volym (m)",
+    "ceiling.material": "Material",
+    "ceiling.extraLoss": "Extra dämpning (dB)",
+    "ceiling.effectiveLoss": "Effektiv förlust",
+    "ceiling.delete": "Ta bort tak",
+    "ceiling.selectWalls": "Välj väggar för taket",
+    "ceiling.selected": "Valda väggar",
+    "ceiling.virtualEdges": "Virtuella stängande kanter",
+    "ceiling.confirmTitle": "Nytt tak",
+    "ceiling.create": "Skapa",
+    "ceiling.cancel": "Avbryt",
+    "ceiling.created": "Tak skapat",
+    "ceiling.hint": "Klicka väggar för att växla. Enter skapar · Esc avbryter",
+    "ceiling.err.tooFewWalls": "Välj minst 2 väggar.",
+    "ceiling.err.tooManyChains": "Urvalet är för komplext för automatisk stängning. Välj en mindre region.",
+    "ceiling.err.tooFewVertices": "De valda väggarna bildar ingen region.",
+    "ceiling.err.branchNode": "En punkt där 3 eller fler valda väggar möts kan inte bli ett enkelt tak. Välj en annan uppsättning.",
+    "ceiling.err.oddFreeEnds": "En unik stängning kan inte bestämmas. Välj fler väggar.",
+    "ceiling.err.noValidClosure": "En unik stängning kan inte bestämmas. Välj fler väggar.",
+    "ceiling.err.ambiguous": "En unik stängning kan inte bestämmas. Välj fler väggar.",
+    "ceiling.err.degenerate": "De valda väggarna är degenererade.",
+    "ceiling.err.tooManyFreeEnds": "För många fria ändpunkter för automatisk stängning. Välj en mindre region.",
     "tool.pillar": "Pelare",
     "tool.ap": "Accesspunkt",
     "tool.label": "Etikett",
@@ -1597,6 +1687,7 @@ let footprintDiagnostics=null;
 const TOOLS = [
   ['select','tool.select','M','<path d="M5 3l6 14 2-5 5-2z"/>'],
   ['wall','tool.wall','V','<path d="M4 7l16 0M4 12l16 0M4 17l16 0" opacity=".3"/><path d="M3 5v14M21 5v14M3 5h18M3 19h18"/>'],
+  ['ceiling','tool.ceiling','H','<path d="M3 7h18M3 12h18M3 17h18" opacity=".28"/><path d="M3 5h18v14H3z"/><path d="M6 9h12" opacity=".5"/>'],
   ['pillar','tool.pillar','P','<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" opacity=".55"/>'],
   ['ap','tool.ap','A','<circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M9 12a4 4 0 0 1 6 0M6.7 9.5a8 8 0 0 1 10.6 0"/>'],
   ['label','tool.label','T','<path d="M5 6h14M12 6v12M9 18h6"/>'],
@@ -1855,6 +1946,45 @@ function draw2d(){
     ctx.fillText(t('tool.zone'), o.x+5, o.y+13);
   });
   if(zoneDraft) drawZoneRect(zoneDraft.x0,zoneDraft.y0,zoneDraft.x1,zoneDraft.y1,true);
+
+  // Ceiling Areas (created): subtle, so they never hide the blueprint or the
+  // heatmap. Physical source edges are solid, inferred virtual edges are dashed,
+  // so the provenance of every boundary edge stays readable.
+  const drawCeilingPoly=(c,sel)=>{
+    const plan=ceilPlan(c); if(!plan) return;
+    const ve=c.virtualEdges||[];
+    ctx.save();
+    plan.parts.forEach(part=>{
+      const ring=[...part.outer];
+      ctx.beginPath();
+      ring.forEach((pt,i)=>{ const p=W2S(pt.x,pt.y); if(i)ctx.lineTo(p.x,p.y); else ctx.moveTo(p.x,p.y); });
+      ctx.closePath();
+      ctx.fillStyle=sel?'rgba(122,162,255,.13)':'rgba(150,190,255,.07)';
+      ctx.fill();
+      // physical edges: solid
+      ctx.beginPath();
+      ring.forEach((pt,i)=>{ const p=W2S(pt.x,pt.y); if(i)ctx.lineTo(p.x,p.y); else ctx.moveTo(p.x,p.y); });
+      ctx.closePath();
+      ctx.strokeStyle=sel?'#7aa2ff':'rgba(150,190,255,.55)';
+      ctx.lineWidth=sel?2:1.2; ctx.setLineDash([]);
+      ctx.stroke();
+    });
+    // virtual edges: clearly differentiated, drawn dashed
+    if(ve.length){
+      ctx.beginPath();
+      ve.forEach(e=>{ const a=W2S(e.a.x,e.a.y), b=W2S(e.b.x,e.b.y);
+        ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); });
+      ctx.strokeStyle=sel?'#f4a83a':'rgba(244,168,58,.75)';
+      ctx.lineWidth=sel?2:1.2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if(sel){
+      const p0=W2S(plan.parts[0].outer[0].x, plan.parts[0].outer[0].y);
+      ctx.fillStyle='#7aa2ff'; ctx.font='600 11px sans-serif';
+      ctx.fillText(t('tool.ceiling'), p0.x+6, p0.y-6);
+    }
+    ctx.restore();
+  };
+  ceilAreas(f).forEach(c=>drawCeilingPoly(c, selection&&selection.type==='ceiling'&&selection.id===c.id));
 
   // slab openings / open spaces
   const drawOpeningPoly=(pts,sel,name)=>{
@@ -2236,6 +2366,63 @@ function draw2d(){
     ctx.fillStyle='rgba(122,162,255,.12)'; ctx.fillRect(x,y,wd,hh);
     ctx.strokeStyle='#7aa2ff'; ctx.lineWidth=1; ctx.setLineDash([5,3]);
     ctx.strokeRect(x,y,wd,hh); ctx.setLineDash([]); ctx.restore();
+  }
+
+  // ---- Ceiling tool overlay, drawn LAST on purpose -------------------
+  // It has to land after the walls, the background plan, the heatmap and every
+  // other overlay, otherwise a selected wall can be painted over and the user
+  // gets no feedback at all. Transient editor state only: not serialised, not
+  // exported, not RF, and not undoable until creation is confirmed.
+  if(tool==='ceiling'||ceilingSel.length){
+    // widths are in SCREEN pixels, so the highlight keeps a constant visual
+    // weight at every zoom level instead of shrinking with the document
+    const outerPx=Math.max(7, Math.min(18, 5*camera.zoom));
+    ceilingSel.forEach(w=>{
+      const a=W2S(w.x1,w.y1), b=W2S(w.x2,w.y2);
+      if(!isFinite(a.x)||!isFinite(b.x)) return;
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      // a dark halo first, so the bright line reads on any background
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle='rgba(10,16,26,.85)'; ctx.lineWidth=outerPx+3;
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle='#7aa2ff'; ctx.lineWidth=outerPx;
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle='#eaf1ff'; ctx.lineWidth=Math.max(1.5, outerPx*0.34);
+      ctx.stroke();
+      ctx.restore();
+    });
+    const d=ceilingDraft;
+    if(d&&d.ok){
+      const ring=d.ring;
+      ctx.save();
+      ctx.beginPath();
+      ring.forEach((pt,i)=>{ const q=W2S(pt.x,pt.y); if(i)ctx.lineTo(q.x,q.y); else ctx.moveTo(q.x,q.y); });
+      ctx.closePath();
+      ctx.fillStyle='rgba(122,162,255,.12)'; ctx.fill();
+      ctx.restore();
+      // inferred virtual edges: clearly differentiated, dashed amber
+      ctx.save();
+      ctx.beginPath();
+      d.virtualEdges.forEach(e=>{ const a=W2S(e.a.x,e.a.y), b=W2S(e.b.x,e.b.y);
+        ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); });
+      ctx.strokeStyle='rgba(10,16,26,.8)'; ctx.lineWidth=4; ctx.setLineDash([7,5]); ctx.stroke();
+      ctx.strokeStyle='#f4a83a'; ctx.lineWidth=2.2; ctx.setLineDash([7,5]); ctx.stroke();
+      ctx.restore();
+    } else if(d&&!d.ok){
+      // an honest refusal is stated next to the selection, never silently ignored
+      const a=W2S(ceilingSel[0].x1,ceilingSel[0].y1);
+      ctx.save();
+      ctx.font='600 12px sans-serif';
+      const msg=t('ceiling.err.'+d.reason);
+      const wpx=ctx.measureText(msg).width;
+      ctx.fillStyle='rgba(10,16,26,.9)';
+      ctx.fillRect(a.x+8,a.y-26,wpx+16,22);
+      ctx.fillStyle='#f4a83a'; ctx.fillText(msg, a.x+16, a.y-10);
+      ctx.restore();
+    }
   }
 }
 
@@ -2729,10 +2916,15 @@ cv.addEventListener('pointerdown',e=>{
     if(op){ select('opening',op.id); commit(); dragging={type:'opening',id:op.id,startWx:w.x,startWy:w.y,start:op.points.map(p=>({x:p.x,y:p.y}))}; return; }
     const f=floor();
     if(f.bg&&f.bg._img&&insideBg(w.x,w.y)){ select('bg'); if(!f.bg.locked){ commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; } return; }
+    // Ceiling Areas are selectable with the normal Select tool. No drag in this
+    // stage: full vertex editing is explicitly out of scope, delete+recreate is.
+    const cz=pickCeiling(w.x,w.y);
+    if(cz){ select('ceiling',cz.id); renderProp(); draw2d(); return; }
     const z=pickZone(w.x,w.y);
     if(z){ select('zone',z.id); commit(); dragging={type:'zone',id:z.id,ox:w.x-Math.min(z.x1,z.x2),oy:w.y-Math.min(z.y1,z.y2)}; return; }
     multiWalls=[]; selection=null; boxing={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; renderProp(); draw2d();
   }
+  else if(tool==='ceiling'){ ceilingToggleWall(pickCeilingWall(w.x,w.y)); }
   else if(tool==='zone'){ zoneDraft={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; }
   else if(tool==='ap'){
     const f=floor();
@@ -3024,9 +3216,10 @@ window.addEventListener('keydown',e=>{
     const dy=e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
     if(selection && nudgeSelection(dx,dy)){ e.preventDefault(); beginNudgeGesture(); return; }
   }
-  if(e.key==='Escape'){ if(originPlaceMode){cancelOriginPlace();return;} if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; openingDraft=null; measureLine=null; select(null); draw2d(); }
+  if(e.key==='Escape'){ if(ceilingDlgState||ceilingSel.length){ ceilingCancel(); return; } if(originPlaceMode){cancelOriginPlace();return;} if(calibState){cancelCalib();return;} if(analyzeState){cancelAnalyze();return;} draft=null; cableDraft=null; openingDraft=null; measureLine=null; select(null); draw2d(); }
   if(e.key==='Enter'&&tool==='opening'&&openingDraft){ e.preventDefault(); finishOpeningDraft(); draw2d(); return; }
-  const map={m:'select',v:'wall',p:'pillar',a:'ap',t:'label',i:'rack',c:'cable',o:'opening',r:'bg',e:'erase',z:'zone',l:'measure'};
+  if(e.key==='Enter'&&tool==='ceiling'&&ceilingDraft&&ceilingDraft.ok&&!ceilingDlgState){ e.preventDefault(); ceilingStartConfirm(); return; }
+  const map={m:'select',v:'wall',h:'ceiling',p:'pillar',a:'ap',t:'label',i:'rack',c:'cable',o:'opening',r:'bg',e:'erase',z:'zone',l:'measure'};
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
 });
@@ -4764,6 +4957,10 @@ const GLTF_BG_PLAN_LIFT=0.02;   // matches the interactive 3D plane offset (grou
 // just enough to be strictly above it and never z-fight. 5 mm is invisible on
 // any object this size and far above depth-buffer precision at building scale.
 const GLTF_RF_TOP_LIFT=0.005;
+// Ceiling tops keep the solid's own top face, so the textured top is lifted to
+// clear it. ONE constant, read by BOTH consumers (build3d and exportGLTF), so
+// the interactive view and the exported file can never disagree.
+const CEIL_TOP_LIFT=0.004;
 function bgDataMime(u){
   const m=/^data:([^;,]+)[;,]/.exec(String(u||''));
   return m?m[1]:undefined;
@@ -4858,6 +5055,627 @@ function boxTopPlanUVs(b, x, y, width, depth, ry){
   });
 }
 // ============================================================
+//  CEILING AREAS  -  transient tool state and persisted model
+// ============================================================
+// Tool state is TRANSIENT editor state: never serialised, never exported, never
+// visible to RF, and not undoable until the creation is confirmed. Only the
+// confirmed result reaches the project.
+let ceilingSel=[];        // canonical wall objects chosen for the pending ceiling
+let ceilingDraft=null;    // {ring, virtualEdges, area} recomputed on every change
+let ceilingDlgState=null; // pending creation properties
+
+// --- persisted model -----------------------------------------------------
+// floor.ceilingAreas = [{ id, footprint:{parts:[{outer, holes}]},
+//                         virtualEdges:[{a,b}], height, thickness,
+//                         materialId, extraLossDb }]
+// height is the UNDERSIDE above the owner floor's base elevation, so a ceiling
+// with height 3.00 and thickness 0.10 occupies elev+3.00 .. elev+3.10.
+// No migration entry is added on purpose: an absent collection simply means
+// "no ceilings", so legacy projects are untouched.
+function ceilAreas(f){ return (f&&f.ceilingAreas)||[]; }
+function ceilPlan(c){
+  const fp=c&&c.footprint;
+  const list=Array.isArray(fp)?fp:(fp&&Array.isArray(fp.parts)?fp.parts:null);
+  if(!list||!list.length) return null;
+  const parts=[];
+  list.forEach(p=>{
+    if(!p) return;
+    const outer=cleanFootprintRing(p.outer||p.points);
+    if(!outer) return;
+    const holes=[];
+    (Array.isArray(p.holes)?p.holes:[]).forEach(h=>{ const c2=cleanFootprintRing(h); if(c2) holes.push(c2); });
+    parts.push({outer, holes});
+  });
+  return parts.length?{parts}:null;
+}
+// Effective loss per crossing: the material's per-crossing value plus the area's
+// own extra. Thickness is NOT multiplied in, matching how walls and RF Objects
+// already treat a crossing.
+function ceilEffectiveLoss(c){
+  const m=matById(c&&c.materialId);
+  const extra=Number(c&&c.extraLossDb);
+  return (m.db||0) + (Number.isFinite(extra)?extra:0);
+}
+// CANONICAL CEILING VERTICAL INTERVAL - the single source of truth for where a
+// Ceiling physically is, in metres relative to its OWNER FLOOR BASE.
+//
+//   ceiling.height     is the TOP / reference elevation of the Ceiling
+//   ceiling.thickness  hangs DOWNWARD from that plane
+//
+//   volume = [ height - thickness , height ]
+//
+// So a Ceiling on a 3.00 m floor with height 3.00 and thickness 0.10 occupies
+// 2.90 .. 3.00 m and its top is exactly flush with the nominal story height. It
+// does NOT pile a cap on top and make the building 3.10 m tall.
+//
+// The persisted height stays the canonical 3.00: the subtraction happens ONLY
+// here, when a consumer needs the lower face. Nothing ever stores height-thickness.
+//
+// Boundary walls are deliberately NOT shortened to match. A full-height wall
+// remains exactly the owner floor height, so a Ceiling overlaps the upper
+// thickness portion of its own boundary walls. That is intentional: wall
+// semantics must not depend on whether a Ceiling happens to exist.
+//
+// This is also the hook a future RF consumer should use for "is this segment
+// inside the Ceiling volume", so there is exactly one interval to read.
+function ceilingInterval(c){
+  const top=Math.max(0.01, Number(c&&c.height)||0.1);
+  const thickness=Math.max(0.001, Number(c&&c.thickness)||CEIL_DEFAULT_THICKNESS);
+  return {top:top, bottom:top-thickness, thickness:thickness};
+}
+// Pick the wall the user clicked, preferring a wall physically present on the
+// ACTIVE floor, which includes explicit-height walls projected down from lower
+// floors. The returned object is always the CANONICAL wall, never a display
+// copy, so selection can never persist a projection.
+function pickCeilingWall(wx,wy){
+  // Two passes. An ALREADY SELECTED wall always wins the hit test, so clicking a
+  // wall that is on the ceiling but overlapped by an unselected neighbour still
+  // toggles it OFF instead of adding the neighbour. Without this, deselection
+  // silently failed whenever two walls were stacked under the pointer.
+  const cand=[];
+  wallsOnFloor(state.activeFloor).forEach(e=>{
+    const w=e&&e.o; if(!w) return;
+    const tol=wallThickness(w)/2 + WALL_GRAB_PADDING_PX/camera.zoom;
+    const d=distToSeg(wx,wy,w.x1,w.y1,w.x2,w.y2);
+    if(d<=tol) cand.push({w, d, sel:ceilingHas(w)});
+  });
+  if(!cand.length) return null;
+  const picked=cand.filter(c=>c.sel);
+  const pool=picked.length? picked : cand;
+  pool.sort((a,b)=>a.d-b.d);
+  return pool[0].w;
+}
+function ceilingHas(w){
+  if(!w) return false;
+  const id=(w.id!=null&&String(w.id)!=='')?String(w.id):null;
+  return ceilingSel.some(s=>(id!=null&&String(s.id)===id) || s===w);
+}
+// Topmost ceiling area under the pointer on the active floor.
+function pickCeiling(wx,wy){
+  const f=floor(), list=ceilAreas(f);
+  for(let i=list.length-1;i>=0;i--){
+    const c=list[i], plan=ceilPlan(c);
+    if(!plan) continue;
+    for(const part of plan.parts){
+      if(pointInPolygon(wx,wy,part.outer) && !part.holes.some(h=>pointInPolygon(wx,wy,h))) return c;
+    }
+  }
+  return null;
+}
+function ceilingToggleWall(w){
+  if(!w) return;
+  const id=(w.id!=null&&String(w.id)!=='')?String(w.id):null;
+  // Toggle by ID, not object identity: the same canonical wall can be reached
+  // through more than one projected entry, and identity toggling could then add
+  // a duplicate instead of removing the existing one.
+  let at=-1;
+  ceilingSel.forEach((s,i)=>{ if(at<0 && ((id!=null&&String(s.id)===id)||s===w)) at=i; });
+  if(at>=0) ceilingSel.splice(at,1); else ceilingSel.push(w);
+  // invariant: no duplicate wall ids in the transient selection
+  const seen=new Set();
+  ceilingSel=ceilingSel.filter(s=>{
+    const k=(s.id!=null&&String(s.id)!=='')?String(s.id):s;
+    if(seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+  ceilingRecompute(); draw2d(); renderProp();
+}
+// Recompute the pending closure. Never mutates the project.
+function ceilingRecompute(){
+  ceilingDraft=null;
+  if(!ceilingSel.length){ draw2d(); return; }
+  // ceilClosure takes the CANONICAL walls and does its own noding, so the
+  // selection keeps full wall identity (id, height, material) for the preview
+  // and the height suggestion.
+  const r=ceilClosure(ceilingSel);
+  ceilingDraft={ok:r.ok, reason:r.reason, options:r.options,
+                ring:r.ring, virtualEdges:r.virtualEdges, area:r.area};
+}
+function ceilingCancel(){
+  ceilingSel=[]; ceilingDraft=null; ceilingDlgState=null;
+  hideCeilingDlg(); renderProp(); draw2d();
+}
+// --- creation dialog ----------------------------------------------------
+function showCeilingDlg(){
+  const d=ceilingDlgState; if(!d) return;
+  const host=$('#ceilingDlg'); if(!host) return;
+  const mats=state.materials.map(m=>`<option value="${escapeHtml(m.id)}" ${m.id===d.materialId?'selected':''}>${matLabel(m)}</option>`).join('');
+  // Build the whole markup FIRST, then publish it together with the visibility.
+  // Showing an empty panel is what previously left a blank rounded rectangle
+  // floating over the editor when anything below threw.
+  const html=`
+    <div class="cdlg-t">${uiText('ceiling.confirmTitle')}</div>
+    <div class="row2">
+      <div class="field"><label>${uiText('ceiling.height')}</label>
+        <input type="number" step="0.05" min="0.05" id="ceilH" value="${numIn(d.height,2)}"></div>
+      <div class="field"><label>${uiText('ceiling.thickness')}</label>
+        <input type="number" step="0.01" min="0.001" id="ceilT" value="${numIn(d.thickness,3)}"></div>
+    </div>
+    <div class="field"><label>${uiText('ceiling.material')}</label>
+      <select id="ceilM">${mats}</select></div>
+    <div class="field"><label>${uiText('ceiling.extraLoss')}</label>
+      <input type="number" step="0.5" id="ceilL" value="${numIn(d.extraLossDb,1)}"></div>
+    <div class="cdlg-btns">
+      <button id="ceilOk" class="tbtn primary">${uiText('ceiling.create')}</button>
+      <button id="ceilNo" class="tbtn">${uiText('ceiling.cancel')}</button>
+    </div>`;
+  host.innerHTML=html;
+  host.style.display='flex';
+  const h=$('#ceilH'), t=$('#ceilT'), m=$('#ceilM'), l=$('#ceilL');
+  if(h) h.oninput=()=>{ ceilingDlgState.height=parseFloat(h.value)||0.1; };
+  if(t) t.oninput=()=>{ ceilingDlgState.thickness=parseFloat(t.value)||CEIL_DEFAULT_THICKNESS; };
+  if(m) m.onchange=()=>{ ceilingDlgState.materialId=m.value; };
+  if(l) l.oninput=()=>{ ceilingDlgState.extraLossDb=parseFloat(l.value)||0; };
+  const ok=$('#ceilOk'); if(ok) ok.onclick=()=>ceilingCreate();
+  const no=$('#ceilNo'); if(no) no.onclick=()=>ceilingCancel();
+}
+function hideCeilingDlg(){
+  const host=$('#ceilingDlg');
+  if(!host) return;
+  host.style.display='none';
+  host.innerHTML='';            // clear AFTER hiding: never a visible empty panel
+}
+function matLabel(m){ return escapeHtml((m.name||m.id)+(m.db!=null?' ('+m.db+' dB)':'')); }
+// A finite number for a numeric input value; never NaN/undefined leaking in.
+function numIn(v,dp){
+  const n=Number(v);
+  return Number.isFinite(n) ? n.toFixed(dp) : (0).toFixed(dp);
+}
+
+// Planar top surface for a plan, at world y, with blueprint UVs from the
+// canonical projection. Faces up (a CCW plan triangle has a -Y normal, so the
+// up-facing order is reversed - the same convention as the slab top face).
+function topGeoForPlan(plan, y, bg){
+  const parts=slabSolidForPlan(plan);
+  const pos=[], nrm=[], uv=[], idx=[];
+  const v=(x,z)=>{ pos.push(x,y,z); nrm.push(0,1,0);
+    const t=blueprintUVThree(bg,x,z); uv.push(t.u,t.v); return pos.length/3-1; };
+  parts.forEach(part=>part.tris.forEach(t=>{
+    idx.push(v(t[2].x,t[2].y), v(t[1].x,t[1].y), v(t[0].x,t[0].y));
+  }));
+  if(!idx.length) return null;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('normal',   new THREE.Float32BufferAttribute(nrm,3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,2));
+  geo.setIndex(idx);
+  return geo;
+}
+// Which floor OWNS a selected wall. Used ONLY to work out that wall's absolute
+// top elevation; it never changes which floor owns the Ceiling.
+function ceilWallOwnerIndex(w){
+  for(let i=0;i<state.floors.length;i++){
+    const a=state.floors[i].walls||[];
+    for(let k=0;k<a.length;k++){
+      if(a[k]===w) return i;
+      if(w&&w.id!=null&&a[k].id===w.id) return i;
+    }
+  }
+  return state.activeFloor;
+}
+// The height the creation dialog opens with.
+//
+// The ACTIVE floor is the canonical source: its nominal height is the default.
+// Selected boundary geometry may only LOWER that default, and only when it
+// explicitly establishes a lower local ceiling (an explicit-height wall, or a
+// lower-floor wall whose absolute top is genuinely lower relative to here).
+// Nothing is ever raised above the floor, and no -0.20 m adjustment appears.
+function ceilingSuggestedHeight(){
+  const ai=state.activeFloor;
+  const base=floorElevation(ai);
+  const nominal=Number(state.floors[ai]&&state.floors[ai].height)||3;
+  const tops=ceilingSel.map(function(w){
+    const oi=ceilWallOwnerIndex(w);
+    return { top:ceilWallTopAbs(w, floorElevation(oi), state.floors[oi]&&state.floors[oi].height) };
+  });
+  return ceilSuggestHeightFrom(tops, base, nominal);
+}
+function ceilingStartConfirm(){
+  if(!ceilingDraft||!ceilingDraft.ok) return false;
+  const f=floor();
+  ceilingDlgState={height:ceilingSuggestedHeight(), thickness:CEIL_DEFAULT_THICKNESS,
+                   materialId:state.activeMat, extraLossDb:0};
+  showCeilingDlg(); return true;
+}
+function ceilingCreate(){
+  if(!ceilingDlgState||!ceilingDraft||!ceilingDraft.ok) return false;
+  // The Ceiling OWNER is the floor that was ACTIVE at creation, always - even
+  // when some selected boundary walls are canonical to another floor. Its
+  // height, blueprint, persistence, 3D elevation, glTF parent and future RF
+  // semantics all derive from this floor. Selected walls only supply boundary
+  // GEOMETRY; they never transfer ownership.
+  const f=floor();
+  const d=ceilingDlgState;
+  const area=Object.assign({id:uid('ceil')}, d);
+  // the persisted footprint is plain plan coordinates; no rounding, so the stored
+  // geometry is exactly the closure the user confirmed
+  area.footprint={parts:[{outer:ceilingDraft.ring.map(p=>({x:p.x,y:p.y})), holes:[]}]};
+  // virtualEdges are provenance/geometry for this ceiling only: they are not
+  // walls, produce no vertical geometry and are never stored on the floor.
+  area.virtualEdges=ceilingDraft.virtualEdges.map(e=>({a:{x:e.a.x,y:e.a.y}, b:{x:e.b.x,y:e.b.y}}));
+  area.height=Number(d.height)||0.1;
+  area.thickness=Math.max(0.001, Number(d.thickness)||CEIL_DEFAULT_THICKNESS);
+  area.extraLossDb=Number(d.extraLossDb)||0;
+  commit();                                   // undo/redo participates normally
+  if(!f.ceilingAreas) f.ceilingAreas=[];
+  f.ceilingAreas.push(area);
+  ceilingSel=[]; ceilingDraft=null; ceilingDlgState=null;
+  hideCeilingDlg();
+  select('ceiling', area.id);
+  refreshStats(); scheduleHeat(); draw2d(); if(view==='3d')build3d();
+  showToast(true, uiMessage('ceiling.created'), null, 2400);
+  return true;
+}
+const CEIL_DEFAULT_THICKNESS=0.10;
+
+// ============================================================
+//  CEILING AREA CLOSURE
+// ============================================================
+// Given the canonical walls the user selected, find the MINIMUM set of virtual
+// edges that closes them into ONE simple (non-self-intersecting) region.
+//
+// SELECTED WALLS ARE BOUNDARY SOURCES, NOT INDIVISIBLE EDGES. A selected wall is
+// first NODED at crossings and T-junctions - the same planar topology the floor
+// footprint generator uses (fpWallSegments + fpNodeWalls) - and the resulting
+// ATOMIC subsegments are what may take part in the perimeter. So a ceiling may
+// use only part of a selected wall, and the unused tail of a wall that runs past
+// the region is simply not part of the boundary. That is what lets an interior
+// partition T-junction into a full-length exterior wall without becoming an
+// impossible branch node.
+//
+// Noding is not an optimisation, it is the whole point: degree counting is
+// meaningless on un-noded segments, because a wall that merely CROSSES the
+// region at a T-junction would look like a 3-way node and veto the whole
+// selection.
+//
+// The search then runs over CHAINS. A chain is a maximal run of atomic pieces
+// through degree-2 nodes, so it is exactly one straight-or-bent polyline whose
+// endpoints are either junctions or free ends. A valid ceiling is a closed loop
+// of chains, where consecutive chains may either share a junction node (free) or
+// be joined by a VIRTUAL EDGE (cost 1, and only legal between two free ends).
+// We minimise the virtual-edge count and accept only when exactly ONE minimum
+// loop survives: every loop must use every selected wall, must be a single
+// simple non-degenerate region, and must not silently drop an unrelated wall.
+//
+// No convex hull. No bounding box. No silent guess.
+const CEIL_NODE_TOL=FP_WALL_TOL;    // same tolerance the footprint noding uses
+const CEIL_AREA_MIN=1e-3;           // m2, rejects degenerate slivers
+const CEIL_MAX_CHAINS=16;           // refuse rather than search a huge graph
+const CEIL_MAX_LOOPS=4000;          // hard cap on explored loops
+const CEIL_MAX_SEARCH=200000;       // hard cap on DFS steps
+
+// Signed area of a closed ring (positive = CCW in plan space).
+function ceilRingArea(ring){
+  let a=0;
+  for(let i=0;i<ring.length;i++){
+    const p=ring[i], q=ring[(i+1)%ring.length];
+    a+=p.x*q.y-q.x*p.y;
+  }
+  return a/2;
+}
+// Proper crossings only: adjacent edges of the ring legitimately share an
+// endpoint, so shared vertices are skipped and only real crossings reject.
+function ceilRingSelfIntersects(ring){
+  const n=ring.length;
+  if(n<3) return false;
+  for(let i=0;i<n;i++){
+    const a=ring[i], b=ring[(i+1)%n];
+    for(let j=i+1;j<n;j++){
+      const c=ring[j], d=ring[(j+1)%n];
+      if(j===i+1 || (i===0&&j===n-1)) continue;   // adjacent edges share a vertex
+      if(segIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y)) return true;
+      // segIntersect only reports PROPER crossings, so a collinear OVERLAP (two
+      // boundary edges lying on top of each other) would slip past it. Compare
+      // intervals along the shared direction instead.
+      const abx=b.x-a.x, aby=b.y-a.y, L2=abx*abx+aby*aby;
+      if(!(L2>1e-18)) continue;
+      const proj=p=>((p.x-a.x)*abx+(p.y-a.y)*aby)/L2;
+      const t1=proj(c), t2=proj(d);
+      if(Math.min(t1,t2)<-1e-9||Math.max(t1,t2)>1+1e-9) continue;   // no collinear span
+      const off1=Math.abs((c.x-a.x)*aby-(c.y-a.y)*abx)/Math.sqrt(L2);
+      const off2=Math.abs((d.x-a.x)*aby-(d.y-a.y)*abx)/Math.sqrt(L2);
+      if(Math.max(off1,off2)<=CEIL_NODE_TOL){                        // collinear
+        const lo=Math.max(0,Math.min(t1,t2)), hi=Math.min(1,Math.max(t1,t2));
+        if(hi-lo>1e-9) return true;                                  // overlapping run
+      }
+    }
+  }
+  return false;
+}
+
+// 1) Node the selected walls into atomic pieces, keeping which canonical wall
+//    each piece came from. Reuses the footprint generator's own noder.
+function ceilNodePieces(walls){
+  const TOL=CEIL_NODE_TOL;
+  const src=(walls||[]).filter(w=>w&&Number.isFinite(w.x1)&&Number.isFinite(w.y1)
+      &&Number.isFinite(w.x2)&&Number.isFinite(w.y2)
+      &&Math.hypot(w.x2-w.x1,w.y2-w.y1)>=TOL);
+  if(!src.length) return null;
+  const segs=src.map(w=>({ax:w.x1,ay:w.y1,bx:w.x2,by:w.y2,xs:[0,1],wid:w.id||w}));
+  const pieces=fpNodeWalls(segs);
+  const out=[];
+  pieces.forEach(p=>{
+    const mx=(p.x0+p.x1)/2, my=(p.y0+p.y1)/2;
+    // provenance: the source wall whose centreline contains this piece
+    let wid=null;
+    for(const w of src){
+      const dx=w.x2-w.x1, dy=w.y2-w.y1, L2=dx*dx+dy*dy;
+      const t=L2?((mx-w.x1)*dx+(my-w.y1)*dy)/L2:0;
+      const tc=t<0?0:(t>1?1:t);
+      if(Math.hypot(mx-(w.x1+dx*tc), my-(w.y1+dy*tc))<=TOL){ wid=w.id||w; break; }
+    }
+    out.push({x0:p.x0,y0:p.y0,x1:p.x1,y1:p.y1,wid:wid});
+  });
+  return out.length?{pieces:out, wallIds:src.map(w=>w.id||w)}:null;
+}
+
+// 2) Build a graph from the atomic pieces: cluster endpoints into nodes and
+//    drop exact duplicates. A node's degree is how many pieces meet there.
+function ceilBuildGraph(pieces){
+  const TOL=CEIL_NODE_TOL;
+  const nodes=[];
+  const nodeAt=(x,y)=>{
+    for(let i=0;i<nodes.length;i++) if(Math.hypot(nodes[i].x-x,nodes[i].y-y)<=TOL) return i;
+    nodes.push({x,y,deg:0}); return nodes.length-1;
+  };
+  const edges=[], seen=new Set();
+  pieces.forEach(p=>{
+    if(!(Math.hypot(p.x1-p.x0,p.y1-p.y0)>TOL)) return;      // collapsed
+    const a=nodeAt(p.x0,p.y0), b=nodeAt(p.x1,p.y1);
+    if(a===b) return;
+    const key=Math.min(a,b)+':'+Math.max(a,b);
+    if(seen.has(key)) return;                              // coincident duplicate
+    seen.add(key);
+    edges.push({a,b,wid:p.wid}); nodes[a].deg++; nodes[b].deg++;
+  });
+  return {nodes, edges};
+}
+
+// 3) Split the graph into chains: maximal walks that continue through degree-2
+//    nodes and stop at any junction (degree != 2).
+function ceilChains(g){
+  const used=new Array(g.edges.length).fill(false);
+  const chains=[];
+  g.edges.forEach((e,ei)=>{
+    if(used[ei]) return;
+    const pts=[{x:g.nodes[e.a].x,y:g.nodes[e.a].y}];
+    const wids=new Set(); if(e.wid!=null) wids.add(e.wid);
+    let prevNode=e.a, curNode=e.b, k=ei;
+    used[k]=true;
+    for(;;){
+      pts.push({x:g.nodes[curNode].x,y:g.nodes[curNode].y});
+      const inc=[];
+      g.edges.forEach((ee,j)=>{ if(j!==k && (ee.a===curNode||ee.b===curNode)) inc.push(j); });
+      if(inc.length!==1) break;                            // junction or dead end
+      const nx=inc[0]; if(used[nx]) break;
+      used[nx]=true; k=nx;
+      const ee=g.edges[nx]; if(ee.wid!=null) wids.add(ee.wid);
+      curNode=(ee.a===curNode)? ee.b : ee.a;
+      prevNode=curNode;
+    }
+    chains.push({id:chains.length, pts, a:e.a, b:curNode, wids:[...wids]});
+  });
+  return chains;
+}
+
+// 4) Validate a finished ring and report what it consists of.
+function ceilAcceptLoop(loop){
+  // A closed chain returns to its start node, so its point list ends with a
+  // repeat of the first point. That is the same vertex, not a degenerate one.
+  const pts=loop.pts.slice();
+  while(pts.length>1 && Math.hypot(pts[0].x-pts[pts.length-1].x,
+                                   pts[0].y-pts[pts.length-1].y)<=CEIL_NODE_TOL) pts.pop();
+  const ring=pts;
+  if(ring.length<3) return null;
+  for(let i=0;i<ring.length;i++) for(let j=i+1;j<ring.length;j++)
+    if(Math.hypot(ring[i].x-ring[j].x, ring[i].y-ring[j].y)<=CEIL_NODE_TOL) return null;
+  const area=Math.abs(ceilRingArea(ring));
+  if(area<CEIL_AREA_MIN) return null;
+  if(ceilRingSelfIntersects(ring)) return null;
+  const r=ceilRingArea(ring)<0 ? ring.slice().reverse() : ring;
+  return {ok:true, ring:r, area:area, virtualEdges:loop.virtual.slice(), virtualCount:loop.virtual.length};
+}
+
+// THE closure. Returns {ok:true, ring, virtualEdges, area} or {ok:false, reason}.
+function ceilClosure(walls){
+  const np=ceilNodePieces(walls);
+  if(!np) return {ok:false, reason:'tooFewWalls'};
+  const g=ceilBuildGraph(np.pieces);
+  if(!g.edges.length) return {ok:false, reason:'degenerate'};
+  if(g.nodes.length<3) return {ok:false, reason:'tooFewVertices'};
+
+  // every selected canonical wall must take part; that set is the target
+  const wantAll=new Set(np.wallIds);
+  const usedWallsOf=chans=>{
+    const s=new Set(); chans.forEach(c=>c.wids.forEach(w=>s.add(w))); return s;
+  };
+
+  // fully closed 2-regular graph: one cycle, zero virtual edges
+  if(g.nodes.every(n=>n.deg===2)){
+    const chains=ceilChains(g);
+    if(chains.length===1 && usedWallsOf(chains).size===wantAll.size){
+      const r=ceilAcceptLoop({pts:chains[0].pts, virtual:[]});
+      if(r) return r;
+    }
+    return {ok:false, reason:'noValidClosure'};
+  }
+
+  const chains=ceilChains(g);
+  if(!chains.length) return {ok:false, reason:'noValidClosure'};
+  if(chains.length>CEIL_MAX_CHAINS) return {ok:false, reason:'tooManyChains'};
+  // chains that meet at a node
+  const atNode=new Map();
+  chains.forEach(c=>{
+    [[c.a,'a'],[c.b,'b']].forEach(([nd])=>{
+      if(!atNode.has(nd)) atNode.set(nd,[]);
+      atNode.get(nd).push(c.id);
+    });
+  });
+  const isFreeEnd=nd=>g.nodes[nd] && g.nodes[nd].deg===1;
+
+  // Canonical identity of a closed loop: rotate to the lexicographically
+  // smallest vertex and take the lexicographically smaller direction, so the
+  // same cycle found from either end is deduplicated while two genuinely
+  // different closures over the same points stay distinct.
+  const loopSig=ring=>{
+    const n=ring.length; if(!n) return '';
+    let bi=0;
+    for(let i=1;i<n;i++){
+      if(ring[i].x<ring[bi].x-1e-9 || (Math.abs(ring[i].x-ring[bi].x)<1e-9 && ring[i].y<ring[bi].y-1e-9)) bi=i;
+    }
+    const at=k=>ring[(bi+k)%n];
+    const fwd=[], rev=[];
+    for(let k=0;k<n;k++){ fwd.push(at(k)); rev.push(at(n-k)); }
+    const key=p=>Math.round(p.x*1000)+':'+Math.round(p.y*1000);
+    return (fwd.map(key).join('|') <= rev.map(key).join('|'))
+      ? fwd.map(key).join('|') : rev.map(key).join('|');
+  };
+  // Walk every closed loop of chains, minimising virtual edges. A connection
+  // between two consecutive chains is FREE when they already share a node, and
+  // costs one VIRTUAL EDGE when two free ends are joined. The loop closes when
+  // the walk returns to the node it started from (free) or when a final virtual
+  // edge reaches it.
+  const found=new Map();
+  let steps=0, overflow=false;
+  const freeEnds=g.nodes.map((n,i)=>n.deg===1?i:-1).filter(i=>i>=0);
+  // Consecutive chains meet AT a shared node, so appending them naively records
+  // that node twice and the ring looks self-overlapping. Skip a point that
+  // repeats the ring's last one.
+  const pushPts=(ring, pts)=>{
+    for(const q of pts){
+      const l=ring[ring.length-1];
+      if(l && Math.hypot(l.x-q.x,l.y-q.y)<=CEIL_NODE_TOL) continue;
+      ring.push(q);
+    }
+  };
+  const dfs=(seq, ring, openEnd, startEnd, virt, used)=>{
+    if(overflow) return;
+    if(++steps>CEIL_MAX_SEARCH){ overflow=true; return; }
+    if(seq.length>=1 && (openEnd===startEnd || (isFreeEnd(openEnd)&&isFreeEnd(startEnd)))){
+      const a=g.nodes[openEnd], b=g.nodes[startEnd];
+      const closesFree=openEnd===startEnd;
+      // the walk already ends AT openEnd, so only append it when the ring does
+      // not already carry that point as its last one
+      const last=ring[ring.length-1];
+      const r=(last && Math.hypot(last.x-a.x,last.y-a.y)<=CEIL_NODE_TOL)
+        ? ring.slice() : ring.concat([{x:a.x,y:a.y}]);
+      const vs=closesFree? virt.slice() : virt.concat([{a:{x:a.x,y:a.y}, b:{x:b.x,y:b.y}}]);
+      const cand=ceilAcceptLoop({pts:r, virtual:vs});
+      if(cand && usedWallsOf(seq).size===wantAll.size){
+        const sig=loopSig(cand.ring);
+        if(!found.has(sig)) found.set(sig, cand);
+      }
+    }
+    if(seq.length>=chains.length || found.size>CEIL_MAX_LOOPS) return;
+    // FREE connection: continue through a chain that starts where we stopped
+    for(const cid of (atNode.get(openEnd)||[])){
+      if(used.has(cid)) continue;
+      const c=chains[cid], enter=(c.a===openEnd);
+      const n0=ring.length;
+      used.add(cid); seq.push(c);
+      pushPts(ring, enter? c.pts : c.pts.slice().reverse());
+      dfs(seq, ring, enter? c.b : c.a, startEnd, virt, used);
+      ring.length=n0; seq.pop(); used.delete(cid);
+      if(overflow) return;
+    }
+    // VIRTUAL connection: jump to another free end and continue from there
+    if(isFreeEnd(openEnd)){
+      for(const M of freeEnds){
+        if(M===openEnd || M===startEnd) continue;
+        for(const cid of (atNode.get(M)||[])){
+          if(used.has(cid)) continue;
+          const c=chains[cid], enter=(c.a===M);
+          const p=g.nodes[openEnd], q=g.nodes[M];
+          const n0=ring.length;
+          used.add(cid); seq.push(c);
+          pushPts(ring, enter? c.pts : c.pts.slice().reverse());
+          dfs(seq, ring, enter? c.b : c.a, startEnd,
+              virt.concat([{a:{x:p.x,y:p.y}, b:{x:q.x,y:q.y}}]), used);
+          ring.length=n0; seq.pop(); used.delete(cid);
+          if(overflow) return;
+        }
+      }
+    }
+  };
+  for(let i=0;i<chains.length;i++){
+    if(overflow||found.size>CEIL_MAX_LOOPS) break;
+    const c=chains[i];
+    [[true,false],[false,true]].forEach(function(){
+      // enter at one end, close back at that same end
+      const enterA=(c.a!==c.b);
+      const start=enterA? c.a : c.b, open=enterA? c.b : c.a;
+      const pts=enterA? c.pts : c.pts.slice().reverse();
+      dfs([c], pts.slice(), open, start, [], new Set([c.id]));
+    });
+  }
+  if(overflow && !found.size) return {ok:false, reason:'tooManyChains'};
+  const cands=[...found.values()];
+  if(!cands.length) return {ok:false, reason:'noValidClosure'};
+  const min=Math.min.apply(null, cands.map(c=>c.virtualCount));
+  const minimal=cands.filter(c=>c.virtualCount===min);
+  if(minimal.length!==1) return {ok:false, reason:'ambiguous', options:minimal.length};
+  return minimal[0];
+}
+
+// HEIGHT SEMANTICS for a Ceiling.
+//
+// A FULL-HEIGHT wall means: wall top = owner floor base elevation + owner floor
+// height. It does NOT mean "floor height - 0.20 m". That 20 cm step is a visual /
+// geometric convention used elsewhere in the app when it extrudes walls; it is
+// NOT a physical height and must never leak into Ceiling inference.
+//
+//   full-height wall  -> the actual owner floor height
+//   explicit-height   -> the explicit wall height
+//
+// Wall tops are compared in ABSOLUTE PROJECT ELEVATION, because a wall selected
+// on the active floor may be PROJECTED from a lower floor and its raw w.height is
+// then measured from the WRONG base. The result is converted back to a height
+// relative to the CEILING owner, which is always the ACTIVE floor - a wall's
+// ownership and a ceiling's ownership are independent facts.
+//
+// Pure function, so the rule can be tested without state.
+function ceilWallTopAbs(w, ownerBase, ownerFloorH){
+  return ownerBase + objectHeightMeters(w, ownerFloorH);
+}
+// The UNDERSIDE height to propose, given the active floor's nominal height and
+// the selected boundary walls. Pure.
+function ceilSuggestHeightFrom(walls, activeBase, activeFloorH){
+  const nominal=Math.max(0.05, Number(activeFloorH)||3);
+  if(!walls||!walls.length) return nominal;
+  let minTop=null;
+  walls.forEach(function(t){
+    if(!t) return;
+    if(minTop===null || t.top<minTop) minTop=t.top;
+  });
+  if(minTop===null) return nominal;
+  // the lowest selected boundary top, expressed relative to the active floor
+  // base. Explicitly shorter interior walls pull the suggestion down; when every
+  // selected wall is full height this returns exactly the floor height.
+  const rel=Math.min(nominal, minTop-activeBase);
+  return Math.max(0.05, Math.round(rel*1000)/1000);
+}
+
+// ============================================================
 //  RF OBJECT BLUEPRINT OWNERSHIP
 // ============================================================
 // A RF Object's canonical owner is the floor whose `rfObjects` array CONTAINS it.
@@ -4884,13 +5702,14 @@ function ownerBlueprintPlan(f){
   if(!b||b.visible===false) return null;
   return blueprintUsable(b) ? b : null;
 }
-// The top face of an RF Object shows the blueprint, but must still read as an
-// object rather than melt into the floor. The blueprint is multiplied by a
-// MUTED version of the object's own colour (lifted towards white so the drawing
-// stays legible) and stays fully opaque, which needs no blending and no second
-// stacked surface. Same maths in both consumers: glTF multiplies
-// baseColorFactor x baseColorTexture, three.js multiplies material.color x map.
-function rfTopTint(rgb){
+// A blueprint-textured top face must still read as the thing it belongs to
+// rather than melting into the floor. The blueprint is multiplied by a MUTED
+// version of that thing's own colour (lifted towards white so the drawing stays
+// legible). Shared by every blueprint-projected top in the app - RF Objects and
+// Ceiling Areas - so they all look like one feature. Same maths in both
+// consumers: glTF multiplies baseColorFactor x baseColorTexture, three.js
+// multiplies material.color x map.
+function blueprintTint(rgb){
   return [0,1,2].map(function(k){
     const v=0.40 + 0.60*(Number(rgb[k])||0);
     return v<0?0:(v>1?1:v);
@@ -5145,7 +5964,7 @@ function build3d(){
     f.walls.forEach(w=>{
       const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
       const m=matById(w.materialId);
-      const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
+      const h=Math.max(0.1,objectHeightOnFloor(w,f));
       // physical thickness in meters, identical to the 2D body
       const geo=new THREE.BoxGeometry(len,h,wallThickness(w));
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
@@ -5160,7 +5979,7 @@ function build3d(){
     // RF pillars
     (f.pillars||[]).forEach(p=>{
       const m=matById(p.materialId);
-      const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
+      const h=Math.max(0.1,objectHeightOnFloor(p,f));
       const r=Math.max(0.03,(p.diameter||0.6)/2);
       const geo=new THREE.CylinderGeometry(r,r,h,32);
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
@@ -5168,6 +5987,48 @@ function build3d(){
       const mesh=new THREE.Mesh(geo,mat);
       mesh.position.set(p.x-cx, h/2, p.y-cz);
       fl.add(mesh);
+    });
+
+    // Ceiling Areas: real horizontal solids at the OWNER floor's elevation, with
+    // arbitrary polygonal footprint, holes and the configured thickness. The
+    // body reuses the same slab solid the floor slab uses, and the top face uses
+    // the SAME canonical blueprint projection as the background plan and the RF
+    // Object tops (blueprintUVThree). No second UV formula exists.
+    ceilAreas(f).forEach(c=>{
+      const plan=ceilPlan(c); if(!plan) return;
+      const m=matById(c.materialId);
+      // thickness extends DOWNWARD: the solid spans [top-th, top]
+      const iv=ceilingInterval(c);
+      const th=iv.thickness, h=iv.top;
+      const geo=slabGeometryForPlan(plan, th);
+      if(!geo) return;
+      const mesh=new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color:new THREE.Color(m.color), transparent:true, opacity:0.34,
+        roughness:.85, metalness:m.db>20?0.4:0.03, side:THREE.DoubleSide }));
+      // The geometry is built in PROJECT XY, exactly like the floor slab, the
+      // walls and the RF Objects, so the same recentering applies here and
+      // nowhere else: the scene is centred on the active floor, so a project
+      // point (x,y) renders at (x-cx, y-cz). Recentring HERE - and only here -
+      // is what keeps the ceiling directly above the room that generated it.
+      // Recentring is a rendering concern; c.footprint stays in project XY.
+      // slabGeometryForPlan spans -th..0 relative to the mesh and the mesh sits
+      // at the Ceiling's TOP plane, so the solid occupies top-th .. top.
+      mesh.position.set(-cx, h, -cz);
+      fl.add(mesh);
+      // blueprint on the top face only, through the canonical projection
+      const rfPlan=(f.bg && f.bg._img) ? ownerBlueprintPlan(f) : null;
+      if(rfPlan){
+        const tint=blueprintTint(hexToRgb(m.color));
+        const tex=new THREE.Texture(f.bg._img); tex.needsUpdate=true;
+        const topMat=new THREE.MeshBasicMaterial({map:tex,
+          color:new THREE.Color(tint[0],tint[1],tint[2]),
+          transparent:true, opacity:0.5, side:THREE.DoubleSide});
+        // the top face is at iv.top; the overlay only clears z-fighting
+        const tp=topGeoForPlan(plan, h+CEIL_TOP_LIFT, rfPlan);
+        // the same SINGLE recentering as the body: shifting the top a second time
+        // would slide the texture off the solid
+        if(tp){ const tm=new THREE.Mesh(tp, topMat); tm.position.set(-cx, 0, -cz); fl.add(tm); }
+      }
     });
 
     // RF Objects
@@ -5195,7 +6056,7 @@ function build3d(){
       if(rfPlan){
         // three.js box face order is +X, -X, +Y, -Y, +Z, -Z, so the top is
         // material slot 2. Every other slot keeps the RF Object material.
-        const tint=rfTopTint(hexToRgb(m.color));
+        const tint=blueprintTint(hexToRgb(m.color));
         const topTex=new THREE.Texture(rfPlan._img); topTex.needsUpdate=true;
         // the top follows the object's own transparency, exactly like its sides,
         // so a dimmed lower floor dims its rack tops too
@@ -5268,10 +6129,11 @@ function refresh3dHeat(){
 //  UI WIRING
 // ============================================================
 function setTool(t){
+  if(tool==='ceiling' && t!=='ceiling') ceilingCancel();
   tool=t; draft=null; cableDraft=null; openingDraft=null;
   $$('#tools .tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));
   refreshToolText();
-  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='pillar'||t==='label'||t==='rack'||t==='cable'||t==='opening'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
+  cv.style.cursor = t==='ap'?'copy': (t==='wall'||t==='ceiling'||t==='pillar'||t==='label'||t==='rack'||t==='cable'||t==='opening'||t==='zone')?'crosshair': t==='erase'?'not-allowed':'default';
   if(t==='bg'){ $('#fileBg').click(); }
 }
 function buildTools(){
@@ -5334,6 +6196,10 @@ function duplicateFloor(i){
   (copy.cableRoutes||[]).forEach(c=>{ c.id=uid('cab'); if(rackIds[c.rackId])c.rackId=rackIds[c.rackId]; if(apIds[c.apId])c.apId=apIds[c.apId]; });
   (copy.rfObjects||[]).forEach(o=>o.id=uid('rfobj'));
   (copy.zones||[]).forEach(z=>z.id=uid('zn'));
+  // Ceiling Areas belong to their floor, so the duplicate gets fresh ids and is
+  // never filtered: unlike a wall, a ceiling is fully described by its own
+  // footprint and height, both of which duplicate correctly.
+  (copy.ceilingAreas||[]).forEach(c=>c.id=uid('ceil'));
   if(copy.bg && src.bg && src.bg._img) copy.bg._img=src.bg._img;
   state.floors.splice(i+1,0,copy); state.activeFloor=i+1;
   buildFloors(); updateChips(); syncFloorPanel(); refreshStats(); scheduleHeat(); draw2d(); if(view==='3d')build3d();
@@ -5565,6 +6431,30 @@ const SPAN_EPS=1e-9;
 // spanning [floorElevation(owner), +height). Null-height legacy objects keep
 // owner-floor-only behavior. Physical height alone decides; there is no opt-in flag.
 function hasExplicitHeight(o){ return !!o && Number.isFinite(o.height) && o.height>0; }
+// CANONICAL FULL-HEIGHT SEMANTICS - the single definition of "how tall is this
+// object", used by EVERY geometry consumer: interactive 3D, glTF export, wall
+// topology and Ceiling height inference.
+//
+//   absolute bottom = owner floor base elevation
+//   absolute top    = owner floor base elevation + owner floor height   (full height)
+//   explicit height = the explicit height                                 (if set)
+//
+// There is NO implicit -0.20 m. The old "w.height==null ? f.height-0.2 : w.height"
+// was a historical VISUAL convention that leaked into real geometry, which is why
+// a full-height wall on a 3.00 m floor stopped at 2.80 m and left a Ceiling
+// placed at its true 3.00 m floating 0.20 m above it. It was confined to the two
+// rendering paths and never reached RF: wallLossOnFloor() gates its vertical test
+// on height!=null, so full-height walls always applied their material loss at
+// every height. Nothing here changes RF.
+//
+// floorH is passed as a value so this stays a pure, testable function.
+function objectHeightMeters(o, floorH){
+  return hasExplicitHeight(o) ? Number(o.height) : (Number(floorH)||0);
+}
+// Convenience form for callers that hold the owner floor object.
+function objectHeightOnFloor(o, f){
+  return objectHeightMeters(o, f&&f.height);
+}
 function spanInterval(o,ownerIdx){ const b=floorElevation(ownerIdx); return {base:b,top:b+Math.max(0,o.height)}; }
 function floorSlice(i){ const b=floorElevation(i); return {base:b,top:b+state.floors[i].height}; }
 function spansOverlap(ob,ot,fb,ft){ return ot>fb+SPAN_EPS && ob<ft-SPAN_EPS; }
@@ -5607,6 +6497,7 @@ function deleteSelection(){
   else if(selection.type==='rfobj') f.rfObjects=(f.rfObjects||[]).filter(o=>o.id!==selection.id);
   else if(selection.type==='label') f.labels=(f.labels||[]).filter(l=>l.id!==selection.id);
   else if(selection.type==='zone') f.zones=(f.zones||[]).filter(z=>z.id!==selection.id);
+  else if(selection.type==='ceiling') f.ceilingAreas=(f.ceilingAreas||[]).filter(c=>c.id!==selection.id);
   else if(selection.type==='bg') f.bg=null;
   selection=null; scheduleHeat(); refreshStats(); draw2d(); renderProp(); if(view==='3d')build3d();
 }
@@ -5654,6 +6545,27 @@ function buildEditorSettings(){
 }
 function renderProp(){
   const body=$('#propBody'); const title=$('#propTitle');
+  // The Ceiling tool shows its own transient status instead of the selection
+  // panel, so the user can see the running closure without leaving the tool.
+  if(tool==='ceiling'&&!selection){
+    setUiText(title,'tool.ceiling');
+    const d=ceilingDraft;
+    let status='';
+    if(!ceilingSel.length){
+      status=`<div class="hint">${uiText('ceiling.selectWalls')}</div>`;
+    } else if(d&&!d.ok){
+      status=`<div class="hint" style="color:var(--danger)">${uiText('ceiling.err.'+d.reason)}</div>`;
+    } else if(d&&d.ok){
+      status=`<div class="stat"><span data-i18n="ceiling.selected">Muros seleccionados</span><b>${ceilingSel.length}</b></div>
+        <div class="stat"><span data-i18n="ceiling.virtualEdges">Cierres virtuales</span><b>${d.virtualEdges.length}</b></div>
+        <div class="stat"><span data-i18n="stats.area">Area</span><b>${d.area.toFixed(1)} m²</b></div>
+        <div class="stat"><span data-i18n="ceiling.height">Altura (m)</span><b>${ceilingSuggestedHeight().toFixed(2)} m</b></div>
+        <button class="tbtn" id="pCeCreate" style="width:100%;justify-content:center;margin-top:8px">${uiText('ceiling.create')}</button>`;
+    }
+    body.innerHTML=`<div class="hint">${uiText('ceiling.hint')}</div>`+status;
+    const cb=$('#pCeCreate'); if(cb) cb.onclick=ceilingStartConfirm;
+    return;
+  }
   if(!selection){ setUiText(title,'properties.title');
     body.innerHTML='<div class="empty" data-i18n="properties.selectionHint">Markera en accesspunkt, vägg eller bakgrundsbild för att redigera den. Dra en ruta i tom yta för att markera flera väggar, eller Shift+klicka för att lägga till enstaka.</div>'
       +wallSnapControlsHtml()
@@ -6000,6 +6912,33 @@ function renderProp(){
     $('#pBgO').oninput=e=>{ b.opacity=+e.target.value; $('#pBgOV').textContent=Math.round(b.opacity*100)+'%'; draw2d(); if(view==='3d')build3d(); };
     $('#pBgR').oninput=e=>{ if(b.locked)return; b.rot=(+e.target.value)*Math.PI/180; $('#pBgRV').textContent=e.target.value+'°'; draw2d(); };
     $('#pBgL').onchange=e=>{ b.locked=e.target.checked; renderProp(); };
+    $('#pDel').onclick=deleteSelection;
+  }
+  else if(selection.type==='ceiling'){
+    const c=ceilAreas(f).find(q=>q.id===selection.id); if(!c){select(null);return;}
+    setUiText(title,'ceiling.title');
+    const plan=ceilPlan(c);
+    let areaM2=0;
+    if(plan) plan.parts.forEach(pt=>{ areaM2+=Math.abs(ceilRingArea(pt.outer))-pt.holes.reduce((s2,h)=>s2+Math.abs(ceilRingArea(h)),0); });
+    const matOpts=state.materials.map(m=>`<option value="${m.id}" ${m.id===c.materialId?'selected':''}>${matLabel(m)}</option>`).join('');
+    const ve=(c.virtualEdges||[]).length;
+    body.innerHTML=`
+      <div class="stat"><span data-i18n="ceiling.height">Altura (m)</span><b>${(+c.height).toFixed(2)} m</b></div>
+      <div class="stat"><span data-i18n="ceiling.thickness">Espesor (m)</span><b>${(+c.thickness).toFixed(3)} m</b></div>
+      <div class="stat"><span data-i18n="ceiling.volume">Volumen (m)</span><b>${ceilingInterval(c).bottom.toFixed(2)} – ${ceilingInterval(c).top.toFixed(2)} m</b></div>
+      <div class="stat"><span data-i18n="stats.area">Area</span><b>${areaM2.toFixed(1)} m²</b></div>
+      <div class="stat"><span data-i18n="ceiling.virtualEdges">Cierres virtuales</span><b>${ve}</b></div>
+      <div class="field"><label data-i18n="ceiling.height">Altura (m)</label><input id="pCeH" type="number" step="0.05" min="0.05" value="${(+c.height).toFixed(2)}"></div>
+      <div class="field"><label data-i18n="ceiling.thickness">Espesor (m)</label><input id="pCeT" type="number" step="0.01" min="0.001" value="${(+c.thickness).toFixed(3)}"></div>
+      <div class="field"><label data-i18n="ceiling.material">Material</label><select id="pCeM">${matOpts}</select></div>
+      <div class="field"><label data-i18n="ceiling.extraLoss">Atenuación adicional (dB)</label><input id="pCeL" type="number" step="0.5" value="${Number(c.extraLossDb)||0}"></div>
+      <div class="stat"><span data-i18n="ceiling.effectiveLoss">Pérdida efectiva</span><b>${ceilEffectiveLoss(c).toFixed(1)} dB</b></div>
+      <button class="delbtn" id="pDel" data-i18n="ceiling.delete">Eliminar techo</button>`;
+    const bump=()=>{ renderProp(); scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
+    $('#pCeH').onchange=e=>{ commit(); c.height=Math.max(0.05,+e.target.value||0.1); bump(); };
+    $('#pCeT').onchange=e=>{ commit(); c.thickness=Math.max(0.001,+e.target.value||CEIL_DEFAULT_THICKNESS); bump(); };
+    $('#pCeM').onchange=e=>{ commit(); c.materialId=e.target.value; bump(); };
+    $('#pCeL').onchange=e=>{ commit(); c.extraLossDb=+e.target.value||0; bump(); };
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='zone'){
@@ -6802,6 +7741,46 @@ function exportGLTF(){
   state.floors.forEach((f,idx)=>{
     const elev=floorElevation(idx);
     builder.beginGroup(gltfFloorName(idx,f), {id:f.id, floorIndex:idx});
+    // Ceiling Areas, under their OWNER floor and before the slab.
+    const ceils=ceilAreas(f);
+    if(ceils.length){
+      builder.beginGroup('Ceilings');
+      ceils.forEach(c=>{
+        const plan=ceilPlan(c); if(!plan) return;
+        const m=matById(c.materialId);
+        const parts=slabSolidForPlan(plan);
+        if(!parts.length) return;
+        // the SAME canonical interval as interactive 3D: thickness hangs
+        // DOWNWARD, so the exported solid spans [yTop-th, yTop] and yTop is the
+        // Ceiling's top plane, flush with the nominal story height
+        const iv=ceilingInterval(c);
+        const th=iv.thickness, h=iv.top;
+        const yTop=elev+h;
+        const rgb=hexToRgb(m.color);
+        const extra=Number(c.extraLossDb);
+        builder.beginObject('Ceiling '+(c.id||''),
+          gltfExtras('ceiling', c.id, idx, {height:h, materialId:c.materialId,
+            extraLossDb:Number.isFinite(extra)?extra:undefined}));
+        builder.addSlabSolid(parts, yTop, th, rgb);
+        // the top face shows the SAME owner-floor blueprint fragment as the
+        // interactive 3D viewer, through the same canonical projection
+        const ownPlan=ownerBlueprintPlan(f);
+        if(ownPlan){
+          const topTris=[];
+          parts.forEach(part=>part.tris.forEach(t=>{
+            topTris.push(t.map(function(p){
+              const uv=blueprintUV(ownPlan, p.x, p.y);
+              return {x:p.x, y:p.y, u:uv.u, v:uv.v};
+            }));
+          }));
+          if(topTris.length)
+            builder.addTopFaceTris(topTris, yTop, CEIL_TOP_LIFT, blueprintTint(rgb),
+              ownPlan.data, bgDataMime(ownPlan.data));
+        }
+        builder.endObject();
+      });
+      builder.endGroup();
+    }
     // Floor slab. Both branches read the SAME canonical plan (footprint minus
     // openings) and are consumed by the SAME solid builder, so this export and
     // the interactive 3D mesh cannot disagree. Only the geometry assembly
@@ -6846,7 +7825,7 @@ function exportGLTF(){
     if(walls.length){
       builder.beginGroup('Walls');
       walls.forEach((w,i)=>{
-        const m=matById(w.materialId); const h=Math.max(0.1,w.height==null?f.height-0.2:w.height);
+        const m=matById(w.materialId); const h=Math.max(0.1,objectHeightOnFloor(w,f));
         const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
         const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
         const id=gltfObjId(w,'wall',i);
@@ -6861,7 +7840,7 @@ function exportGLTF(){
     if(pillars.length){
       builder.beginGroup('Pillars');
       pillars.forEach((p,i)=>{
-        const m=matById(p.materialId); const h=Math.max(0.1,p.height==null?f.height-0.2:p.height);
+        const m=matById(p.materialId); const h=Math.max(0.1,objectHeightOnFloor(p,f));
         const id=gltfObjId(p,'pillar',i);
         builder.beginObject('Pillar '+id, gltfExtras('pillar',id,idx,{materialId:p.materialId}));
         builder.addCylinder(Math.max(0.03,(p.diameter||0.6)/2), h, p.x, elev+h/2, p.y, hexToRgb(m.color));
@@ -6896,7 +7875,7 @@ function exportGLTF(){
         if(planUsable){
           builder.addTopFace(
             boxTopPlanUVs(f.bg, ro.x, ro.y, ro.width, ro.depth, ry),
-            elev+ro.height, GLTF_RF_TOP_LIFT, rfTopTint(rgb),
+            elev+ro.height, GLTF_RF_TOP_LIFT, blueprintTint(rgb),
             f.bg.data, bgDataMime(f.bg.data));
         }
         builder.endObject();
@@ -7119,7 +8098,7 @@ GltfBuilder.prototype.addBgPlan=function(tris, bg, elev, lift){
 GltfBuilder.prototype.addTopFace=function(corners, y, lift, tint, image, mime){
   const o=this.cur; if(!o)throw new Error('gltf: addTopFace outside beginObject');
   if(!corners||corners.length<3) return;
-  const t=o.top||(o.top={pos:[], nrm:[], col:[], tex:[], idx:[], image:null, mime:null, tint:null});
+  const t=ceilTopBlock(o);
   t.image=image; t.mime=mime; t.tint=tint;
   const yTop=y+lift;
   const k=[];
@@ -7133,6 +8112,31 @@ GltfBuilder.prototype.addTopFace=function(corners, y, lift, tint, image, mime){
   // same winding as the box builder's +Y face, so the top faces up
   t.idx.push(k[0], k[1], k[2], k[0], k[2], k[3]);
 };
+// Same second primitive, but for an ARBITRARY polygon: any number of triangles
+// with their blueprint UVs already computed by the caller. Used by Ceiling Areas,
+// whose footprint is not a rectangle. A CCW plan triangle has a -Y normal, so
+// the up-facing order is reversed - the same convention as the slab top face.
+GltfBuilder.prototype.addTopFaceTris=function(tris, y, lift, tint, image, mime){
+  const o=this.cur; if(!o)throw new Error('gltf: addTopFaceTris outside beginObject');
+  if(!tris||!tris.length) return;
+  const t=ceilTopBlock(o);
+  t.image=image; t.mime=mime; t.tint=tint;
+  const yTop=y+lift;
+  tris.forEach(function(tr){
+    t.idx.push(tri(t, tr[2]), tri(t, tr[1]), tri(t, tr[0]));
+  });
+  function tri(b,c){
+    b.pos.push(c.x, yTop, c.y);
+    b.nrm.push(0,1,0);
+    b.col.push(tint[0], tint[1], tint[2], 1);
+    b.tex.push(c.u, c.v);
+    return b.pos.length/3-1;
+  }
+};
+// lazily created second-primitive block for the current object
+function ceilTopBlock(o){
+  return o.top||(o.top={pos:[], nrm:[], col:[], tex:[], idx:[], image:null, mime:null, tint:null});
+}
 // General slab solid from fpPartSolid(): any footprint outline, any number of
 // disconnected parts, any number of holes. It consumes exactly the same
 // {tris, walls} data as the interactive 3D mesh, so the two readings of one
