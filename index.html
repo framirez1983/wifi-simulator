@@ -4760,6 +4760,10 @@ function drawFootprintDiagnostics(){
 // all honoured exactly, and a double-height void or mezzanine edge is never
 // covered.
 const GLTF_BG_PLAN_LIFT=0.02;   // matches the interactive 3D plane offset (group y)
+// The RF Object top keeps the box's own +Y face, so its textured top is lifted
+// just enough to be strictly above it and never z-fight. 5 mm is invisible on
+// any object this size and far above depth-buffer precision at building scale.
+const GLTF_RF_TOP_LIFT=0.005;
 function bgDataMime(u){
   const m=/^data:([^;,]+)[;,]/.exec(String(u||''));
   return m?m[1]:undefined;
@@ -4770,14 +4774,128 @@ function bgDataMime(u){
 // clipping happens in the shared frame. Clipping the unrotated rectangle and
 // rotating afterwards would let a rotated plan escape the footprint.
 function bgPlanImageRing(b, pw, ph){
-  const ca=Math.cos(bgPlanRot(b)), sa=Math.sin(bgPlanRot(b));
-  const ax=b.x, ay=b.y;
-  return [[0,0],[pw,0],[pw,ph],[0,ph]].map(([dx,dy])=>{
-    const rx=dx*ca-dy*sa, ry=dx*sa+dy*ca;    // same matrix as the 2D canvas
-    return {x:ax+rx, y:ay+ry};
+  // same rotation matrix as the 2D canvas and as every other consumer
+  const rot=bgPlanRot(b), ax=b.x, ay=b.y;
+  return [[0,0],[pw,0],[pw,ph],[0,ph]].map(function(c){
+    const r=rotYPlan(c[0], c[1], rot);
+    return {x:ax+r.x, y:ay+r.z};
   });
 }
 function bgPlanRot(b){ const r=Number(b.rot); return Number.isFinite(r)?r:0; }
+
+// ============================================================
+//  BLUEPRINT PLANAR PROJECTION   world/project XY -> image UV
+// ============================================================
+// ONE canonical mapping from a point in the floor's PLAN space - the same
+// project/world XY the walls, slabs, pillars and RF Objects already live in -
+// to the blueprint image's normalised texture coordinates, in glTF convention:
+//
+//     u = 0 -> image LEFT column        u = 1 -> image RIGHT column
+//     v = 0 -> image TOP row            v = 1 -> image BOTTOM row
+//
+// (glTF 2.0 spec 3.8.3 / 5.30: "The origin of the texture coordinates (0, 0)
+// corresponds to the upper left corner of a texture image".)
+//
+// It reuses the background-plan placement verbatim: the bg.x/bg.y anchor, the
+// calibrated w*scale x h*scale size, and bg.rot as a rigid rotation about the
+// image's top-left corner using the same matrix as the 2D canvas
+// (dx,dy) -> (dx*cos - dy*sin, dx*sin + dy*cos). So a given project point always
+// resolves to the same pixel of the same plan, in every consumer.
+//
+// Consumers - and the only two places the mapping is allowed to appear:
+//   exportGLTF / addBgPlan        use blueprintUV() directly.
+//   build3d                       uses blueprintUVThree(), which differs ONLY by
+//                                 flipping v, because three.js uploads textures
+//                                 with flipY=true and therefore puts the image
+//                                 TOP at v=1. That is a renderer boundary
+//                                 adaptation, not a second formula.
+// Nothing else re-derives this mapping: the background plan, RF Object top faces
+// and any future horizontal surface (Ceiling Areas, ...) all call these.
+
+// Does this floor have a blueprint that can be projected onto?
+function blueprintUsable(b){
+  if(!b||!b.data) return false;
+  const pw=b.w*b.scale, ph=b.h*b.scale;
+  return pw>0 && ph>0;
+}
+// Rotate a local (x,z) pair about Y by `ry` radians, with exactly the matrix
+// three.js (Matrix4.makeRotationY) and the glTF box builder both use.
+function rotYPlan(lx, lz, ry){
+  const ca=Math.cos(ry), sa=Math.sin(ry);
+  return {x:lx*ca-lz*sa, z:lx*sa+lz*ca};
+}
+// CANONICAL: plan-space (world XY) -> blueprint UV, glTF convention.
+function blueprintUV(b, x, y){
+  const pw=b.w*b.scale, ph=b.h*b.scale;
+  const rot=bgPlanRot(b), ca=Math.cos(rot), sa=Math.sin(rot);
+  const dx=x-b.x, dy=y-b.y;
+  // undo the image rotation to get image-space offsets, then normalise
+  return { u:(dx*ca+dy*sa)/pw, v:(-dx*sa+dy*ca)/ph };
+}
+// Same projection, adapted for three.js (flipY puts the image top at v=1).
+function blueprintUVThree(b, x, y){
+  const t=blueprintUV(b,x,y);
+  return {u:t.u, v:1-t.v};
+}
+// The four top-face corners of a box standing at plan (x,y) and rotated about Y
+// by `ry` radians, returned in PLAN coordinates. The corner order matches the
+// glTF box builder's +Y face (corners 2, 7, 6, 3) so both representations wind
+// identically. Because the rotation is applied here, the result is the object's
+// FINAL world position - a rotated RF Object therefore projects the blueprint
+// part actually underneath it, not the part under its unrotated footprint.
+function boxTopPlanCorners(x, y, width, depth, ry){
+  const hx=width/2, hz=depth/2;
+  return [[hx,-hz],[hx,hz],[-hx,hz],[-hx,-hz]].map(function(c){
+    const r=rotYPlan(c[0], c[1], ry);
+    return {x:x+r.x, y:y+r.z};
+  });
+}
+// Blueprint UVs for those same corners, via the canonical projection.
+function boxTopPlanUVs(b, x, y, width, depth, ry){
+  return boxTopPlanCorners(x, y, width, depth, ry).map(function(c){
+    const t=blueprintUV(b, c.x, c.y);
+    return {x:c.x, y:c.y, u:t.u, v:t.v};
+  });
+}
+// ============================================================
+//  RF OBJECT BLUEPRINT OWNERSHIP
+// ============================================================
+// A RF Object's canonical owner is the floor whose `rfObjects` array CONTAINS it.
+// Ownership is structural - there is deliberately no persisted floorId, because
+// duplicating it would create a second source of truth that can disagree with the
+// array it mirrors. Both consumers already iterate floors and read that floor's
+// own arrays, so inside those loops `f` IS the owner floor.
+//
+// The blueprint a RF Object shows is therefore its OWNER's background plan, and
+// only ever that: never state.activeFloor, never the floor currently being
+// viewed, never a floor the object happens to span, never the floor its top face
+// happens to sit inside. A rack created on Floor 0 keeps Floor 0's drawing even
+// when it is tall enough to cross Floor 1, even while Floor 1 is the active
+// floor, and even if Floor 1 has a different plan.
+//
+// The active-floor cutaway is a VISIBILITY rule (it hides floors above the
+// active one); it is not an ownership or texture rule.
+//
+// Returns the owner floor's usable background plan, or null when the owner has
+// none, so both consumers fall back to the plain object colour identically.
+function ownerBlueprintPlan(f){
+  if(!f) return null;
+  const b=f.bg;
+  if(!b||b.visible===false) return null;
+  return blueprintUsable(b) ? b : null;
+}
+// The top face of an RF Object shows the blueprint, but must still read as an
+// object rather than melt into the floor. The blueprint is multiplied by a
+// MUTED version of the object's own colour (lifted towards white so the drawing
+// stays legible) and stays fully opaque, which needs no blending and no second
+// stacked surface. Same maths in both consumers: glTF multiplies
+// baseColorFactor x baseColorTexture, three.js multiplies material.color x map.
+function rfTopTint(rgb){
+  return [0,1,2].map(function(k){
+    const v=0.40 + 0.60*(Number(rgb[k])||0);
+    return v<0?0:(v>1?1:v);
+  });
+}
 // Plan triangles of this floor's background plan, clipped to the slab footprint.
 // Returns null when the floor has no image, no usable calibration, or no plan
 // area survives the footprint.
@@ -5053,6 +5171,19 @@ function build3d(){
     });
 
     // RF Objects
+    // The top face shows the OWNER floor's blueprint - and `f`, the floor whose
+    // rfObjects array we are iterating, IS the owner. It is deliberately NOT
+    // gated on idx===state.activeFloor: a RF Object created on a lower floor
+    // keeps its own floor's drawing while a higher floor is being viewed. The
+    // loop above already returned for floors above the active one, so the owner
+    // is always drawn and therefore always textured here.
+    //
+    // UVs come from the object's FINAL world XY through the same canonical
+    // mapping the glTF export uses (blueprintUVThree, differing only by three.js
+    // flipY). The five side and bottom faces keep the existing RF Object
+    // material, so the object still reads as an object. `_img` is a renderer
+    // concern (no image object loaded yet means no texture), not ownership.
+    const rfPlan=(f.bg && f.bg._img) ? ownerBlueprintPlan(f) : null;
     (f.rfObjects||[]).forEach(ro=>{
       const m=matById(ro.materialId);
       const geo=new THREE.BoxGeometry(ro.width, ro.height, ro.depth);
@@ -5061,6 +5192,38 @@ function build3d(){
       const mesh=new THREE.Mesh(geo,mat);
       mesh.position.set(ro.x-cx, ro.height/2, ro.y-cz);
       mesh.rotation.y=-ro.rotation*Math.PI/180;
+      if(rfPlan){
+        // three.js box face order is +X, -X, +Y, -Y, +Z, -Z, so the top is
+        // material slot 2. Every other slot keeps the RF Object material.
+        const tint=rfTopTint(hexToRgb(m.color));
+        const topTex=new THREE.Texture(rfPlan._img); topTex.needsUpdate=true;
+        // the top follows the object's own transparency, exactly like its sides,
+        // so a dimmed lower floor dims its rack tops too
+        const topMat=new THREE.MeshBasicMaterial({map:topTex,
+          color:new THREE.Color(tint[0],tint[1],tint[2]),
+          transparent:true, opacity:(0.72)*dim+0.18});
+        mesh.material=[mat,mat,topMat,mat,mat,mat];
+        // Project the top face. Vertices are read back from the geometry and
+        // rotated by the mesh's own angle, so the UVs follow the real world
+        // position and no vertex ordering is assumed.
+        // The height test also matches the 8 side-face vertices that sit at the
+        // top edge, which is deliberate: it cannot miss the top face whatever
+        // the face order is, and those extra vertices belong to materials with
+        // no map, so their UVs are never read. The SIDE FACES ARE NOT TEXTURED -
+        // only material slot 2 carries the blueprint.
+        const pa=geo.attributes.position, ua=geo.attributes.uv, ry=mesh.rotation.y;
+        const hy=ro.height/2;
+        for(let i=0;i<pa.count;i++){
+          if(Math.abs(pa.getY(i)-hy)>1e-6) continue;
+          const r=rotYPlan(pa.getX(i), pa.getZ(i), ry);
+          // ro.x + r.x, NOT the mesh's recentred (ro.x - cx) + r.x: the projection
+          // is defined in the project's plan frame, so the scene's cx/cz offset
+          // must not leak into it. The export uses these same plan coordinates.
+          const t=blueprintUVThree(rfPlan, ro.x+r.x, ro.y+r.z);
+          ua.setXY(i, t.u, t.v);
+        }
+        ua.needsUpdate=true;
+      }
       fl.add(mesh);
     });
 
@@ -6710,13 +6873,32 @@ function exportGLTF(){
     const rfObjects=f.rfObjects||[];
     if(rfObjects.length){
       builder.beginGroup('RF Objects');
+      // A hidden or absent plan means the RF Objects export exactly as they did
+      // before this feature: one box primitive, no second primitive, no texture.
+      // `f` is the owner floor here too, so the export and the interactive 3D
+      // resolve the blueprint through the same ownerBlueprintPlan() rule.
+      const planUsable=!!ownerBlueprintPlan(f);
       rfObjects.forEach((ro,i)=>{
         const m=matById(ro.materialId);
         const id=gltfObjId(ro,'rfObject',i);
         const extra=Number(ro.extraLossDb);
         builder.beginObject('RF Object'+(ro.name?' '+ro.name:'')+' ['+id+']',
           gltfExtras('rfObject',id,idx,{materialId:ro.materialId, extraLossDb:Number.isFinite(extra)?extra:undefined}));
-        builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, -ro.rotation*Math.PI/180, hexToRgb(m.color));
+        const rgb=hexToRgb(m.color);
+        const ry=-ro.rotation*Math.PI/180;
+        builder.addBox(ro.width, ro.height, ro.depth, ro.x, elev+ro.height/2, ro.y, ry, rgb);
+        // Blueprint on the horizontal top face only. The box keeps all six faces,
+        // its dimensions and its vertex data, so the sides, bottom and the RF
+        // behaviour are exactly as before; the textured top is a second primitive
+        // on this same node, lifted a few mm to clear the box's own +Y face.
+        // UVs come from the FINAL world position of each top corner, so a rotated
+        // RF Object shows the blueprint part actually underneath it.
+        if(planUsable){
+          builder.addTopFace(
+            boxTopPlanUVs(f.bg, ro.x, ro.y, ro.width, ro.depth, ry),
+            elev+ro.height, GLTF_RF_TOP_LIFT, rfTopTint(rgb),
+            f.bg.data, bgDataMime(f.bg.data));
+        }
         builder.endObject();
       });
       builder.endGroup();
@@ -6774,7 +6956,12 @@ GltfBuilder.prototype.beginObject=function(name, extras){
   if(this.cur)throw new Error('gltf: beginObject while another object is open');
   // tex/image/mime/opacity are only filled by addBgPlan; every other object
   // leaves them null, so a scene with no background plan is unaffected.
-  this.cur={name, extras, pos:[], nrm:[], col:[], idx:[], vcount:0, tex:null, image:null, mime:null, opacity:null};
+  // top is an OPTIONAL second primitive for the same node (the blueprint-textured
+  // horizontal top face). It is null unless addTopFace() fills it, so objects
+  // without a textured top - and every project with no background plan - are
+  // byte-identical to before.
+  this.cur={name, extras, pos:[], nrm:[], col:[], idx:[], vcount:0, tex:null, image:null, mime:null, opacity:null,
+            top:null};
   return this.cur;
 };
 GltfBuilder.prototype.endObject=function(){
@@ -6892,36 +7079,24 @@ GltfBuilder.prototype.addBgPlan=function(tris, bg, elev, lift){
   if(!tris||!tris.length) return;
   const pw=bg.w*bg.scale, ph=bg.h*bg.scale;
   if(!(pw>0)||!(ph>0)) return;
-  const rot=bgPlanRot(bg), ca=Math.cos(rot), sa=Math.sin(rot);
   const op=Number(bg.opacity);
   o.image=bg.data; o.mime=bgDataMime(bg.data);
   o.opacity=(Number.isFinite(op)?Math.max(0,Math.min(1,op)):1);
   o.tex=[];
-  // ORIENTATION. Three conventions collide here, and getting them mixed up flips
-  // the drawing:
-  //   2D editor : ctx.translate(W2S(bg.x,bg.y)); drawImage(img,0,0,sw,sh) with
-  //               canvas +y downward, so the image TOP-LEFT sits at world
-  //               (bg.x,bg.y) and the image extends toward +x and +y. Image row 0
-  //               (top) is therefore at the SMALLEST world y.
-  //   glTF      : "The origin of the texture coordinates (0, 0) corresponds to the
-  //               upper left corner of a texture image" (spec 3.8.3 / 5.30), so
-  //               v=0 is the image TOP row and v=1 the BOTTOM row. u=0 is the
-  //               image LEFT column, same direction as OpenGL.
-  //   three.js  : Texture.flipY defaults to true, so in the interactive 3D view
-  //               v=1 is the image top. That is a renderer-internal flip and
-  //               must NOT be copied here: bgPlaneGeometryClipped() is correct
-  //               for three.js and this is correct for glTF.
-  // Hence: u grows with +x, v grows with +y, both straight, no inversion.
+  // ORIENTATION lives in blueprintUV(), the single canonical projection. Three
+  // conventions collide in this feature and getting them mixed up flips the
+  // drawing, so they are documented once, there:
+  //   2D editor : image TOP-LEFT at world (bg.x,bg.y), canvas +y downward, so
+  //               image row 0 is at the SMALLEST world y.
+  //   glTF      : (0,0) is the upper-left image pixel, so v=0 is the image TOP.
+  //   three.js  : flipY=true, so v=1 is the image top (blueprintUVThree).
+  // This consumer is the glTF one, so it uses blueprintUV() unchanged.
   const put=p=>{
-    // p is in plan coordinates. The image frame is the plan frame turned by
-    // -rot about the image corner, so the un-rotated offset gives the image
-    // coordinates, while p itself is already the world position.
-    const dx=p.x-bg.x, dy=p.y-bg.y;
-    const ix= dx*ca+dy*sa, iy=-dx*sa+dy*ca;   // inverse rotation
+    const t=blueprintUV(bg, p.x, p.y);
     o.pos.push(p.x, elev+lift, p.y);
     o.nrm.push(0,1,0);
     o.col.push(1,1,1,1);
-    o.tex.push(ix/pw, iy/ph);   // v=0 at the image top row, per the glTF spec
+    o.tex.push(t.u, t.v);
     return o.vcount++;
   };
   tris.forEach(t=>{
@@ -6930,6 +7105,33 @@ GltfBuilder.prototype.addBgPlan=function(tris, bg, elev, lift){
     const i0=put(t[2]), i1=put(t[1]), i2=put(t[0]);
     o.idx.push(i0,i1,i2);
   });
+};
+// A second primitive on the SAME node: the horizontal top face of an object,
+// textured with the floor's blueprint. Corners arrive already in PLAN space and
+// already carrying their blueprint UVs (from boxTopPlanUVs(), i.e. the canonical
+// projection), so this method performs no UV maths of its own and the two
+// consumers cannot drift apart.
+//
+// The object's own box keeps all six of its faces, so the textured top is lifted
+// by a few millimetres to stay strictly above the box's own +Y face rather than
+// z-fighting with it. Leaving the box untouched is what keeps the object's
+// geometry, dimensions and vertex data bit-identical.
+GltfBuilder.prototype.addTopFace=function(corners, y, lift, tint, image, mime){
+  const o=this.cur; if(!o)throw new Error('gltf: addTopFace outside beginObject');
+  if(!corners||corners.length<3) return;
+  const t=o.top||(o.top={pos:[], nrm:[], col:[], tex:[], idx:[], image:null, mime:null, tint:null});
+  t.image=image; t.mime=mime; t.tint=tint;
+  const yTop=y+lift;
+  const k=[];
+  corners.forEach(function(c){
+    k.push(t.pos.length/3);
+    t.pos.push(c.x, yTop, c.y);
+    t.nrm.push(0,1,0);
+    t.col.push(tint[0], tint[1], tint[2], 1);
+    t.tex.push(c.u, c.v);
+  });
+  // same winding as the box builder's +Y face, so the top faces up
+  t.idx.push(k[0], k[1], k[2], k[0], k[2], k[3]);
 };
 // General slab solid from fpPartSolid(): any footprint outline, any number of
 // disconnected parts, any number of holes. It consumes exactly the same
@@ -7018,45 +7220,104 @@ GltfBuilder.prototype.finish=function(){
     });
     if(extensionsUsed.indexOf('KHR_materials_unlit')<0) extensionsUsed.push('KHR_materials_unlit');
   });
+  // Textured TOP faces (RF Objects standing on the plan). The image is looked up
+  // in the SAME texByUri map, so a floor's blueprint is embedded once and shared
+  // by its background plan and by every RF Object top on it - never duplicated
+  // per object. Materials are cached by (image, tint) so N objects on one floor
+  // cost one extra material, not N.
+  const matByKey=new Map();
+  objects.forEach(o=>{
+    const t=o.top;
+    if(!t) return;
+    let ti=texByUri.get(t.image);
+    if(ti===undefined){
+      ti=textures.length;
+      texByUri.set(t.image,ti);
+      const im={uri:t.image};
+      if(t.mime) im.mimeType=t.mime;
+      images.push(im);
+      samplers.push({magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071}); // LINEAR, CLAMP
+      textures.push({sampler:samplers.length-1, source:ti});
+    }
+    const key=t.image+'|'+t.tint.join(',');
+    let mi=matByKey.get(key);
+    if(mi===undefined){
+      mi=materials.length;
+      matByKey.set(key,mi);
+      // baseColorFactor multiplies baseColorTexture, so the blueprint keeps its
+      // own linework while the object's colour tints it. Opaque, so the object
+      // never dissolves into the floor and no blending order matters.
+      materials.push({
+        name:'rfObjectTop',
+        doubleSided:true,
+        pbrMetallicRoughness:{
+          baseColorFactor:[t.tint[0],t.tint[1],t.tint[2],1],
+          baseColorTexture:{index:ti, texCoord:0},
+          metallicFactor:0, roughnessFactor:1
+        },
+        extensions:{KHR_materials_unlit:{}}
+      });
+      if(extensionsUsed.indexOf('KHR_materials_unlit')<0) extensionsUsed.push('KHR_materials_unlit');
+    }
+    t.materialSlot=mi;
+  });
   // concatenate every object into one shared buffer; indices stay object-local
   let nPos=0,nNrm=0,nCol=0,nIdx=0,nTex=0;
-  objects.forEach(o=>{ nPos+=o.pos.length; nNrm+=o.nrm.length; nCol+=o.col.length; nIdx+=o.idx.length;
-                       if(o.tex) nTex+=o.tex.length; });
+  objects.forEach(o=>{
+    nPos+=o.pos.length; nNrm+=o.nrm.length; nCol+=o.col.length; nIdx+=o.idx.length;
+    if(o.tex) nTex+=o.tex.length;
+    const t=o.top;
+    if(t){ nPos+=t.pos.length; nNrm+=t.nrm.length; nCol+=t.col.length; nIdx+=t.idx.length; nTex+=t.tex.length; }
+  });
   const pos=new Float32Array(nPos), nrm=new Float32Array(nNrm),
         col=new Float32Array(nCol), idx=new Uint32Array(nIdx);
   const tex=nTex?new Float32Array(nTex):null;
   let oPos=0,oNrm=0,oCol=0,oIdx=0,oTex=0;
-  objects.forEach(o=>{
-    // indices stay object-local: a primitive indexes into its own POSITION accessor,
-    // whose byteOffset already selects this object's vertices in the shared buffer
-    pos.set(o.pos,oPos); nrm.set(o.nrm,oNrm); col.set(o.col,oCol); idx.set(o.idx,oIdx);
-    if(o.tex) tex.set(o.tex,oTex);
-    // object bounds for the POSITION accessor, taken from the stored float32 data
+  // One primitive from one vertex block, laid out at the given running offsets
+  // in the shared buffer. Every block carries its own tex[] only when it is
+  // textured, which is why the second primitive does not disturb the first.
+  const pushPrim=function(blk, oP, oN, oC, oI, oT, material){
+    pos.set(blk.pos,oP); nrm.set(blk.nrm,oN); col.set(blk.col,oC); idx.set(blk.idx,oI);
+    if(blk.tex) tex.set(blk.tex,oT);
+    // block bounds for the POSITION accessor, taken from the stored float32 data
     let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
-    for(let i=oPos;i<oPos+o.pos.length;i+=3)for(let k=0;k<3;k++){
+    for(let i=oP;i<oP+blk.pos.length;i+=3)for(let k=0;k<3;k++){
       const v=pos[i+k]; if(v<mn[k])mn[k]=v; if(v>mx[k])mx[k]=v;
     }
     const aPos=accessors.length;
-    accessors.push({bufferView:0, byteOffset:oPos*4, componentType:5126, count:o.pos.length/3, type:'VEC3', min:mn, max:mx});
+    accessors.push({bufferView:0, byteOffset:oP*4, componentType:5126, count:blk.pos.length/3, type:'VEC3', min:mn, max:mx});
     const aNrm=accessors.length;
-    accessors.push({bufferView:1, byteOffset:oNrm*4, componentType:5126, count:o.nrm.length/3, type:'VEC3'});
+    accessors.push({bufferView:1, byteOffset:oN*4, componentType:5126, count:blk.nrm.length/3, type:'VEC3'});
     const aCol=accessors.length;
-    accessors.push({bufferView:2, byteOffset:oCol*4, componentType:5126, count:o.col.length/4, type:'VEC4'});
+    accessors.push({bufferView:2, byteOffset:oC*4, componentType:5126, count:blk.col.length/4, type:'VEC4'});
     const aIdx=accessors.length;
-    accessors.push({bufferView:3, byteOffset:oIdx*4, componentType:5125, count:o.idx.length, type:'SCALAR'});
-    const prim={attributes:{POSITION:aPos,NORMAL:aNrm,COLOR_0:aCol}, indices:aIdx,
-               material:(o.tex?o.materialSlot:0)};
-    if(o.tex){
-      // o.tex implies the UV part exists, so it is always the 5th bufferView
+    accessors.push({bufferView:3, byteOffset:oI*4, componentType:5125, count:blk.idx.length, type:'SCALAR'});
+    const prim={attributes:{POSITION:aPos,NORMAL:aNrm,COLOR_0:aCol}, indices:aIdx, material:material};
+    if(blk.tex){
+      // blk.tex implies the UV part exists, so it is always the 5th bufferView
       const aTex=accessors.length;
-      accessors.push({bufferView:4, byteOffset:oTex*4, componentType:5126,
-                      count:o.tex.length/2, type:'VEC2'});
+      accessors.push({bufferView:4, byteOffset:oT*4, componentType:5126,
+                      count:blk.tex.length/2, type:'VEC2'});
       prim.attributes.TEXCOORD_0=aTex;
     }
-    meshes.push({primitives:[prim]});
-    nodes[o.nodeIndex].mesh=meshes.length-1;
+    return prim;
+  };
+  objects.forEach(o=>{
+    // indices stay object-local: a primitive indexes into its own POSITION accessor,
+    // whose byteOffset already selects this object's vertices in the shared buffer
+    const prims=[pushPrim(o, oPos, oNrm, oCol, oIdx, oTex, o.tex?o.materialSlot:0)];
     oPos+=o.pos.length; oNrm+=o.nrm.length; oCol+=o.col.length; oIdx+=o.idx.length;
     if(o.tex) oTex+=o.tex.length;
+    // optional blueprint-textured top face: a SECOND primitive on the SAME mesh,
+    // so the object keeps its single node, name and extras
+    if(o.top){
+      const t=o.top;
+      prims.push(pushPrim(t, oPos, oNrm, oCol, oIdx, oTex, t.materialSlot));
+      oPos+=t.pos.length; oNrm+=t.nrm.length; oCol+=t.col.length; oIdx+=t.idx.length;
+      oTex+=t.tex.length;
+    }
+    meshes.push({primitives:prims});
+    nodes[o.nodeIndex].mesh=meshes.length-1;
   });
   const parts=[pos,nrm,col,idx];
   if(tex) parts.push(tex);
