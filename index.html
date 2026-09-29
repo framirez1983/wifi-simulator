@@ -4177,8 +4177,17 @@ function fpEdgeY(e,x){ return e.p0.y+(e.p1.y-e.p0.y)*((x-e.p0.x)/(e.p1.x-e.p0.x)
 // is solid on one side and open on the other, and even-odd bands strictly
 // alternate, so no edge can have solid on both sides. Ring winding is never
 // consulted, so the result does not depend on how a ring was authored.
-function fpPartSolid(outer, holes){
-  const rings=[outer].concat(holes);
+// Optional clipRings: simple rings whose interior must ALSO contain the solid.
+// The solid becomes (even-odd over the slab rings) INTERSECT (outer ring alone)
+// INTERSECT (even-odd over the clip rings). Because the clip is a separate
+// even-odd constraint rather than another hole, a clip that only partially
+// overlaps the part yields an exact partial intersection - which is how the
+// exported background plan is cut to the slab footprint. Omitting clipRings
+// reproduces the original slab behaviour exactly.
+function fpPartSolid(outer, holes, clipRings){
+  const slabRings=[outer].concat(holes||[]);
+  const clip=clipRings||[];
+  const rings=slabRings.concat(clip);
   const sub=fpNodeRings(rings);
   if(!sub.length) return null;
   // cut lines: every sub-edge endpoint abscissa
@@ -4218,42 +4227,51 @@ function fpPartSolid(outer, holes){
     });
     if(cross.length<2) continue;
     cross.sort((p,q)=>p.y-q.y);
-    // footprint bands: the OUTER ring's own crossings, paired among themselves
-    const oc=cross.filter(c=>sub[c.i].ri===0);
-    if(oc.length<2) continue;
-    const ob=[];
-    for(let k=0;k+1<oc.length;k+=2) ob.push([oc[k],oc[k+1]]);
-    // even-odd bands over ALL rings, intersected with the footprint bands
-    for(let k=0;k+1<cross.length;k+=2){
-      const aLo=cross[k], aHi=cross[k+1];
-      for(const o of ob){
-        if(aHi.y<=o[0].y+FP_EPS || aLo.y>=o[1].y-FP_EPS) continue;
-        // each surviving boundary is the crossing that won the max / min
-        const bIdx=(aLo.y>=o[0].y)?aLo.i:o[0].i;
-        const tIdx=(aHi.y<=o[1].y)?aHi.i:o[1].i;
-        const be=sub[bIdx], te=sub[tIdx];
-        const bl0=fpEdgeY(be,xa), bl1=fpEdgeY(be,xb);
-        const tl0=fpEdgeY(te,xa), tl1=fpEdgeY(te,xb);
-        // the band is the convex quad (xa,bl0)-(xb,bl1)-(xb,tl1)-(xa,tl0)
-        const raw=[{x:xa,y:bl0},{x:xb,y:bl1},{x:xb,y:tl1},{x:xa,y:tl0}];
-        const pts=raw.filter((p,i)=>i===0||Math.abs(p.x-raw[i-1].x)>FP_EPS||Math.abs(p.y-raw[i-1].y)>FP_EPS);
-        for(let q=1;q+1<pts.length;q++) pushTri(pts[0],pts[q],pts[q+1]);
-        // band edges, oriented by increasing x: the solid is ABOVE the band's
-        // bottom edge and BELOW its top edge, which fixes both outward normals
-        const wdx=xb-xa;
-        if(Math.abs(be.p1.x-be.p0.x)>FP_EPS){
-          const blen=Math.hypot(wdx,bl1-bl0);
-          if(blen>FP_EPS) addWallSeg(bIdx, xa,bl0, xb,bl1, (bl1-bl0)/blen, -wdx/blen);
-        }
-        if(Math.abs(te.p1.x-te.p0.x)>FP_EPS){
-          const tlen=Math.hypot(wdx,tl1-tl0);
-          if(tlen>FP_EPS) addWallSeg(tIdx, xa,tl0, xb,tl1, -(tl1-tl0)/tlen, wdx/tlen);
-        }
-        // cut sides, only where a vertical ring edge really coincides. This is
-        // what clips a vertical hole/opening edge exactly to the solid part.
-        cutSide(xa, Math.min(bl0,tl0), Math.max(bl0,tl0), +1);
-        cutSide(xb, Math.min(bl1,tl1), Math.max(bl1,tl1), -1);
+    // three independent even-odd band sets, each paired among ITSELF:
+    //   ab  the slab rings (outer + holes) -> footprint minus its holes
+    //   ob  the outer ring alone           -> the footprint itself
+    //   cb  the clip rings                 -> the clip window
+    // Filtering an already y-sorted list preserves order, so pairing stays valid.
+    const bands=pred=>{
+      const f=cross.filter(c=>pred(sub[c.i].ri));
+      const out=[];
+      for(let k=0;k+1<f.length;k+=2) out.push([f[k],f[k+1]]);
+      return out;
+    };
+    const ob=bands(ri=>ri===0);
+    if(!ob.length) continue;
+    // ab always applies: it is what removes the footprint's own holes
+    const ab=bands(ri=>ri<slabRings.length);
+    const cb=clip.length?bands(ri=>ri>=slabRings.length):null;
+    // intersect the band lists; a surviving span's lower boundary is the crossing
+    // that won the max, its upper the one that won the min. Intersection is
+    // order independent, and so is the winning boundary.
+    let spans=ob;
+    spans=fpCrossSpans(spans,ab);
+    if(spans.length&&cb) spans=fpCrossSpans(spans,cb);
+    for(const sp of spans){
+      const be=sub[sp[0].i], te=sub[sp[1].i];
+      const bl0=fpEdgeY(be,xa), bl1=fpEdgeY(be,xb);
+      const tl0=fpEdgeY(te,xa), tl1=fpEdgeY(te,xb);
+      // the band is the convex quad (xa,bl0)-(xb,bl1)-(xb,tl1)-(xa,tl0)
+      const raw=[{x:xa,y:bl0},{x:xb,y:bl1},{x:xb,y:tl1},{x:xa,y:tl0}];
+      const pts=raw.filter((p,i)=>i===0||Math.abs(p.x-raw[i-1].x)>FP_EPS||Math.abs(p.y-raw[i-1].y)>FP_EPS);
+      for(let q=1;q+1<pts.length;q++) pushTri(pts[0],pts[q],pts[q+1]);
+      // band edges, oriented by increasing x: the solid is ABOVE the band's
+      // bottom edge and BELOW its top edge, which fixes both outward normals
+      const wdx=xb-xa;
+      if(Math.abs(be.p1.x-be.p0.x)>FP_EPS){
+        const blen=Math.hypot(wdx,bl1-bl0);
+        if(blen>FP_EPS) addWallSeg(sp[0].i, xa,bl0, xb,bl1, (bl1-bl0)/blen, -wdx/blen);
       }
+      if(Math.abs(te.p1.x-te.p0.x)>FP_EPS){
+        const tlen=Math.hypot(wdx,tl1-tl0);
+        if(tlen>FP_EPS) addWallSeg(sp[1].i, xa,tl0, xb,tl1, -(tl1-tl0)/tlen, wdx/tlen);
+      }
+      // cut sides, only where a vertical ring edge really coincides. This is
+      // what clips a vertical hole/opening edge exactly to the solid part.
+      cutSide(xa, Math.min(bl0,tl0), Math.max(bl0,tl0), +1);
+      cutSide(xb, Math.min(bl1,tl1), Math.max(bl1,tl1), -1);
     }
   }
   if(!tris.length) return null;
@@ -4468,6 +4486,17 @@ function fpEndpointList(nodes){
   return nodes
     .map(n=>({x:Math.round(n.x*1000)/1000, y:Math.round(n.y*1000)/1000}))
     .sort((a,b)=>a.x-b.x || a.y-b.y);
+}
+// Intersect two lists of [loCross,hiCross] spans on the y line of one strip,
+// keeping the crossing that wins the max / min as the surviving boundary.
+function fpCrossSpans(A,B){
+  const out=[];
+  A.forEach(a=>B.forEach(b=>{
+    const lo=(a[0].y>=b[0].y)?a[0]:b[0];
+    const hi=(a[1].y<=b[1].y)?a[1]:b[1];
+    if(hi.y-lo.y>FP_EPS) out.push([lo,hi]);
+  }));
+  return out;
 }
 function fpOnRingXY(p,ring,tol){
   for(let i=0;i<ring.length;i++){
@@ -4703,6 +4732,68 @@ function drawFootprintDiagnostics(){
     ctx.fillText(String(i+1),bx,by+0.5);
   });
   ctx.restore();
+}
+
+// ============================================================
+//  BACKGROUND FLOOR PLAN  ->  glTF textured surface
+// ============================================================
+// The calibrated plan image of a floor, exported as a horizontal textured
+// surface. Every value comes from the existing interactive-3D background
+// semantics, unchanged:
+//   f.bg.data    the image itself (a data URL, reused verbatim)
+//   f.bg.w/h    natural pixel size
+//   f.bg.scale  calibration: the physical size is w*scale x h*scale metres
+//   f.bg.x/y    world placement of the image's top-left corner
+//   f.bg.rot    rotation about that corner, same matrix as the 2D canvas
+//   f.bg.opacity
+//   floorElevation(idx) the floor's base elevation
+// The image is the texture: no OCR, no analysis, no image processing. Because
+// f.bg.data is already a self-contained data URL, embedding it verbatim keeps
+// the model self-contained, preserves every format the app accepts, and costs
+// no re-encode and no quality loss.
+//
+// GEOMETRY respects the PHYSICAL slab footprint, not the floorBounds rectangle:
+// the plan is intersected with slabPlanForFloor() (footprint minus openings) by
+// the same strip decomposition the slab uses, with the ROTATED image rectangle
+// supplied as the clip so both live in the plan frame. Footprint holes, explicit
+// openings, non-convex outlines and multiple disconnected parts are therefore
+// all honoured exactly, and a double-height void or mezzanine edge is never
+// covered.
+const GLTF_BG_PLAN_LIFT=0.02;   // matches the interactive 3D plane offset (group y)
+function bgDataMime(u){
+  const m=/^data:([^;,]+)[;,]/.exec(String(u||''));
+  return m?m[1]:undefined;
+}
+// The image rectangle, expressed in the floor's own PLAN coordinates, i.e. in
+// the same frame the slab footprint lives in. b.rot is a rigid rotation about
+// the image's top-left corner, so the rotated rectangle is computed here and the
+// clipping happens in the shared frame. Clipping the unrotated rectangle and
+// rotating afterwards would let a rotated plan escape the footprint.
+function bgPlanImageRing(b, pw, ph){
+  const ca=Math.cos(bgPlanRot(b)), sa=Math.sin(bgPlanRot(b));
+  const ax=b.x, ay=b.y;
+  return [[0,0],[pw,0],[pw,ph],[0,ph]].map(([dx,dy])=>{
+    const rx=dx*ca-dy*sa, ry=dx*sa+dy*ca;    // same matrix as the 2D canvas
+    return {x:ax+rx, y:ay+ry};
+  });
+}
+function bgPlanRot(b){ const r=Number(b.rot); return Number.isFinite(r)?r:0; }
+// Plan triangles of this floor's background plan, clipped to the slab footprint.
+// Returns null when the floor has no image, no usable calibration, or no plan
+// area survives the footprint.
+function bgPlanClippedTriangles(f){
+  const b=f&&f.bg;
+  if(!b||!b.data) return null;
+  const pw=b.w*b.scale, ph=b.h*b.scale;
+  if(!(pw>0)||!(ph>0)) return null;
+  const ring=bgPlanImageRing(b, pw, ph);
+  const plan=slabPlanForFloor(f);
+  const tris=[];
+  plan.parts.forEach(part=>{
+    const s=fpPartSolid(part.outer, part.holes, [ring]);
+    if(s) s.tris.forEach(t=>tris.push(t));
+  });
+  return tris.length?tris:null;
 }
 
 // world(x,y meters) -> three(x, z).  We map world.x->X, world.y->Z, elevation->Y
@@ -6574,6 +6665,19 @@ function exportGLTF(){
         builder.endObject();
       }
     }
+    // Background floor plan: a textured surface clipped to THIS floor's own slab
+    // footprint, so it follows the real outline and never covers a footprint
+    // hole, an opening or a double-height void. Every floor that has a plan is
+    // exported: the active-floor cutaway is an editor view, not export policy.
+    if(f.bg && f.bg.data && f.bg.visible!==false){
+      const planTris=bgPlanClippedTriangles(f);
+      if(planTris){
+        const bid=(f.id!=null&&String(f.id)!=='')?'bg_'+String(f.id):'bg-'+idx;
+        builder.beginObject('Background Plan', gltfExtras('backgroundPlan',bid,idx));
+        builder.addBgPlan(planTris, f.bg, elev, GLTF_BG_PLAN_LIFT);
+        builder.endObject();
+      }
+    }
     // walls
     const walls=f.walls.filter(w=>dist(w.x1,w.y1,w.x2,w.y2)>=0.01);
     if(walls.length){
@@ -6668,7 +6772,9 @@ GltfBuilder.prototype.endGroup=function(){
 // open an object node; addBox / addCylinder then fill its local geometry
 GltfBuilder.prototype.beginObject=function(name, extras){
   if(this.cur)throw new Error('gltf: beginObject while another object is open');
-  this.cur={name, extras, pos:[], nrm:[], col:[], idx:[], vcount:0};
+  // tex/image/mime/opacity are only filled by addBgPlan; every other object
+  // leaves them null, so a scene with no background plan is unaffected.
+  this.cur={name, extras, pos:[], nrm:[], col:[], idx:[], vcount:0, tex:null, image:null, mime:null, opacity:null};
   return this.cur;
 };
 GltfBuilder.prototype.endObject=function(){
@@ -6769,6 +6875,62 @@ GltfBuilder.prototype.addSlab=function(minx,maxx,miny,maxy, yTop, thickness, hol
   wall(outer, false);
   (holes||[]).forEach(h=>{ const r=h.slice(); if(g2RingArea(r)>0) r.reverse(); wall(r, true); });
 };
+// Background floor plan: a flat, up-facing, textured surface.
+//
+// UVs come from the UNROTATED calibrated placement, because they address the
+// image; positions come from the ROTATED placement, because that is where the
+// plan is drawn. The rotation matrix is the same one the 2D canvas uses
+// (translate to the image corner, rotate, draw), so the exported plan lands
+// exactly where the 2D editor shows it.
+//
+// The material is UNLIT (KHR_materials_unlit) with alphaMode BLEND, so the
+// architectural line work stays readable and is never darkened by a viewer's
+// lighting, and the configured bg opacity is real glTF alpha rather than a
+// colour baked into vertex attributes.
+GltfBuilder.prototype.addBgPlan=function(tris, bg, elev, lift){
+  const o=this.cur; if(!o)throw new Error('gltf: addBgPlan outside beginObject');
+  if(!tris||!tris.length) return;
+  const pw=bg.w*bg.scale, ph=bg.h*bg.scale;
+  if(!(pw>0)||!(ph>0)) return;
+  const rot=bgPlanRot(bg), ca=Math.cos(rot), sa=Math.sin(rot);
+  const op=Number(bg.opacity);
+  o.image=bg.data; o.mime=bgDataMime(bg.data);
+  o.opacity=(Number.isFinite(op)?Math.max(0,Math.min(1,op)):1);
+  o.tex=[];
+  // ORIENTATION. Three conventions collide here, and getting them mixed up flips
+  // the drawing:
+  //   2D editor : ctx.translate(W2S(bg.x,bg.y)); drawImage(img,0,0,sw,sh) with
+  //               canvas +y downward, so the image TOP-LEFT sits at world
+  //               (bg.x,bg.y) and the image extends toward +x and +y. Image row 0
+  //               (top) is therefore at the SMALLEST world y.
+  //   glTF      : "The origin of the texture coordinates (0, 0) corresponds to the
+  //               upper left corner of a texture image" (spec 3.8.3 / 5.30), so
+  //               v=0 is the image TOP row and v=1 the BOTTOM row. u=0 is the
+  //               image LEFT column, same direction as OpenGL.
+  //   three.js  : Texture.flipY defaults to true, so in the interactive 3D view
+  //               v=1 is the image top. That is a renderer-internal flip and
+  //               must NOT be copied here: bgPlaneGeometryClipped() is correct
+  //               for three.js and this is correct for glTF.
+  // Hence: u grows with +x, v grows with +y, both straight, no inversion.
+  const put=p=>{
+    // p is in plan coordinates. The image frame is the plan frame turned by
+    // -rot about the image corner, so the un-rotated offset gives the image
+    // coordinates, while p itself is already the world position.
+    const dx=p.x-bg.x, dy=p.y-bg.y;
+    const ix= dx*ca+dy*sa, iy=-dx*sa+dy*ca;   // inverse rotation
+    o.pos.push(p.x, elev+lift, p.y);
+    o.nrm.push(0,1,0);
+    o.col.push(1,1,1,1);
+    o.tex.push(ix/pw, iy/ph);   // v=0 at the image top row, per the glTF spec
+    return o.vcount++;
+  };
+  tris.forEach(t=>{
+    // A CCW plan triangle has a -Y normal, so an up-facing plane needs the
+    // reversed order. Same convention as the slab top face.
+    const i0=put(t[2]), i1=put(t[1]), i2=put(t[0]);
+    o.idx.push(i0,i1,i2);
+  });
+};
 // General slab solid from fpPartSolid(): any footprint outline, any number of
 // disconnected parts, any number of holes. It consumes exactly the same
 // {tris, walls} data as the interactive 3D mesh, so the two readings of one
@@ -6819,16 +6981,56 @@ GltfBuilder.prototype.finish=function(){
     return e.nodeIndex;
   });
   const roots=walk(this.root);
+  // Materials and textures for the background plans. Nothing is allocated
+  // unless a plan exists, so a scene without one produces the exact document
+  // it produced before this capability.
+  const materials=[{pbrMetallicRoughness:{baseColorFactor:[1,1,1,1],metallicFactor:0,roughnessFactor:0.9}}];
+  const images=[], samplers=[], textures=[], texByUri=new Map();
+  const extensionsUsed=[];
+  objects.forEach(o=>{
+    if(!o.tex) return;
+    let ti=texByUri.get(o.image);
+    if(ti===undefined){
+      ti=textures.length;
+      texByUri.set(o.image,ti);
+      const im={uri:o.image};
+      if(o.mime) im.mimeType=o.mime;      // recommended for data URIs
+      images.push(im);
+      samplers.push({magFilter:9729,minFilter:9987,wrapS:33071,wrapT:33071}); // LINEAR, CLAMP
+      textures.push({sampler:samplers.length-1, source:ti});
+    }
+    o.materialSlot=materials.length;
+    // The texture link is what makes the plan visible. Declaring images[] and
+    // textures[] is NOT enough on its own: only baseColorTexture.index actually
+    // connects the primitive to the pixels. Without it the material is valid but
+    // renders its own white baseColorFactor, which is a plain white surface.
+    // texCoord:0 selects TEXCOORD_0, the attribute addBgPlan fills.
+    materials.push({
+      name:'backgroundPlan',
+      doubleSided:true,
+      alphaMode:'BLEND',
+      pbrMetallicRoughness:{
+        baseColorFactor:[1,1,1,o.opacity],
+        baseColorTexture:{index:ti, texCoord:0},
+        metallicFactor:0, roughnessFactor:1
+      },
+      extensions:{KHR_materials_unlit:{}}
+    });
+    if(extensionsUsed.indexOf('KHR_materials_unlit')<0) extensionsUsed.push('KHR_materials_unlit');
+  });
   // concatenate every object into one shared buffer; indices stay object-local
-  let nPos=0,nNrm=0,nCol=0,nIdx=0;
-  objects.forEach(o=>{ nPos+=o.pos.length; nNrm+=o.nrm.length; nCol+=o.col.length; nIdx+=o.idx.length; });
+  let nPos=0,nNrm=0,nCol=0,nIdx=0,nTex=0;
+  objects.forEach(o=>{ nPos+=o.pos.length; nNrm+=o.nrm.length; nCol+=o.col.length; nIdx+=o.idx.length;
+                       if(o.tex) nTex+=o.tex.length; });
   const pos=new Float32Array(nPos), nrm=new Float32Array(nNrm),
         col=new Float32Array(nCol), idx=new Uint32Array(nIdx);
-  let oPos=0,oNrm=0,oCol=0,oIdx=0;
+  const tex=nTex?new Float32Array(nTex):null;
+  let oPos=0,oNrm=0,oCol=0,oIdx=0,oTex=0;
   objects.forEach(o=>{
     // indices stay object-local: a primitive indexes into its own POSITION accessor,
     // whose byteOffset already selects this object's vertices in the shared buffer
     pos.set(o.pos,oPos); nrm.set(o.nrm,oNrm); col.set(o.col,oCol); idx.set(o.idx,oIdx);
+    if(o.tex) tex.set(o.tex,oTex);
     // object bounds for the POSITION accessor, taken from the stored float32 data
     let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
     for(let i=oPos;i<oPos+o.pos.length;i+=3)for(let k=0;k<3;k++){
@@ -6842,11 +7044,22 @@ GltfBuilder.prototype.finish=function(){
     accessors.push({bufferView:2, byteOffset:oCol*4, componentType:5126, count:o.col.length/4, type:'VEC4'});
     const aIdx=accessors.length;
     accessors.push({bufferView:3, byteOffset:oIdx*4, componentType:5125, count:o.idx.length, type:'SCALAR'});
-    meshes.push({primitives:[{attributes:{POSITION:aPos,NORMAL:aNrm,COLOR_0:aCol}, indices:aIdx, material:0}]});
+    const prim={attributes:{POSITION:aPos,NORMAL:aNrm,COLOR_0:aCol}, indices:aIdx,
+               material:(o.tex?o.materialSlot:0)};
+    if(o.tex){
+      // o.tex implies the UV part exists, so it is always the 5th bufferView
+      const aTex=accessors.length;
+      accessors.push({bufferView:4, byteOffset:oTex*4, componentType:5126,
+                      count:o.tex.length/2, type:'VEC2'});
+      prim.attributes.TEXCOORD_0=aTex;
+    }
+    meshes.push({primitives:[prim]});
     nodes[o.nodeIndex].mesh=meshes.length-1;
     oPos+=o.pos.length; oNrm+=o.nrm.length; oCol+=o.col.length; oIdx+=o.idx.length;
+    if(o.tex) oTex+=o.tex.length;
   });
   const parts=[pos,nrm,col,idx];
+  if(tex) parts.push(tex);
   // align each to 4 bytes
   const offsets=[]; let total=0;
   parts.forEach(p=>{ total=align4(total); offsets.push(total); total+=p.byteLength; });
@@ -6857,7 +7070,7 @@ GltfBuilder.prototype.finish=function(){
     asset:{version:'2.0',generator:'RF Planner'},
     scenes:[{nodes:roots}], scene:0, nodes,
     meshes,
-    materials:[{pbrMetallicRoughness:{baseColorFactor:[1,1,1,1],metallicFactor:0,roughnessFactor:0.9}}],
+    materials,
     buffers:[{byteLength:buf.length, uri:'data:application/octet-stream;base64,'+b64}],
     bufferViews:[
       {buffer:0,byteOffset:offsets[0],byteLength:pos.byteLength,byteStride:12,target:34962},
@@ -6867,6 +7080,11 @@ GltfBuilder.prototype.finish=function(){
     ],
     accessors,
   };
+  if(tex) gltf.bufferViews.push({buffer:0,byteOffset:offsets[4],byteLength:tex.byteLength,byteStride:8,target:34962});
+  if(textures.length){
+    gltf.textures=textures; gltf.samplers=samplers; gltf.images=images;
+    gltf.extensionsUsed=extensionsUsed;
+  }
   return gltf;
 };
 function align4(n){return (n+3)&~3;}
