@@ -155,6 +155,7 @@
     border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   #toast progress{width:150px;height:6px;accent-color:var(--accent)}
+  #toast span{white-space:pre-line}   /* multi-sentence localizable messages */
   #calibBar,#originBar{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:31;display:none;
     align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--amber);
     border-radius:var(--r);padding:9px 14px;font-size:12px;color:var(--ink);
@@ -308,6 +309,20 @@ höger·drag · panorera</div>
         <div class="field"><label data-i18n="floor.ceiling">Takhöjd</label>
           <div class="slider"><input type="range" id="planH" min="2" max="6" step="0.1"><span class="val" id="planHV">—</span></div></div>
         <div class="hint" data-i18n="floor.sizeHint">Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.</div>
+        <div id="footprintPanel">
+          <h3 data-i18n="footprint.section">Golvkontur</h3>
+          <div class="hint" id="footprintState"></div>
+          <button class="tbtn" id="btnGenFootprint" style="width:100%;justify-content:center" data-i18n="footprint.generate">Generera golvkontur från väggar…</button>
+          <div class="hint" id="footprintDiagNote" style="display:none"></div>
+          <div id="footprintConfirm" style="display:none">
+            <div class="hint" data-i18n="footprint.confirmQ" style="margin-top:7px">Denna våning har redan en kontur. Ersätta den?</div>
+            <div class="row2">
+              <button class="tbtn" id="btnFpReplace" data-i18n="footprint.confirmYes">Ersätt</button>
+              <button class="tbtn" id="btnFpCancel" data-i18n="common.cancel">Avbryt</button>
+            </div>
+          </div>
+          <div class="hint" data-i18n="footprint.hint" style="margin-top:7px">Använd denna vånings väggar för att lagra dess verkliga kontur som bjälklag. Konturen sparas och ändras inte själv när väggarna flyttas.</div>
+        </div>
         <div id="slabPanel">
           <h3 data-i18n="slab.section">Losa hacia planta inferior</h3>
           <div class="hint" data-i18n="slab.none" id="slabNone" style="display:none">Esta planta no tiene losa debajo.</div>
@@ -445,6 +460,21 @@ const translations = {
     "slab.extra": "Atenuación adicional (dB)",
     "slab.effective": "Pérdida efectiva",
     "slab.hint": "La losa pertenece a esta planta y está en su cota base. Los huecos de esta planta anulan la pérdida en el punto de cruce.",
+    "footprint.section": "Huella de planta",
+    "footprint.generate": "Generar huella desde muros\u2026",
+    "footprint.hint": "Usa los muros de esta planta para guardar su contorno real como losa. La huella queda guardada y no cambia sola al mover los muros.",
+    "footprint.state.none": "Sin huella: la losa usa el \u00e1rea del editor.",
+    "footprint.state.set": "Huella guardada: {parts} regi\u00f3n(es), {area} m\u00b2.",
+    "footprint.confirmQ": "Esta planta ya tiene una huella. \u00bfReemplazarla?",
+    "footprint.confirmYes": "Reemplazar",
+    "footprint.ok": "Huella generada desde los muros: {parts} regi\u00f3n(es), {area} m\u00b2.",
+    "footprint.cancelled": "Generaci\u00f3n cancelada. La huella no se modific\u00f3.",
+    "footprint.err.noWalls": "Esta planta no tiene suficientes muros.",
+    "footprint.err.noRegion": "Los muros no encierran ninguna regi\u00f3n de planta.",
+    "footprint.err.openBoundary": "El per\u00edmetro exterior no est\u00e1 suficientemente cerrado: {count} extremo(s) de muro abierto(s). Cierra los huecos (puertas, vanos) e int\u00e9ntalo de nuevo.",
+    "footprint.err.openBoundary": "El per\u00edmetro exterior no est\u00e1 suficientemente cerrado.\nSe marcaron {count} extremos abiertos en rojo.",
+    "footprint.diagNote": "Los extremos marcados pueden ser una puerta o un vano: ci\u00e9rralos, o modela el hueco de otra forma si debe quedar abierto.",
+    "footprint.err.notClosed": "No se pudo resolver un contorno de planta cerrado y sin cruces.",
     "floor.sizeHint": "El tamaño define la superficie, el marco de la cuadrícula y el área de la malla de cobertura. Las paredes fuera del marco amplían el área automáticamente.",
     "section.coverage": "Cobertura y visualización",
     "coverage.metric": "Magnitud mostrada",
@@ -728,6 +758,21 @@ const translations = {
     "slab.extra": "Additional attenuation (dB)",
     "slab.effective": "Effective loss",
     "slab.hint": "The slab belongs to this floor and sits at its base elevation. Openings on this floor void the loss at the crossing point.",
+    "footprint.section": "Floor footprint",
+    "footprint.generate": "Generate footprint from walls\u2026",
+    "footprint.hint": "Use this floor's walls to store its real outline as the slab. The footprint is saved and does not change on its own when walls move.",
+    "footprint.state.none": "No footprint: the slab uses the editor area.",
+    "footprint.state.set": "Footprint stored: {parts} region(s), {area} m\u00b2.",
+    "footprint.confirmQ": "This floor already has a footprint. Replace it?",
+    "footprint.confirmYes": "Replace",
+    "footprint.ok": "Footprint generated from walls: {parts} region(s), {area} m\u00b2.",
+    "footprint.cancelled": "Generation cancelled. The footprint was not changed.",
+    "footprint.err.noWalls": "This floor does not have enough walls.",
+    "footprint.err.noRegion": "The walls do not enclose any floor region.",
+    "footprint.err.openBoundary": "The exterior perimeter is not sufficiently closed: {count} open wall end(s). Close the gaps (doors, openings) and try again.",
+    "footprint.err.openBoundary": "The exterior perimeter is not sufficiently closed.\n{count} open wall endpoints have been marked in red.",
+    "footprint.diagNote": "The marked endpoints may be a door or an opening: close them, or model the gap differently if it is meant to stay open.",
+    "footprint.err.notClosed": "Could not resolve a closed, non-self-crossing floor outline.",
     "floor.sizeHint": "The size sets the floor area, grid boundary and coverage grid area. Walls outside the boundary automatically extend the area.",
     "section.coverage": "Coverage & display",
     "coverage.metric": "Displayed metric",
@@ -1011,6 +1056,21 @@ const translations = {
     "slab.extra": "Extra dämpning (dB)",
     "slab.effective": "Effektiv förlust",
     "slab.hint": "Bjälklaget tillhör denna våning och ligger på dess basnivå. Öppningar på denna våning tar bort förlusten vid korsningspunkten.",
+    "footprint.section": "Golvkontur",
+    "footprint.generate": "Generera golvkontur fr\u00e5n v\u00e4ggar\u2026",
+    "footprint.hint": "Anv\u00e4nd denna v\u00e5nings v\u00e4ggar f\u00f6r att lagra dess verkliga kontur som bj\u00e4lklag. Konturen sparas och \u00e4ndras inte sj\u00e4lv n\u00e4r v\u00e4ggarna flyttas.",
+    "footprint.state.none": "Ingen kontur: bj\u00e4lklaget anv\u00e4nder redigeringsytan.",
+    "footprint.state.set": "Kontur sparad: {parts} region(er), {area} m\u00b2.",
+    "footprint.confirmQ": "Denna v\u00e5ning har redan en kontur. Ers\u00e4tta den?",
+    "footprint.confirmYes": "Ers\u00e4tt",
+    "footprint.ok": "Kontur genererad fr\u00e5n v\u00e4ggarna: {parts} region(er), {area} m\u00b2.",
+    "footprint.cancelled": "Genereringen avbr\u00f6ts. Konturen \u00e4ndrades inte.",
+    "footprint.err.noWalls": "Denna v\u00e5ning har inte tillr\u00e4ckligt m\u00e5nga v\u00e4ggar.",
+    "footprint.err.noRegion": "V\u00e4ggarna omsluter ingen golvregion.",
+    "footprint.err.openBoundary": "Ytteromkretsen \u00e4r inte tillr\u00e4ckligt st\u00e4ngd: {count} \u00f6ppet/m\u00e5nga v\u00e4gg\u00e4nde. St\u00e4ng luckorna (d\u00f6rr, \u00f6ppningar) och f\u00f6rs\u00f6k igen.",
+    "footprint.err.openBoundary": "Ytteromkretsen \u00e4r inte tillr\u00e4ckligt st\u00e4ngd.\n{count} \u00f6ppna v\u00e4gg\u00e4ndar har markerats i r\u00f6tt.",
+    "footprint.diagNote": "De markerade \u00e4ndarna kan vara en d\u00f6rr eller en \u00f6ppning: st\u00e4ng dem, eller modellera luckan p\u00e5 ett annat s\u00e4tt om den ska vara \u00f6ppen.",
+    "footprint.err.notClosed": "Kunde inte hitta en st\u00e4ng, sj\u00e4lvkorsande golvkontur.",
     "floor.sizeHint": "Storleken sätter golvyta, rutnätsram och täckningsrastrets område. Väggar utanför ramen utökar ytan automatiskt.",
     "section.coverage": "Täckning & visning",
     "coverage.metric": "Visad storhet",
@@ -1412,6 +1472,11 @@ function setWallFromLengthAngle(w,len,deg){
   w.y2=w.y1+Math.sin(rad)*len;
 }
 function geometryChanged(){
+  // Wall geometry just changed, so any marked endpoint may have moved: drop the
+  // markers rather than leave them pointing at stale coordinates.
+  if(footprintDiagnostics) footprintDiagnostics=null;
+  const fpNote=$('#footprintDiagNote');
+  if(fpNote){ fpNote.style.display='none'; fpNote.textContent=''; }
   _indoor=null; scheduleHeat(); refreshStats(); draw2d(); if(view==='3d')build3d();
 }
 loadWallSnapPrefs();
@@ -1521,6 +1586,12 @@ let analyzeState=null;  // {gray,bw,bh,sf,threshold,invert,minLen,detected} duri
 let cableDraft=null;    // {rackId} while creating a cable route
 let openingDraft=null;  // [{x,y}, ...] while drawing a slab opening polygon
 let soloApId=null;      // temporary editor-only RF solo mode
+// Transient editor-only diagnostics for the last refused footprint generation.
+// Deliberately NOT in `state`: it is never serialized, never exported, never
+// pushed to undo, and never read by RF. It is a drawing aid that points at the
+// wall endpoints which broke the envelope, so the user can see WHAT to fix.
+// {floorId, endpoints:[{x,y},...]} - cleared whenever it would go stale.
+let footprintDiagnostics=null;
 
 // ---------- TOOLS palette ----------
 const TOOLS = [
@@ -2151,6 +2222,11 @@ function draw2d(){
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke(); });
     ctx.restore();
   }
+
+  // Footprint generation diagnostics: the wall endpoints that broke the
+  // envelope. Pure editor overlay - never geometry, never serialized, never
+  // exported, and not part of hit testing, so wall selection is unaffected.
+  drawFootprintDiagnostics();
 
   // rubber-band selection box
   if(boxing){
@@ -3966,6 +4042,13 @@ function resize3d(){
 // pointInOpening()/slabLossBetweenPoints(); a footprint only shapes the slab
 // solid. Making RF slab attenuation respect the footprint is a separate
 // follow-up and is deliberately NOT done here.
+//
+// Recorded follow-ups, neither implemented here:
+//   1. Manual floor-footprint editing. Needed because a slab edge does not
+//      necessarily have a wall, so generation alone cannot describe every real
+//      floor: a user must be able to draw a legitimate slab edge with no wall,
+//      edit holes and parts, and remove a generated footprint.
+//   2. RF slab attenuation should eventually respect the physical footprint.
 
 // Canonical READ of a stored footprint ring: drops non-finite points, merges
 // consecutive duplicates and a repeated closing point, and rejects rings with
@@ -4225,6 +4308,401 @@ function slabSolidForPlan(plan){
     if(s) parts.push(s);
   });
   return parts;
+}
+
+// ============================================================
+//  GENERATE FLOOR FOOTPRINT FROM WALLS  (explicit user action)
+// ============================================================
+// Turns the OWNER floor's walls into the persisted f.footprint. Walls are only
+// ever an INPUT to this one action: once f.footprint exists it is
+// authoritative and nothing recomputes it, so moving a wall afterwards never
+// silently reshapes the slab. Nothing in load, save, wall editing, 3D or
+// export calls this.
+//
+// Source walls are the CANONICAL walls physically present through the target
+// floor's story interval, via canonicalWallsForStory() -> wallsOnFloor(), which
+// reuses the established cross-floor projection model. A tall wall owned by a
+// lower floor therefore forms this floor's envelope, and this floor's interior
+// walls terminate on it as valid T-junctions. Wall centrelines are used as-is;
+// thickness is never applied, so the slab stops at the wall axis, which is a
+// stable, thickness-independent convention.
+//
+// SCOPE: this is a PROPOSAL GENERATOR, not the authoritative definition of slab
+// topology. A slab boundary does not have to have a wall: a mezzanine's open
+// edge, a double-height void, a balcony, a railing or any other legitimate
+// floor termination will be reported as an open endpoint, and a genuine door or
+// gap will refuse the generation. None of that is auto-repaired, because
+// inventing walls or closing openings would fabricate geometry the user never
+// drew. Once generated, the persisted f.footprint is authoritative and nothing
+// recomputes it; a floor whose real outline cannot be expressed with walls
+// simply needs the recorded follow-up, manual floor-footprint editing.
+//
+// Pipeline (the audited approach, with no polygon-boolean dependency):
+//   1. wall segments from the owner set
+//   2. node every proper crossing
+//   3. node every endpoint that terminates on another wall (T-junction)
+//   4. cluster endpoints into graph nodes
+//   5. derive faces by half-edge traversal, keep the bounded ones
+//   6. group bounded faces that share a wall: internal partitions disappear
+//      from the group boundary, which turns a union of rooms into one outline
+//   7. one group = one part; a group strictly inside another becomes a hole
+//   8. closure check: every dangling wall end must be strictly inside the
+//      resulting union, otherwise the envelope is broken and we refuse
+//
+// AMBIGUITY POLICY. Every failure returns {ok:false} and the caller leaves any
+// existing footprint completely untouched. There is deliberately NO automatic
+// gap closure. A door gap and a wall the user has not drawn yet are the same
+// thing in this data model - nothing marks a wall as having a door - so closing
+// a gap would be a guess, and a "close nearby endpoints" tolerance large enough
+// to swallow a 0.9 m door would also swallow a genuinely open edge and invent
+// floor that was never enclosed. Both are refused instead. The only tolerance
+// used is FP_WALL_TOL = half the editor's own 0.05 m wall snap step, i.e. two
+// points on adjacent lattice positions are the same intended point; it is
+// ~36x smaller than a door width and cannot bridge a real gap.
+
+// Two endpoints closer than this are the same intended lattice point. Derived
+// from the editor's own geometry snap (WALL_GEOMETRY_SNAP_STEP = 0.05 m), not
+// from any assumption about doors. Used for node clustering and for the
+// vertex-terminates-on-a-wall test; never used to bridge an open boundary.
+const FP_WALL_TOL = WALL_GEOMETRY_SNAP_STEP / 2;
+
+function fpWallSegments(walls){
+  // Canonical owner walls only, centreline only, same degeneracy threshold the
+  // 3D and glTF wall builders already use.
+  const segs=[];
+  (walls||[]).forEach(w=>{
+    if(!w) return;
+    const ax=w.x1, ay=w.y1, bx=w.x2, by=w.y2;
+    if(!(Number.isFinite(ax)&&Number.isFinite(ay)&&Number.isFinite(bx)&&Number.isFinite(by))) return;
+    if(!(Math.hypot(bx-ax,by-ay)>=0.01)) return;
+    segs.push({ax,ay,bx,by,xs:[0,1]});
+  });
+  return segs;
+}
+
+// Split every wall at its crossings with the others and at every point where a
+// wall endpoint terminates on another wall. After this no two wall pieces cross
+// in their interior, which is what makes step 5 a valid planar subdivision.
+function fpNodeWalls(segs){
+  const n=segs.length, TOL=FP_WALL_TOL;
+  const addT=(si,t)=>{ if(t>TOL&&t<1-TOL) segs[si].xs.push(t); };
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+    const A=segs[i],B=segs[j];
+    const dx=A.bx-A.ax, dy=A.by-A.ay, ex=B.bx-B.ax, ey=B.by-B.ay;
+    const den=dx*ey-dy*ex;
+    if(Math.abs(den)>1e-15){
+      const wx=B.ax-A.ax, wy=B.ay-A.ay;
+      const t=(wx*ey-wy*ex)/den, u=(wx*dy-wy*dx)/den;
+      // BOTH parameters interior: a real crossing, not a near-miss. Testing
+      // them separately would split A along the infinite extension of B.
+      if(t>TOL&&t<1-TOL&&u>TOL&&u<1-TOL){ addT(i,t); addT(j,u); continue; }
+    }
+    // Parallel, collinear or no interior crossing: still repair T-junctions by
+    // testing each endpoint of one wall against the other. This is what makes a
+    // partition that stops on the exterior wall a valid graph node.
+    for(const pair of [[i,A,B],[j,B,A]]){
+      const si=pair[0], S=pair[1], O=pair[2];
+      const ddx=S.bx-S.ax, ddy=S.by-S.ay, L2=ddx*ddx+ddy*ddy;
+      if(!(L2>1e-18)) continue;
+      for(const P of [{x:O.ax,y:O.ay},{x:O.bx,y:O.by}]){
+        const t=((P.x-S.ax)*ddx+(P.y-S.ay)*ddy)/L2;
+        if(t<=TOL||t>=1-TOL) continue;
+        if(Math.hypot(P.x-(S.ax+ddx*t), P.y-(S.ay+ddy*t))>TOL) continue;
+        segs[si].xs.push(t);
+      }
+    }
+  }
+  const out=[];
+  segs.forEach(e=>{
+    const ts=[...new Set(e.xs.map(v=>Math.round(v*1e9)/1e9))].sort((a,b)=>a-b);
+    for(let k=0;k+1<ts.length;k++){
+      const t0=ts[k],t1=ts[k+1];
+      out.push({x0:e.ax+(e.bx-e.ax)*t0, y0:e.ay+(e.by-e.ay)*t0,
+                x1:e.ax+(e.bx-e.ax)*t1, y1:e.ay+(e.by-e.ay)*t1});
+    }
+  });
+  return out;
+}
+
+// A point strictly inside a simple polygon: centroid of the triangle at the
+// lexicographically smallest vertex. A vertex itself lies on shared boundaries,
+// so testing containment AT a vertex would misclassify adjoining rooms.
+function fpStrictlyInside(pts){
+  let bi=0;
+  for(let i=1;i<pts.length;i++){
+    const p=pts[i],q=pts[bi];
+    if(p.x<q.x-FP_WALL_TOL||(Math.abs(p.x-q.x)<=FP_WALL_TOL&&p.y<q.y-FP_WALL_TOL)) bi=i;
+  }
+  const m=pts.length, v=pts[bi], a=pts[(bi+m-1)%m], b=pts[(bi+1)%m];
+  return {x:(v.x+a.x+b.x)/3, y:(v.y+a.y+b.y)/3};
+}
+function fpRingAreaXY(pts){ let a=0; for(let i=0;i<pts.length;i++){ const p=pts[i],q=pts[(i+1)%pts.length]; a+=p.x*q.y-q.x*p.y; } return a/2; }
+function fpPointInXY(x,y,ring){
+  let c=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const a=ring[i],b=ring[j];
+    if((a.y>y)!==(b.y>y) && x<(b.x-a.x)*(y-a.y)/((b.y-a.y)||1e-15)+a.x) c=!c;
+  }
+  return c;
+}
+// Noding splits walls at T-junctions, so a union boundary can carry extra
+// vertices that are exactly collinear with their neighbours. They carry no
+// shape information and would make a hand-editable footprint noisy, so they are
+// dropped. Only genuinely straight-through vertices are removed.
+function fpSimplifyRing(pts,tol){
+  const n=pts.length;
+  if(n<4) return pts;
+  const keep=[];
+  for(let i=0;i<n;i++){
+    const p=pts[(i-1+n)%n], c=pts[i], q=pts[(i+1)%n];
+    const dx=q.x-p.x, dy=q.y-p.y, L=Math.hypot(dx,dy);
+    const d=L>1e-12?Math.abs((c.x-p.x)*dy-(c.y-p.y)*dx)/L:0;
+    if(d>tol) keep.push(c);
+  }
+  return keep.length>=3?keep:pts;
+}
+// Deterministic list of offending wall endpoints for the 2D diagnostics
+// overlay: sorted so the numbering is stable, and rounded to the editor's own
+// 1 mm reporting grid so the marker sits on the exact stored coordinate.
+function fpEndpointList(nodes){
+  return nodes
+    .map(n=>({x:Math.round(n.x*1000)/1000, y:Math.round(n.y*1000)/1000}))
+    .sort((a,b)=>a.x-b.x || a.y-b.y);
+}
+function fpOnRingXY(p,ring,tol){
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i],b=ring[(i+1)%ring.length];
+    const dx=b.x-a.x, dy=b.y-a.y, L2=dx*dx+dy*dy;
+    let t=L2?((p.x-a.x)*dx+(p.y-a.y)*dy)/L2:0;
+    t=t<0?0:(t>1?1:t);
+    if(Math.hypot(p.x-(a.x+dx*t), p.y-(a.y+dy*t))<=tol) return true;
+  }
+  return false;
+}
+
+// Generate the footprint for one floor from ITS OWN walls. Pure: it reads only
+// the array it is given and returns a new value, so it can be tested without
+// touching state. The caller decides whether to persist the result.
+// Returns {ok:true, parts, stats} or {ok:false, reason, params}.
+function footprintFromWalls(walls){
+  const segs0=fpWallSegments(walls);
+  if(segs0.length<3) return {ok:false, reason:'noWalls', params:{count:segs0.length}};
+
+  // 2 + 3: node crossings and T-junctions
+  const pieces=fpNodeWalls(segs0);
+
+  // 4: cluster piece endpoints into graph nodes
+  const TOL=FP_WALL_TOL;
+  const nodes=[];
+  const nodeAt=(x,y)=>{
+    for(let i=0;i<nodes.length;i++)
+      if(Math.hypot(nodes[i].x-x,nodes[i].y-y)<=TOL) return i;
+    nodes.push({x,y,deg:0}); return nodes.length-1;
+  };
+  const edges=[], edgeKeys=new Set();
+  pieces.forEach(p=>{
+    if(!(Math.hypot(p.x1-p.x0,p.y1-p.y0)>TOL)) return;    // collapsed to nothing
+    const a=nodeAt(p.x0,p.y0), b=nodeAt(p.x1,p.y1);
+    if(a===b) return;
+    const key=Math.min(a,b)+':'+Math.max(a,b);
+    if(edgeKeys.has(key)) return;                          // duplicate coincident piece
+    edgeKeys.add(key);
+    edges.push({a,b}); nodes[a].deg++; nodes[b].deg++;
+  });
+  if(edges.length<3) return {ok:false, reason:'noRegion', params:{}};
+
+  // 5: faces by half-edge traversal; each face keeps its interior on its left.
+  //    Every face gets a monotonic id and "bounded" is decided afterwards by
+  //    orientation, so a negative face can never collide with a positive one.
+  const half=[];
+  edges.forEach(e=>{ half.push({from:e.a,to:e.b}); half.push({from:e.b,to:e.a}); });
+  const byNode=new Map();
+  half.forEach((h,i)=>{ if(!byNode.has(h.from)) byNode.set(h.from,[]); byNode.get(h.from).push(i); });
+  const nextH=new Array(half.length).fill(-1);
+  byNode.forEach((inc,v)=>{
+    inc.sort((p,q)=>Math.atan2(nodes[half[p].to].y-nodes[v].y,nodes[half[p].to].x-nodes[v].x)
+                   -Math.atan2(nodes[half[q].to].y-nodes[v].y,nodes[half[q].to].x-nodes[v].x));
+    // arriving along h^1, the next edge of the same face is the one just
+    // CLOCKWISE from h^1
+    inc.forEach((h,k)=>{ nextH[h^1]=inc[(k-1+inc.length)%inc.length]; });
+  });
+  const faceOf=new Array(half.length).fill(-1);
+  const faces=[];
+  for(let h=0;h<half.length;h++){
+    if(faceOf[h]>=0) continue;
+    const id=faces.length, ids=[], pts=[];
+    let cur=h, guard=0;
+    while(cur>=0&&faceOf[cur]<0&&guard++<100000){
+      faceOf[cur]=id; ids.push(cur);
+      pts.push({x:nodes[half[cur].from].x, y:nodes[half[cur].from].y});
+      cur=nextH[cur];
+    }
+    faces.push({ids, pts, area:pts.length>=3?fpRingAreaXY(pts):0});
+  }
+  // A bounded face is enclosed floor. A positive traversal also walks a hole
+  // backwards, so it lands here too and is resolved by nesting in step 7.
+  const posIds=new Set();
+  faces.forEach((f,fi)=>{ if(f.area>1e-9) posIds.add(fi); });
+  if(!posIds.size){
+    // Nothing is enclosed. If some wall ends are open, that is almost always
+    // why, and it is the far more useful message for the user.
+    const loose0=nodes.filter(n=>n.deg<2);
+    if(loose0.length)
+      return {ok:false, reason:'openBoundary', params:{count:loose0.length},
+              diagnostics:{openEndpoints:fpEndpointList(loose0)}};
+    return {ok:false, reason:'noRegion', params:{}};
+  }
+
+  // 6: bounded faces sharing a wall are one physical region, so the partition
+  //    between them drops out of the union boundary. Disconnected regions share
+  //    no edge and stay separate parts.
+  const groupOf=new Map();
+  let nGroups=0;
+  [...posIds].forEach(fi=>{
+    if(groupOf.has(fi)) return;
+    const g=nGroups++;
+    const stack=[fi]; groupOf.set(fi,g);
+    while(stack.length){
+      const cur=stack.pop();
+      for(const h of faces[cur].ids){
+        const oi=faceOf[h^1];
+        if(oi<0||!posIds.has(oi)||groupOf.has(oi)) continue;
+        groupOf.set(oi,g); stack.push(oi);
+      }
+    }
+  });
+  const groups=[];
+  for(let g=0;g<nGroups;g++) groups.push({faceIdx:new Set(), keep:[]});
+  groupOf.forEach((g,fi)=>{ groups[g].faceIdx.add(fi); });
+  groups.forEach(G=>{
+    // boundary of the union = this group's half-edges whose twin is NOT in the
+    // same group; the rest are internal partitions and disappear
+    G.keep=[];
+    G.faceIdx.forEach(fi=>{
+      faces[fi].ids.forEach(h=>{
+        const oi=faceOf[h^1];
+        if(!(oi>=0&&G.faceIdx.has(oi))) G.keep.push(h);
+      });
+    });
+  });
+
+  // 6b: chain each group's boundary half-edges into closed loops
+  groups.forEach(G=>{
+    const byFrom=new Map();
+    G.keep.forEach(h=>{ if(!byFrom.has(half[h].from)) byFrom.set(half[h].from,[]); byFrom.get(half[h].from).push(h); });
+    const used=new Set(); G.loops=[]; G.broken=false;
+    G.keep.forEach(h0=>{
+      if(used.has(h0)) return;
+      const startNode=half[h0].from;
+      const pts=[]; let cur=h0, endNode=-1, guard=0;
+      while(cur!==null&&!used.has(cur)&&guard++<100000){
+        used.add(cur); pts.push({x:nodes[half[cur].from].x, y:nodes[half[cur].from].y});
+        const to=half[cur].to;
+        const outs=(byFrom.get(to)||[]).filter(x=>!used.has(x));
+        if(!outs.length){ endNode=to; break; }               // dead end
+        cur=outs[0];
+      }
+      // A closed walk returns to its START NODE; it does not repeat the start
+      // point, so closure must be tested on node identity, not on the first and
+      // last vertices.
+      if(endNode!==startNode) G.broken=true;
+      if(pts.length>=3) G.loops.push(pts);
+    });
+    // every kept half-edge must be consumed into some loop
+    if(used.size!==G.keep.length) G.broken=true;
+    G.outer=G.loops.find(l=>fpRingAreaXY(l)>0);
+    if(!G.outer) G.broken=true;
+  });
+  if(groups.some(G=>G.broken)) return {ok:false, reason:'notClosed', params:{}};
+
+  // 7: nesting. A group strictly inside another is a hole of it: the slab
+  //    spans a void (courtyard, light well) rather than covering it.
+  groups.forEach(G=>{ G.probe=fpStrictlyInside(G.outer); });
+  groups.forEach(G=>{ G.depth=groups.filter(o=>o!==G && fpPointInXY(G.probe.x,G.probe.y,o.outer)).length; });
+  const shells=groups.filter(G=>G.depth%2===0);
+  const voids=groups.filter(G=>G.depth%2===1);
+  if(!shells.length) return {ok:false, reason:'noRegion', params:{}};
+
+  // 8: closure. Every dangling wall end must be strictly INSIDE the union. An
+  //    end inside is an internal stub: it encloses nothing and does not change
+  //    the floor. An end ON the union boundary is a real break in the envelope
+  //    (door gap or undrawn exterior wall), and an end OUTSIDE means the walls
+  //    enclose less than the drawn perimeter - for example an open ring that
+  //    still contains a closed internal room, which would otherwise silently
+  //    produce just that room as the footprint. Both are refused.
+  // Only the ends that actually break the envelope are reported. A dangling
+  // end strictly inside the union is a harmless stub and is NOT listed, so the
+  // markers point at real problems only.
+  const offenders=[];
+  nodes.filter(n=>n.deg<2).forEach(n=>{
+    const onEdge=groups.some(G=>fpOnRingXY(n, G.outer, TOL));
+    const inside=groups.some(G=>fpPointInXY(n.x,n.y,G.outer));
+    if(onEdge||!inside) offenders.push(n);
+  });
+  if(offenders.length)
+    return {ok:false, reason:'openBoundary', params:{count:offenders.length},
+            diagnostics:{openEndpoints:fpEndpointList(offenders)}};
+
+  // build the persisted representation, cleaned by the canonical reader
+  const parts=[];
+  shells.forEach(G=>{
+    const outer=cleanFootprintRing(fpSimplifyRing(G.outer, TOL));
+    if(!outer) return;
+    const holes=[];
+    voids.filter(H=>H.depth-G.depth===1 && fpPointInXY(H.probe.x,H.probe.y,G.outer))
+         .forEach(H=>{ const c=cleanFootprintRing(fpSimplifyRing(H.outer, TOL)); if(c) holes.push(c); });
+    parts.push({outer, holes});
+  });
+  if(!parts.length) return {ok:false, reason:'noRegion', params:{}};
+  const totalArea=parts.reduce((s,p)=>s+Math.abs(fpRingAreaXY(p.outer))
+                                  -p.holes.reduce((a,h)=>a+Math.abs(fpRingAreaXY(h)),0),0);
+  if(!(totalArea>1e-6)) return {ok:false, reason:'noRegion', params:{}};
+  return {ok:true, parts, stats:{walls:segs0.length, nodes:nodes.length, faces:posIds.size,
+                                 parts:parts.length, area:Math.abs(totalArea)}};
+}
+
+// Open-wall-endpoint markers from a refused footprint generation.
+// Anchored to the exact world coordinate through W2S, so the marker follows the
+// wall while zooming and panning, while its own size stays fixed in screen
+// pixels and therefore readable at every zoom level.
+const FOOTPRINT_DIAG_PX=9;          // marker radius, screen space
+const FOOTPRINT_DIAG_COLOR='#ef4444';
+function drawFootprintDiagnostics(){
+  const d=footprintDiagnostics;
+  if(!d||!d.endpoints||!d.endpoints.length) return;
+  if(d.floorId!==floor().id) return;               // only its own floor
+  const R=FOOTPRINT_DIAG_PX;
+  ctx.save();
+  ctx.lineCap='round';
+  d.endpoints.forEach((p,i)=>{
+    const s=W2S(p.x,p.y);
+    // No off-screen culling: draw2d works in CSS pixels while canvas.width is in
+    // device pixels, so such a test would be wrong on a HiDPI display, and a
+    // handful of markers costs nothing to draw.
+    // Styles are set BEFORE the path is built, so the state that paints a mark
+    // always belongs to that mark.
+    // translucent disc
+    ctx.fillStyle='rgba(239,68,68,.22)';
+    ctx.strokeStyle=FOOTPRINT_DIAG_COLOR; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(s.x,s.y,R,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    // X
+    const d2=R*0.52;
+    ctx.strokeStyle=FOOTPRINT_DIAG_COLOR; ctx.lineWidth=2.4;
+    ctx.beginPath();
+    ctx.moveTo(s.x-d2,s.y-d2); ctx.lineTo(s.x+d2,s.y+d2);
+    ctx.moveTo(s.x+d2,s.y-d2); ctx.lineTo(s.x-d2,s.y+d2);
+    ctx.stroke();
+    // number badge, offset up-right so it never hides the X
+    const bx=s.x+R*0.95, by=s.y-R*0.95;
+    ctx.fillStyle=FOOTPRINT_DIAG_COLOR;
+    ctx.beginPath(); ctx.arc(bx,by,7.5,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='700 9px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(String(i+1),bx,by+0.5);
+  });
+  ctx.restore();
 }
 
 // world(x,y meters) -> three(x, z).  We map world.x->X, world.y->Z, elevation->Y
@@ -4608,6 +5086,7 @@ function duplicateFloor(i){
 }
 function setActiveFloor(i){
   state.activeFloor=i; select(null); buildFloors(); updateChips(); syncFloorPanel();
+  clearFootprintDiagnostics();   // the markers belong to the floor you left
   scheduleHeat();
   if(view==='3d') build3d();
   draw2d();
@@ -4619,7 +5098,138 @@ function syncFloorPanel(){
   $('#planD').value=f.d; $('#planDV').textContent=(f.d||14).toFixed(1)+' m';
   $('#planH').value=f.height; $('#planHV').textContent=f.height.toFixed(1)+' m';
   syncSlabPanel(f);
+  syncFootprintPanel();
+  hideFootprintConfirm();
 }
+// ---- generate floor footprint from the active floor's own walls ----------
+// One explicit user action. The walls are only the INPUT: once f.footprint is
+// stored it is authoritative, and nothing recomputes it on load, save, wall
+// editing, 3D or export. floorBounds() is never touched, so RF is unaffected.
+// Localized state line. setUiText() is the app's canonical pattern: it writes
+// plain text into textContent AND records data-i18n / data-i18n-params, so
+// translateNodes() re-renders the same string when the UI language changes.
+// uiText() must NOT be used here: it returns a <span data-i18n=...> HTML
+// string meant for innerHTML, and assigning it to textContent would show the
+// raw markup to the user.
+function syncFootprintPanel(){
+  const el=$('#footprintState');
+  if(!el) return;
+  const fp=floorFootprint(floor());
+  if(!fp.explicit){ setUiText(el,'footprint.state.none'); return; }
+  let n=0, a=0;
+  fp.parts.forEach(p=>{
+    n++;
+    a+=Math.abs(fpRingAreaXY(p.outer))-p.holes.reduce((x,h)=>x+Math.abs(fpRingAreaXY(h)),0);
+  });
+  setUiText(el,'footprint.state.set',{parts:n, area:a.toFixed(1)});
+}
+// Show the replace confirmation instead of overwriting a stored footprint.
+// The generation result is computed BEFORE asking, so a refusal never
+// interrupts the user with a pointless question, and a success is reported
+// exactly once whether it replaced or created.
+let pendingFootprint=null;
+function hideFootprintConfirm(){
+  pendingFootprint=null;
+  const box=$('#footprintConfirm'), btn=$('#btnGenFootprint');
+  if(box) box.style.display='none';
+  if(btn) btn.style.display='';
+}
+// Diagnostics are transient. Clear them whenever they would go stale: on a
+// successful generation, a new attempt, a floor switch, a project load/new, and
+// any wall-geometry edit (the stored coordinates no longer describe anything).
+function clearFootprintDiagnostics(){
+  if(!footprintDiagnostics) return;
+  footprintDiagnostics=null;
+  const note=$('#footprintDiagNote');
+  if(note){ note.style.display='none'; note.textContent=''; }
+  draw2d();
+}
+// Markers are editor state, not project state: they are deliberately not in
+// `state`, so this cannot reach serialize(), undo/redo, the export or RF.
+function setFootprintDiagnostics(endpoints){
+  if(!endpoints||!endpoints.length){ clearFootprintDiagnostics(); return; }
+  footprintDiagnostics={floorId:floor().id, endpoints:endpoints.map(p=>({x:p.x,y:p.y}))};
+  const note=$('#footprintDiagNote');
+  if(note){
+    setUiText(note,'footprint.diagNote',{count:endpoints.length});
+    note.style.display='';
+  }
+  draw2d();
+}
+function runFootprintGeneration(result){
+  hideFootprintConfirm();
+  if(!result.ok){
+    // Point the user at the actual endpoints, then explain in localized text.
+    // The existing footprint is left exactly as it was.
+    setFootprintDiagnostics((result.diagnostics&&result.diagnostics.openEndpoints)||[]);
+    showToast(true, uiMessage('footprint.err.'+result.reason, result.params||{}), null, 7000);
+    return;
+  }
+  clearFootprintDiagnostics();
+  commit();                                    // one undoable edit
+  const f=floor();
+  f.footprint={parts:result.parts};
+  syncFootprintPanel();
+  // RF is not touched: no scheduleHeat(). Only the slab visuals and the next
+  // glTF export follow the new footprint.
+  refreshStats(); draw2d();
+  if(view==='3d') build3d();
+  showToast(true, uiMessage('footprint.ok',
+    {parts:result.stats.parts, area:result.stats.area.toFixed(1)}), null, 3000);
+}
+// Canonical walls physically present through floor i's story interval.
+//
+// This reuses the project's established cross-floor projection model
+// (wallsOnFloor -> spanProjected -> hasExplicitHeight/spansOverlap) rather than
+// inventing a second, conflicting rule, so the generator and the 2D/3D wall
+// projection can never disagree about which walls exist on a floor:
+//   * owner-floor walls participate, including legacy height==null ones;
+//   * a lower-floor wall with an EXPLICIT height participates in every floor
+//     whose story interval it physically overlaps, so a 6 m perimeter wall
+//     owned by the ground floor correctly forms the upper floor's envelope and
+//     upper-floor partitions terminate on it as valid T-junctions;
+//   * a wall whose top is exactly the target floor elevation is excluded,
+//     because spansOverlap() requires a positive overlap;
+//   * a null-height lower-floor wall never projects upward.
+//
+// Returns canonical wall objects, never copies, and never the same canonical
+// wall twice: it is deduplicated by id, falling back to object identity for
+// id-less walls, so a wall that is also visible as a projection cannot
+// contribute a duplicate segment to the footprint graph.
+function canonicalWallsForStory(i){
+  const out=[], seenId=new Set(), seenRef=new Set();
+  wallsOnFloor(i).forEach(e=>{
+    const w=e&&e.o;
+    if(!w) return;
+    const hasId=(w.id!=null&&String(w.id)!=='');
+    if(hasId){ if(seenId.has(String(w.id))) return; seenId.add(String(w.id)); }
+    else { if(seenRef.has(w)) return; seenRef.add(w); }
+    out.push(w);
+  });
+  return out;
+}
+function generateFootprintFromWalls(){
+  const f=floor();
+  // every canonical wall physically present in this floor's story, not just the
+  // ones this floor owns
+  const res=footprintFromWalls(canonicalWallsForStory(state.activeFloor));
+  if(!res.ok){ runFootprintGeneration(res); return; }
+  if(floorFootprint(f).explicit){
+    pendingFootprint=res;
+    const box=$('#footprintConfirm'), btn=$('#btnGenFootprint');
+    if(box) box.style.display='';
+    if(btn) btn.style.display='none';
+    return;                                   // wait for Replace / Cancel
+  }
+  runFootprintGeneration(res);
+}
+function confirmFootprintReplace(){
+  if(!pendingFootprint) return;
+  const res=pendingFootprint;
+  hideFootprintConfirm();
+  runFootprintGeneration(res);
+}
+
 // Floor 0 owns no slab (it is the bottom floor). Every other floor owns the
 // structural slab at its own base elevation.
 function syncSlabPanel(f){
@@ -4646,6 +5256,7 @@ function syncSlabPanel(f){
 }
 function removeFloor(i){
   if(state.floors.length<=1){ showToast(true,uiMessage('error.lastFloor'),null,1400); return; }
+  footprintDiagnostics=null;   // floor indices shift; drop the markers
   commit();
   state.floors.splice(i,1);
   state.activeFloor=clamp(state.activeFloor,0,state.floors.length-1);
@@ -5592,6 +6203,7 @@ function loadProject(file){
       const s=JSON.parse(fr.result);
       if(!s.floors) throw uiError('error.invalidFile');
       state=s; tool='select'; soloApId=null; scenarioA=null; scenarioCompare=null;
+      footprintDiagnostics=null;   // a new project has no stale markers
       // migrate older projects
       if(s.covThreshold==null)s.covThreshold=-67;
       if(s.showFail==null)s.showFail=false;
@@ -6338,6 +6950,11 @@ function wireGlobals(){
     const v=parseFloat(e.target.value);
     if(!Number.isFinite(v)||v<0){ syncSlabPanel(f); return; }   // never RF gain
     commit(); f.slabExtraLossDb=v; scheduleHeat(); syncSlabPanel(f); };
+  // Generate footprint from walls (active floor panel, not the tool palette)
+  $('#btnGenFootprint').onclick=generateFootprintFromWalls;
+  $('#btnFpReplace').onclick=confirmFootprintReplace;
+  $('#btnFpCancel').onclick=()=>{ hideFootprintConfirm();
+    showToast(true, uiMessage('footprint.cancelled'), null, 2200); };
   $('#receiverHeight').oninput=e=>{ state.receiverHeight=+e.target.value; $('#receiverHeightV').textContent=state.receiverHeight.toFixed(1)+' m'; scheduleHeat(); if(view==='3d')refresh3dHeat(); };
   $('#planW').oninput=e=>{ floor().w=+e.target.value; $('#planWV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
   $('#planD').oninput=e=>{ floor().d=+e.target.value; $('#planDV').textContent=(+e.target.value).toFixed(1)+' m'; scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
