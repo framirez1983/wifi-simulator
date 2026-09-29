@@ -2010,18 +2010,31 @@ function draw2d(){
   // it keeps a constant size relative to the blueprint at every zoom. No
   // screen-space minimum is applied: a thin wall that becomes sub-pixel at low
   // zoom is the correct physical rendering.
-  f.walls.forEach(wl=>{
-    const a=W2S(wl.x1,wl.y1), b=W2S(wl.x2,wl.y2);
+  // The plan shows the SAME resolved bodies the 3D viewer and the glTF export
+  // extrude (wallJoinBodies), so a corner looks the same everywhere. Ends that
+  // meet a neighbour are drawn butt-capped so a join is a clean square and no
+  // cap stands proud; a genuinely free end keeps its round cap.
+  wallJoinBodies(f.walls).forEach(B=>{
+    const wl=B.wall;
+    const a=W2S(B.x1,B.y1), b=W2S(B.x2,B.y2);
     const m=matById(wl.materialId);
     const selW = (selection&&selection.type==='wall'&&selection.id===wl.id) || multiWalls.includes(wl.id);
     const bodyPx=wallThicknessPx(wl);
-    ctx.lineCap='round';
-    ctx.lineWidth = selW?bodyPx+WALL_SELECTED_EXTRA_PX:bodyPx;
+    const drawW = selW?bodyPx+WALL_SELECTED_EXTRA_PX:bodyPx;
+    ctx.lineCap='butt';
+    ctx.lineWidth=drawW;
     ctx.strokeStyle = selW? '#7aa2ff' : m.color;
     ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    // free ends keep the round cap they always had
+    if(B.joins.start==='free' || B.joins.end==='free'){
+      ctx.fillStyle=ctx.strokeStyle;
+      if(B.joins.start==='free'){ ctx.beginPath();ctx.arc(a.x,a.y,drawW/2,0,Math.PI*2);ctx.fill(); }
+      if(B.joins.end==='free'){ ctx.beginPath();ctx.arc(b.x,b.y,drawW/2,0,Math.PI*2);ctx.fill(); }
+    }
     // Decorative inner highlight, proportional to the body and only drawn when
     // the body is wide enough for it to be meaningful. Never widens the body.
     if(bodyPx>=2){
+      ctx.lineCap='round';
       ctx.lineWidth = bodyPx*0.44; ctx.strokeStyle = shade(m.color,-0.25);
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
     }
@@ -4635,6 +4648,263 @@ function fpNodeWalls(segs){
   return out;
 }
 
+// ============================================================
+//  WALL JOINS - resolve the wall bodies in plan, then extrude
+// ============================================================
+//
+// Every wall is stored as a CENTRELINE plus a physical thickness, and both the
+// 3D viewer and the glTF export used to extrude exactly that centreline. Two
+// centreline rectangles meeting at a node therefore leave a square notch in the
+// outer corner - the 90 degree "greca" - and a stub that stops on another
+// wall's centreline leaves its end cap standing proud of the host wall.
+//
+// wallJoinBodies() resolves the bodies ONCE, in plan (project XY), and every
+// consumer extrudes the result, so the viewer and the export are identical by
+// construction rather than by coincidence. Canonical centrelines are NEVER
+// modified: RF keeps reading w.x1/w.y1/w.x2/w.y2, so coverage is untouched.
+//
+// What meets at a node decides the treatment:
+//   free end     nothing else there          -> unchanged
+//   collinear    two opposite rays          -> unchanged, one continuous run
+//   L corner     two angled rays            -> MITER: each half extends exactly
+//                                              to the outer corner, so the
+//                                              corner is a clean square
+//   T junction   a stub on a host wall      -> the host runs straight through
+//                                              untouched and the stub is
+//                                              trimmed back to the host's face,
+//                                              so it butts fully with no cap
+//                                              left sticking out
+//   X crossing   two through walls          -> unchanged; the re-entrant
+//                                              corners are already correct
+//   Y junction   three angled rays          -> corners filled pairwise
+// Anything else is left untouched rather than guessed at.
+//
+// The result is XY only. Height is resolved separately by
+// objectHeightOnFloor(), so explicit-height and full-height walls both work and
+// the full-height semantics are unaffected by any of this.
+const WALL_JOIN_TOL = FP_WALL_TOL;
+// Two directions count as collinear below this dot product.
+const WALL_JOIN_DIR_EPS = 1e-6;
+// A miter is capped at this many half-thicknesses. A 90 degree corner needs
+// exactly 1.0 (the other body's half thickness), so right angles are always
+// exact; only very shallow corners are bevelled instead of growing a spike.
+const WALL_JOIN_MAX_EXT = 2;
+
+function wallHalfThickness(w){ return wallThickness(w)/2; }
+
+// Does (px,py) lie strictly INSIDE the wall's span (not on either endpoint)?
+function wallPassesThrough(w, px, py){
+  const dx=w.x2-w.x1, dy=w.y2-w.y1, L2=dx*dx+dy*dy;
+  if(!(L2>1e-18)) return false;
+  const L=Math.sqrt(L2), t=((px-w.x1)*dx+(py-w.y1)*dy)/L2, e=WALL_JOIN_TOL/L;
+  if(t<=e || t>=1-e) return false;
+  return Math.abs((px-w.x1)*dy-(py-w.y1)*dx)/L <= WALL_JOIN_TOL;
+}
+
+// How far each of two angled half-bodies must be extended PAST the node to
+// fill the notch between them. The outer corner is the intersection of the two
+// faces that point away from each other; for a 90 degree corner that is exactly
+// the other body's half thickness, which turns the notch into a clean square.
+// Returns null for collinear input (no corner to fill).
+function wallMiterExt(d1x,d1y, d2x,d2y, h1, h2){
+  const n1x=-d1y, n1y=d1x, n2x=-d2y, n2y=d2x;
+  const s1=(n1x*d2x+n1y*d2y)<0 ? 1 : -1;      // face pointing away from ray 2
+  const s2=(n2x*d1x+n2y*d1y)<0 ? 1 : -1;      // face pointing away from ray 1
+  const ax=s1*h1*n1x, ay=s1*h1*n1y, bx=s2*h2*n2x, by=s2*h2*n2y;
+  const den=d1x*d2y-d1y*d2x;                  // cross(d1,d2)
+  if(Math.abs(den)<1e-12) return null;        // collinear, not a corner
+  const t=((bx-ax)*d2y-(by-ay)*d2x)/den;
+  const cx=ax+t*d1x, cy=ay+t*d1y;
+  return { ext1:-(cx*d1x+cy*d1y), ext2:-(cx*d2x+cy*d2y) };
+}
+// The cap is measured against the LARGER of the two half thicknesses. A 90
+// degree corner needs exactly the other body's half thickness, so capping
+// against a body's own (possibly much thinner) half thickness would clamp a
+// legitimate thick-meets-thin corner.
+const capExt=(v,h1,h2)=>Math.max(0, Math.min(v, WALL_JOIN_MAX_EXT*Math.max(h1,h2)));
+
+// Index of the two rays that are opposite each other, or null.
+function wallOppositePair(E){
+  for(let i=0;i<E.length;i++)for(let j=i+1;j<E.length;j++)
+    if(E[i].dx*E[j].dx+E[i].dy*E[j].dy <= -1+WALL_JOIN_DIR_EPS) return [i,j];
+  return null;
+}
+
+// Resolve every wall into the body to extrude. Returns one entry per input
+// wall, in the same order, each { wall, x1, y1, x2, y2, joins:{start,end} }
+// where joins.start/ends say how that end was resolved:
+//   'free'      nothing there, the end keeps a round cap
+//   'run'       collinear with a neighbour, the run is continuous
+//   'corner'    mitered out to a clean corner
+//   'butt'      trimmed back onto a host wall's face
+//   'cross'     a through wall in an X, untouched
+// Pure and deterministic: the same walls always give the same bodies.
+// A cheap O(n) signature of everything the resolution depends on. wallJoinBodies
+// is pure, and draw2d() runs on every pointer move, so memoising on this keeps
+// a drag redraw at pointer speed instead of re-resolving the whole plan.
+function wallJoinSignature(walls){
+  let s='';
+  for(const w of walls||[]){
+    if(!w){ s+='n;'; continue; }
+    s+=w.id+'|'+w.x1+','+w.y1+','+w.x2+','+w.y2+','+(w.thickness==null?'':w.thickness)+';';
+  }
+  return s;
+}
+let _wallJoinMemo={sig:null, out:null};
+function wallJoinBodies(walls){
+  const sig=wallJoinSignature(walls);
+  if(_wallJoinMemo.sig===sig) return _wallJoinMemo.out;
+  const out=resolveWallJoinBodies(walls);
+  _wallJoinMemo={sig:sig, out:out};
+  return out;
+}
+function resolveWallJoinBodies(walls){
+  const list=[];
+  (walls||[]).forEach((w,k)=>{
+    if(!w) return;
+    if(!(Number.isFinite(w.x1)&&Number.isFinite(w.y1)&&Number.isFinite(w.x2)&&Number.isFinite(w.y2))) return;
+    if(!(Math.hypot(w.x2-w.x1,w.y2-w.y1)>WALL_JOIN_TOL)) return;
+    list.push({ w:w, src:k, h:wallHalfThickness(w),
+                ax:w.x1, ay:w.y1, bx:w.x2, by:w.y2 });
+  });
+  const n=list.length;
+  const ext=list.map(()=>[0,0]);
+  const kind=list.map(()=>['free','free']);
+  if(n<2) return list.map((e,i)=>bodyOut(e,ext[i],kind[i]));
+
+  // 1. cluster wall endpoints into nodes. A tolerance-sized hash grid keeps this
+  //    linear: a 3x3 probe around a point is enough, because two points within
+  //    WALL_JOIN_TOL of each other are always in neighbouring cells.
+  const nodes=[];
+  const nodeGrid=new Map();
+  const nodeKey=(ix,iy)=>ix+':'+iy;
+  const nodeAt=(x,y)=>{
+    const bx=Math.floor(x/WALL_JOIN_TOL), by=Math.floor(y/WALL_JOIN_TOL);
+    for(let ix=bx-1;ix<=bx+1;ix++)for(let iy=by-1;iy<=by+1;iy++){
+      const a=nodeGrid.get(nodeKey(ix,iy));
+      if(!a) continue;
+      for(let k=0;k<a.length;k++)
+        if(Math.abs(nodes[a[k]].x-x)<=WALL_JOIN_TOL && Math.abs(nodes[a[k]].y-y)<=WALL_JOIN_TOL) return a[k];
+    }
+    const k=nodes.length;
+    nodes.push({x:x, y:y, ends:[], hosts:[]});
+    const kk=nodeKey(bx,by);
+    let a=nodeGrid.get(kk); if(!a) nodeGrid.set(kk, a=[]);
+    a.push(k);
+    return k;
+  };
+  list.forEach((e,i)=>{
+    const L=Math.hypot(e.bx-e.ax, e.by-e.ay);
+    const na=nodeAt(e.ax,e.ay);
+    if(na!==nodeAt(e.bx,e.by)){
+      nodes[na].ends.push({i:i, end:0, dx:(e.ax-e.bx)/L, dy:(e.ay-e.by)/L});
+      nodes[nodeAt(e.bx,e.by)].ends.push({i:i, end:1, dx:(e.bx-e.ax)/L, dy:(e.by-e.ay)/L});
+    }
+  });
+  // 2. a host is a wall the node lies strictly inside; a stub butts into its face.
+  //    "endsAt[i]" answers "does wall i already end here" in O(1), so this pass
+  //    allocates nothing per pair - it runs on every redraw.
+  const endsAt=new Array(n);
+  nodes.forEach(nd=>nd.ends.forEach(e=>{ endsAt[e.i]=nd; }));
+  // Only nodes inside a wall's own bounding box can possibly lie on it, so a
+  // coarse grid keeps this linear instead of n_nodes x n_walls on a big plan.
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  list.forEach(e=>{ minx=Math.min(minx,e.ax,e.bx); maxx=Math.max(maxx,e.ax,e.bx);
+                    miny=Math.min(miny,e.ay,e.by); maxy=Math.max(maxy,e.ay,e.by); });
+  const span=Math.max(maxx-minx, maxy-miny);
+  const CELL=Math.max(1, span/48);
+  const grid=new Map();
+  const cellKey=(ix,iy)=>ix+':'+iy;
+  nodes.forEach((nd,k)=>{
+    const kk=cellKey(Math.floor((nd.x-minx-WALL_JOIN_TOL)/CELL), Math.floor((nd.y-miny-WALL_JOIN_TOL)/CELL));
+    let a=grid.get(kk); if(!a) grid.set(kk, a=[]);
+    a.push(k);
+  });
+  list.forEach((e,i)=>{
+    const i0=Math.floor((Math.min(e.ax,e.bx)-minx-WALL_JOIN_TOL)/CELL);
+    const i1=Math.floor((Math.max(e.ax,e.bx)-minx+WALL_JOIN_TOL)/CELL);
+    const j0=Math.floor((Math.min(e.ay,e.by)-miny-WALL_JOIN_TOL)/CELL);
+    const j1=Math.floor((Math.max(e.ay,e.by)-miny+WALL_JOIN_TOL)/CELL);
+    for(let ix=i0;ix<=i1;ix++)for(let iy=j0;iy<=j1;iy++){
+      const a=grid.get(cellKey(ix,iy)); if(!a) continue;
+      for(const k of a){
+        if(endsAt[i]===nodes[k]) continue;       // that is an end, not a host
+        if(wallPassesThrough(e.w, nodes[k].x, nodes[k].y)) nodes[k].hosts.push(i);
+      }
+    }
+  });
+
+  // 3. resolve every node
+  nodes.forEach(nd=>{
+    const E=nd.ends;
+    if(!E.length) return;
+    if(nd.hosts.length){
+      // T junction (or several hosts at once). The hosts run straight through
+      // and are untouched; a stub is trimmed back to the FURTHEST host face so
+      // it butts fully and can never leave a cap standing proud.
+      E.forEach(e=>{
+        let collinear=false, hmax=0;
+        nd.hosts.forEach(ti=>{
+          const T=list[ti], L=Math.hypot(T.bx-T.ax, T.by-T.ay);
+          if(e.dx*(T.bx-T.ax)/L + e.dy*(T.by-T.ay)/L <= -1+WALL_JOIN_DIR_EPS) collinear=true;
+          hmax=Math.max(hmax, T.h);
+        });
+        if(collinear) return;                   // it just continues the host
+        ext[e.i][e.end]=-hmax;
+        kind[e.i][e.end]='butt';
+      });
+      return;
+    }
+    if(E.length===1) return;                    // free end
+    if(E.length===2){
+      const pair=wallOppositePair(E);
+      if(pair){ kind[E[0].i][E[0].end]='run'; kind[E[1].i][E[1].end]='run'; return; }
+      const m=wallMiterExt(E[0].dx,E[0].dy, E[1].dx,E[1].dy, list[E[0].i].h, list[E[1].i].h);
+      if(!m) return;
+      const c0=capExt(m.ext1, list[E[0].i].h, list[E[1].i].h),
+            c1=capExt(m.ext2, list[E[1].i].h, list[E[0].i].h);
+      if(c0>0){ ext[E[0].i][E[0].end]=Math.max(ext[E[0].i][E[0].end], c0); kind[E[0].i][E[0].end]='corner'; }
+      if(c1>0){ ext[E[1].i][E[1].end]=Math.max(ext[E[1].i][E[1].end], c1); kind[E[1].i][E[1].end]='corner'; }
+      return;
+    }
+    if(E.length===3){
+      const pair=wallOppositePair(E);
+      if(pair){                                 // a through wall made of two ends
+        const hostH=Math.max(list[E[pair[0]].i].h, list[E[pair[1]].i].h);
+        E.forEach((e,k)=>{
+          if(k===pair[0]||k===pair[1]) return;
+          ext[e.i][e.end]=-hostH; kind[e.i][e.end]='butt';
+        });
+        return;
+      }
+      for(let a=0;a<3;a++)for(let b=a+1;b<3;b++){   // Y junction: fill each corner
+        const m=wallMiterExt(E[a].dx,E[a].dy, E[b].dx,E[b].dy, list[E[a].i].h, list[E[b].i].h);
+        if(!m) continue;
+        const ca=capExt(m.ext1, list[E[a].i].h, list[E[b].i].h),
+              cb=capExt(m.ext2, list[E[b].i].h, list[E[a].i].h);
+        if(ca>0){ ext[E[a].i][E[a].end]=Math.max(ext[E[a].i][E[a].end], ca); kind[E[a].i][E[a].end]='corner'; }
+        if(cb>0){ ext[E[b].i][E[b].end]=Math.max(ext[E[b].i][E[b].end], cb); kind[E[b].i][E[b].end]='corner'; }
+      }
+      return;
+    }
+    if(E.length===4 && wallOppositePair(E)){ E.forEach(e=>{ kind[e.i][e.end]='cross'; }); return; }
+    // anything else: leave it alone rather than invent a join
+  });
+
+  function bodyOut(e, ex, kd){
+    // ext>0 extends the body PAST the node along its own direction
+    const L=Math.hypot(e.bx-e.ax, e.by-e.ay);
+    const ux=(e.bx-e.ax)/L, uy=(e.by-e.ay)/L;
+    return {
+      wall:e.w,
+      x1:e.ax-ux*ex[0], y1:e.ay-uy*ex[0],
+      x2:e.bx+ux*ex[1], y2:e.by+uy*ex[1],
+      joins:{ start:kd[0], end:kd[1] }
+    };
+  }
+  return list.map((e,i)=>bodyOut(e, ext[i], kind[i]));
+}
+
 // A point strictly inside a simple polygon: centroid of the triangle at the
 // lexicographically smallest vertex. A vertex itself lies on shared boundaries,
 // so testing containment AT a vertex would misclassify adjoining rooms.
@@ -5961,8 +6231,13 @@ function build3d(){
     }
 
     // walls
-    f.walls.forEach(w=>{
-      const len=dist(w.x1,w.y1,w.x2,w.y2); if(len<0.01)return;
+    // Wall bodies are resolved in PLAN (wallJoinBodies) and the same resolved
+    // bodies are extruded by the glTF export, so the viewer and the export
+    // cannot disagree about a corner. Height still comes from the wall itself,
+    // so explicit and full height are unaffected.
+    wallJoinBodies(f.walls).forEach(B=>{
+      const w=B.wall;
+      const len=dist(B.x1,B.y1,B.x2,B.y2); if(len<0.01)return;
       const m=matById(w.materialId);
       const h=Math.max(0.1,objectHeightOnFloor(w,f));
       // physical thickness in meters, identical to the 2D body
@@ -5970,9 +6245,9 @@ function build3d(){
       const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(m.color),
         transparent:true,opacity:(0.78)*dim+0.18,roughness:.8,metalness:m.db>20?0.5:0.05});
       const mesh=new THREE.Mesh(geo,mat);
-      const mx=(w.x1+w.x2)/2-cx, mz=(w.y1+w.y2)/2-cz;
+      const mx=(B.x1+B.x2)/2-cx, mz=(B.y1+B.y2)/2-cz;
       mesh.position.set(mx, h/2, mz);
-      mesh.rotation.y=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
+      mesh.rotation.y=-Math.atan2(B.y2-B.y1,B.x2-B.x1);
       fl.add(mesh);
     });
 
@@ -7821,16 +8096,19 @@ function exportGLTF(){
       }
     }
     // walls
-    const walls=f.walls.filter(w=>dist(w.x1,w.y1,w.x2,w.y2)>=0.01);
-    if(walls.length){
+    // The SAME plan-resolved bodies the 3D viewer extrudes, so an exported
+    // corner is the corner the user saw on screen.
+    const wallBodies=wallJoinBodies(f.walls).filter(B=>dist(B.x1,B.y1,B.x2,B.y2)>=0.01);
+    if(wallBodies.length){
       builder.beginGroup('Walls');
-      walls.forEach((w,i)=>{
+      wallBodies.forEach((B,i)=>{
+        const w=B.wall;
         const m=matById(w.materialId); const h=Math.max(0.1,objectHeightOnFloor(w,f));
-        const mx=(w.x1+w.x2)/2, mz=(w.y1+w.y2)/2;
-        const ang=-Math.atan2(w.y2-w.y1,w.x2-w.x1);
+        const mx=(B.x1+B.x2)/2, mz=(B.y1+B.y2)/2;
+        const ang=-Math.atan2(B.y2-B.y1,B.x2-B.x1);
         const id=gltfObjId(w,'wall',i);
         builder.beginObject('Wall '+id, gltfExtras('wall',id,idx,{materialId:w.materialId}));
-        builder.addBox(dist(w.x1,w.y1,w.x2,w.y2),h,wallThickness(w), mx, elev+h/2, mz, ang, hexToRgb(m.color));
+        builder.addBox(dist(B.x1,B.y1,B.x2,B.y2),h,wallThickness(w), mx, elev+h/2, mz, ang, hexToRgb(m.color));
         builder.endObject();
       });
       builder.endGroup();
