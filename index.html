@@ -2014,7 +2014,16 @@ function draw2d(){
   // extrude (wallJoinBodies), so a corner looks the same everywhere. Ends that
   // meet a neighbour are drawn butt-capped so a join is a clean square and no
   // cap stands proud; a genuinely free end keeps its round cap.
-  wallJoinBodies(f.walls).forEach(B=>{
+  // TWO PASSES over the resolved bodies, on purpose.
+  //
+  // Pass 1 paints every wall BODY. Pass 2 then paints every decorative stripe on
+  // top of all of them. Drawing body+stripe per wall instead let a later wall's
+  // body paint over an earlier wall's stripe, which is what made an L corner
+  // look layered: the incoming wall's body erased the outgoing wall's stripe
+  // right where the two had to meet.
+  const wallBodies2d = wallJoinBodies(f.walls);
+  const stripeW = B => wallThicknessPx(B.wall)*WALL_STRIPE_W_FRAC;
+  wallBodies2d.forEach(B=>{
     const wl=B.wall;
     const a=W2S(B.x1,B.y1), b=W2S(B.x2,B.y2);
     const m=matById(wl.materialId);
@@ -2031,24 +2040,41 @@ function draw2d(){
       if(B.joins.start==='free'){ ctx.beginPath();ctx.arc(a.x,a.y,drawW/2,0,Math.PI*2);ctx.fill(); }
       if(B.joins.end==='free'){ ctx.beginPath();ctx.arc(b.x,b.y,drawW/2,0,Math.PI*2);ctx.fill(); }
     }
-    // Decorative inner highlight, proportional to the body and only drawn when
-    // the body is wide enough for it to be meaningful. Never widens the body.
-    //
-    // It follows the SAME cap policy as the body above, and for the same reason:
-    // it is stroked along the same resolved segment, so a round cap at a JOINED
-    // end would paint a semicircular nub past the junction - the "hotdog" nub.
-    // wallJoinBodies() already classifies every endpoint, so a free end still
-    // gets its round cap and nothing else does. No second detector, no offsets.
-    if(bodyPx>=2){
-      const hlW=bodyPx*0.44;
-      ctx.lineCap='butt';
-      ctx.lineWidth = hlW; ctx.strokeStyle = shade(m.color,-0.25);
-      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-      if(B.joins.start==='free' || B.joins.end==='free'){
-        ctx.fillStyle=ctx.strokeStyle;
-        if(B.joins.start==='free'){ ctx.beginPath();ctx.arc(a.x,a.y,hlW/2,0,Math.PI*2);ctx.fill(); }
-        if(B.joins.end==='free'){ ctx.beginPath();ctx.arc(b.x,b.y,hlW/2,0,Math.PI*2);ctx.fill(); }
-      }
+  });
+  // Pass 2: the decorative inner stripe, proportional to the body and only drawn
+  // when the body is wide enough for it to be meaningful. Never widens a body.
+  //
+  // Two join rules, both taken straight from wallJoinBodies() - no second
+  // detector and no offsets:
+  //   * the endpoints are B.stripe, not B.x1/x2. At a T the body stops at the
+  //     host's face while the host's stripe is an inner band, so a stripe drawn
+  //     only to the body end leaves a visible gap; the resolver carries it
+  //     inward to the near edge of that band so the two stripes touch. At every
+  //     other join the stripe endpoints are the body endpoints, and the mitered
+  //     or abutting ends already form one continuous run.
+  //   * the cap policy follows the body: butt at a JOINED end, round only at a
+  //     genuinely free end, so no rounded nub can protrude past a junction.
+  wallBodies2d.forEach(B=>{
+    const hlW=stripeW(B);
+    if(hlW<2) return;
+    const m=matById(B.wall.materialId);
+    // The stripe is FILLED as a band, not stroked as a centreline. At a corner
+    // B.stripe already carries the mitered end edge, so the elbow is one clean
+    // shape: nothing crosses, and neither band runs past the corner. Filling
+    // also means a joined end cannot grow a rounded nub - there is no cap to
+    // grow one.
+    const q=B.stripe.map(p=>W2S(p.x,p.y));
+    ctx.fillStyle=shade(m.color,-0.25);
+    ctx.beginPath();
+    ctx.moveTo(q[0].x,q[0].y);
+    for(let i=1;i<q.length;i++) ctx.lineTo(q[i].x,q[i].y);
+    ctx.closePath();
+    ctx.fill();
+    // A genuinely free endpoint keeps exactly the round cap it always had.
+    if(B.joins.start==='free' || B.joins.end==='free'){
+      const a=W2S(B.x1,B.y1), b=W2S(B.x2,B.y2);
+      if(B.joins.start==='free'){ ctx.beginPath();ctx.arc(a.x,a.y,hlW/2,0,Math.PI*2);ctx.fill(); }
+      if(B.joins.end==='free'){ ctx.beginPath();ctx.arc(b.x,b.y,hlW/2,0,Math.PI*2);ctx.fill(); }
     }
   });
   drawWallEndpointHandles();
@@ -4709,6 +4735,10 @@ const WALL_JOIN_DIR_EPS = 1e-6;
 const WALL_JOIN_MAX_EXT = 2;
 
 function wallHalfThickness(w){ return wallThickness(w)/2; }
+// The decorative inner stripe is this fraction of the wall BODY width. The 2D
+// drawing and wallJoinBodies()' stripe terminus both read it from here, so the
+// drawn width and the computed terminus can never drift apart.
+const WALL_STRIPE_W_FRAC = 0.44;
 
 // Does (px,py) lie strictly INSIDE the wall's span (not on either endpoint)?
 function wallPassesThrough(w, px, py){
@@ -4739,6 +4769,34 @@ function wallMiterExt(d1x,d1y, d2x,d2y, h1, h2){
 // degree corner needs exactly the other body's half thickness, so capping
 // against a body's own (possibly much thinner) half thickness would clamp a
 // legitimate thick-meets-thin corner.
+// The mitered END EDGE of a decorative stripe band at a corner.
+//
+// A stripe is a BAND, not a centreline stroke. At an L, two centreline strokes
+// merely cross and read as a cross, so each band instead ends on a SEAM: the
+// straight line joining the two points where this band's edges meet the other
+// band's edges. Both joined walls compute the SAME two points, so the two bands
+// tile the elbow exactly - a clean 90 degree mitre, no cross, and neither band
+// overrunning the corner.
+//
+// The points are the intersections of the two OUTER edges and of the two INNER
+// edges, so for unequal stripe widths the seam is the true line through both
+// edge intersections and NOT a fixed 45 degree offset. Returns points relative
+// to the node; null for a degenerate (collinear) pair.
+function stripeMiterSeam(nd, d1x,d1y, w1, d2x,d2y, w2){
+  const n1x=-d1y, n1y=d1x, n2x=-d2y, n2y=d2x;
+  const s1=(n1x*d2x+n1y*d2y)<0 ? 1 : -1;      // this wall's edge facing away
+  const s2=(n2x*d1x+n2y*d1y)<0 ? 1 : -1;      // the other wall's, likewise
+  const hit=(ax,ay,bx,by)=>{
+    const den=d1x*d2y-d1y*d2x;
+    if(Math.abs(den)<1e-12) return null;
+    const t=((bx-ax)*d2y-(by-ay)*d2x)/den;
+    return { x:nd.x+ax+t*d1x, y:nd.y+ay+t*d1y };
+  };
+  const outer=hit(s1*w1*n1x, s1*w1*n1y, s2*w2*n2x, s2*w2*n2y);
+  const inner=hit(-s1*w1*n1x, -s1*w1*n1y, -s2*w2*n2x, -s2*w2*n2y);
+  if(!outer||!inner) return null;
+  return { outer:outer, inner:inner };
+}
 const capExt=(v,h1,h2)=>Math.max(0, Math.min(v, WALL_JOIN_MAX_EXT*Math.max(h1,h2)));
 
 // Index of the two rays that are opposite each other, or null.
@@ -4778,17 +4836,41 @@ function wallJoinBodies(walls){
 }
 function resolveWallJoinBodies(walls){
   const list=[];
+  // stripeTerm[i] = [startMetres, endMetres]: how far past the resolved body end
+  // each end's decorative stripe must reach, so the stripe NETWORK is continuous
+  // instead of a set of independent strokes. Zero for every join except a T.
+  const stripeTerm=[];
   (walls||[]).forEach((w,k)=>{
     if(!w) return;
     if(!(Number.isFinite(w.x1)&&Number.isFinite(w.y1)&&Number.isFinite(w.x2)&&Number.isFinite(w.y2))) return;
     if(!(Math.hypot(w.x2-w.x1,w.y2-w.y1)>WALL_JOIN_TOL)) return;
     list.push({ w:w, src:k, h:wallHalfThickness(w),
+                // the decorative stripe half width, in metres
+                sw:WALL_STRIPE_W_FRAC*wallHalfThickness(w),
                 ax:w.x1, ay:w.y1, bx:w.x2, by:w.y2 });
   });
   const n=list.length;
   const ext=list.map(()=>[0,0]);
   const kind=list.map(()=>['free','free']);
-  if(n<2) return list.map((e,i)=>bodyOut(e,ext[i],kind[i]));
+  stripeTerm.length=list.length;
+  for(let i=0;i<list.length;i++) stripeTerm[i]=[0,0];
+  // seam[i][end] = the mitered stripe end edge at that end, or null
+  const seam=[];
+  for(let i=0;i<list.length;i++) seam.push([null,null]);
+  // keep whichever pairing reaches furthest along the wall, so a multi-ray node
+  // never leaves a gap
+  const keepSeam=(i,end,sm,ux,uy)=>{
+    if(!sm) return;
+    const prev=seam[i][end];
+    if(prev){
+      const a=Math.hypot(sm.outer.x-list[i].ax, sm.outer.y-list[i].ay);
+      const b=Math.hypot(prev.outer.x-list[i].ax, prev.outer.y-list[i].ay);
+      if(b>=a) return;
+    }
+    void ux; void uy;
+    seam[i][end]=sm;
+  };
+  if(n<2) return list.map((e,i)=>bodyOut(e,ext[i],kind[i],stripeTerm[i],seam[i]));
 
   // 1. cluster wall endpoints into nodes. A tolerance-sized hash grid keeps this
   //    linear: a 3x3 probe around a point is enough, because two points within
@@ -4870,6 +4952,17 @@ function resolveWallJoinBodies(walls){
         if(collinear) return;                   // it just continues the host
         ext[e.i][e.end]=-hmax;
         kind[e.i][e.end]='butt';
+        // The BODY stops at the host's face, one half-thickness short of the
+        // host centreline, but the host's decorative stripe is only a band of
+        // WALL_STRIPE_W_FRAC/2 * hostThickness wide around that centreline.
+        // Stopping at the face therefore leaves a visible gap between the two
+        // stripes, so the stripe is carried INWARD to the near edge of the
+        // host's band: it then meets the host stripe exactly, with no gap and
+        // without painting over it. The body itself does not move.
+        //   body  end : hmax            before the node
+        //   stripe end: WALL_STRIPE_W_FRAC*hmax before the node
+        // so the stripe is that much LONGER than the body. Metres, zoom-independent.
+        stripeTerm[e.i][e.end]=hmax*(1-WALL_STRIPE_W_FRAC);
       });
       return;
     }
@@ -4883,6 +4976,12 @@ function resolveWallJoinBodies(walls){
             c1=capExt(m.ext2, list[E[1].i].h, list[E[0].i].h);
       if(c0>0){ ext[E[0].i][E[0].end]=Math.max(ext[E[0].i][E[0].end], c0); kind[E[0].i][E[0].end]='corner'; }
       if(c1>0){ ext[E[1].i][E[1].end]=Math.max(ext[E[1].i][E[1].end], c1); kind[E[1].i][E[1].end]='corner'; }
+      if(c0>0&&c1>0){
+        // the same seam for both, so the two bands tile the elbow exactly
+        const sm=stripeMiterSeam(nd, E[0].dx,E[0].dy, list[E[0].i].sw,
+                                          E[1].dx,E[1].dy, list[E[1].i].sw);
+        keepSeam(E[0].i,E[0].end,sm); keepSeam(E[1].i,E[1].end,sm);
+      }
       return;
     }
     if(E.length===3){
@@ -4892,6 +4991,7 @@ function resolveWallJoinBodies(walls){
         E.forEach((e,k)=>{
           if(k===pair[0]||k===pair[1]) return;
           ext[e.i][e.end]=-hostH; kind[e.i][e.end]='butt';
+          stripeTerm[e.i][e.end]=hostH*(1-WALL_STRIPE_W_FRAC);
         });
         return;
       }
@@ -4902,6 +5002,11 @@ function resolveWallJoinBodies(walls){
               cb=capExt(m.ext2, list[E[b].i].h, list[E[a].i].h);
         if(ca>0){ ext[E[a].i][E[a].end]=Math.max(ext[E[a].i][E[a].end], ca); kind[E[a].i][E[a].end]='corner'; }
         if(cb>0){ ext[E[b].i][E[b].end]=Math.max(ext[E[b].i][E[b].end], cb); kind[E[b].i][E[b].end]='corner'; }
+        if(ca>0&&cb>0){
+          const sm=stripeMiterSeam(nd, E[a].dx,E[a].dy, list[E[a].i].sw,
+                                            E[b].dx,E[b].dy, list[E[b].i].sw);
+          keepSeam(E[a].i,E[a].end,sm); keepSeam(E[b].i,E[b].end,sm);
+        }
       }
       return;
     }
@@ -4909,18 +5014,36 @@ function resolveWallJoinBodies(walls){
     // anything else: leave it alone rather than invent a join
   });
 
-  function bodyOut(e, ex, kd){
+  function bodyOut(e, ex, kd, st, sm){
     // ext>0 extends the body PAST the node along its own direction
     const L=Math.hypot(e.bx-e.ax, e.by-e.ay);
     const ux=(e.bx-e.ax)/L, uy=(e.by-e.ay)/L;
+    const nx=-uy, ny=ux;                     // the wall's own normal
+    // Body endpoints. These are the authoritative geometry and are computed
+    // exactly as before - the stripe never moves them.
+    const p0={ x:e.ax-ux*ex[0], y:e.ay-uy*ex[0] };
+    const p1={ x:e.bx+ux*ex[1], y:e.by+uy*ex[1] };
+    // Stripe ends. A butt end carries its stripe inward to meet the host's band;
+    // every other end sits on its body endpoint.
+    const s0={ x:p0.x-ux*st[0], y:p0.y-uy*st[0] };
+    const s1={ x:p1.x+ux*st[1], y:p1.y+uy*st[1] };
+    // The stripe is a BAND, emitted as its four corners. At a corner the end
+    // edge is the mitered seam shared with the joined wall; everywhere else it
+    // is a square butt across the band, and a free end additionally keeps the
+    // round cap the 2D renderer has always drawn there.
+    const edge=(pt,seamPt)=> seamPt ? [seamPt.outer, seamPt.inner]
+      : [ {x:pt.x+nx*e.sw, y:pt.y+ny*e.sw}, {x:pt.x-nx*e.sw, y:pt.y-ny*e.sw} ];
+    const c0=edge(s0, sm?sm[0]:null), c1=edge(s1, sm?sm[1]:null);
     return {
       wall:e.w,
-      x1:e.ax-ux*ex[0], y1:e.ay-uy*ex[0],
-      x2:e.bx+ux*ex[1], y2:e.by+uy*ex[1],
+      x1:p0.x, y1:p0.y,
+      x2:p1.x, y2:p1.y,
+      // [startOuter, endOuter, endInner, startInner]
+      stripe:[c0[0], c1[0], c1[1], c0[1]],
       joins:{ start:kd[0], end:kd[1] }
     };
   }
-  return list.map((e,i)=>bodyOut(e, ext[i], kind[i]));
+  return list.map((e,i)=>bodyOut(e, ext[i], kind[i], stripeTerm[i], seam[i]));
 }
 
 // A point strictly inside a simple polygon: centroid of the triangle at the
