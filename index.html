@@ -2033,10 +2033,22 @@ function draw2d(){
     }
     // Decorative inner highlight, proportional to the body and only drawn when
     // the body is wide enough for it to be meaningful. Never widens the body.
+    //
+    // It follows the SAME cap policy as the body above, and for the same reason:
+    // it is stroked along the same resolved segment, so a round cap at a JOINED
+    // end would paint a semicircular nub past the junction - the "hotdog" nub.
+    // wallJoinBodies() already classifies every endpoint, so a free end still
+    // gets its round cap and nothing else does. No second detector, no offsets.
     if(bodyPx>=2){
-      ctx.lineCap='round';
-      ctx.lineWidth = bodyPx*0.44; ctx.strokeStyle = shade(m.color,-0.25);
+      const hlW=bodyPx*0.44;
+      ctx.lineCap='butt';
+      ctx.lineWidth = hlW; ctx.strokeStyle = shade(m.color,-0.25);
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      if(B.joins.start==='free' || B.joins.end==='free'){
+        ctx.fillStyle=ctx.strokeStyle;
+        if(B.joins.start==='free'){ ctx.beginPath();ctx.arc(a.x,a.y,hlW/2,0,Math.PI*2);ctx.fill(); }
+        if(B.joins.end==='free'){ ctx.beginPath();ctx.arc(b.x,b.y,hlW/2,0,Math.PI*2);ctx.fill(); }
+      }
     }
   });
   drawWallEndpointHandles();
