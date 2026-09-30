@@ -1,0 +1,1202 @@
+{
+  "direct": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_6izd0lv",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 702,
+        "elapsedMs": 459.21450209617615,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_9wgam5k",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -52.2071
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -55.5463
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "cab6a425"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 702,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -52.2071
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -55.5463
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "3b27e323",
+      "gridFingerprint": "cab6a425",
+      "world": "w/0/p/0/o/0/s/0/c/0"
+    }
+  },
+  "wall-transmission": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_3updlux",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 878,
+        "elapsedMs": 721.000391960144,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_hxig6k9",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -52.2071
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -65.5098
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -70.5261
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "b0624f7a"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 878,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -52.2071
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -65.5098
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -70.5261
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "5667ed04",
+      "gridFingerprint": "b0624f7a",
+      "world": "w/1/p/0/o/0/s/0/c/0"
+    }
+  },
+  "wall-reflection": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_b0kfoz4",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 922,
+        "elapsedMs": 853.1024811267853,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_apxmyoa",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -67.1936
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -70.545
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "423d7656"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 922,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -67.1936
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -70.545
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "c95f0a92",
+      "gridFingerprint": "423d7656",
+      "world": "w/1/p/0/o/0/s/0/c/0"
+    }
+  },
+  "multi-wall": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_51qhpbb",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 1565,
+        "elapsedMs": 1435.5128209590912,
+        "finiteCells": 13328,
+        "belowFloorCells": 472,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_5nxwjgd",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -82.1085
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -65.5152
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -85.5343
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "bf527758"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 1565,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -82.1085
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -65.5152
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -85.5343
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "054a655c",
+      "gridFingerprint": "bf527758",
+      "world": "w/4/p/0/o/0/s/0/c/0"
+    }
+  },
+  "pillar": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_x3ljmpr",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 702,
+        "elapsedMs": 569.977630853653,
+        "finiteCells": 13788,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_yz49ogd",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -52.2071
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -55.5463
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "b33a7f56"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 702,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -52.2071
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -55.5463
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "0b6b0194",
+      "gridFingerprint": "b33a7f56",
+      "world": "w/0/p/2/o/0/s/0/c/0"
+    }
+  },
+  "rf-object": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_ewbgti6",
+            "rays": 702
+          }
+        ],
+        "initialRays": 702,
+        "processedBranches": 702,
+        "elapsedMs": 1117.6113212108612,
+        "finiteCells": 13623,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_txw9jp6",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": null
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -52.2071
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -78.0181
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "de12cae3"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 702,
+      "processedBranches": 702,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": null
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -52.2071
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -78.0181
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "406fba10",
+      "gridFingerprint": "de12cae3",
+      "world": "w/0/p/0/o/2/s/0/c/0"
+    }
+  },
+  "opening-slab": {
+    "activeFloor": 1,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_wl9xskz",
+            "rays": 702
+          },
+          {
+            "apId": "ap_oxej6fc",
+            "rays": 702
+          }
+        ],
+        "initialRays": 1404,
+        "processedBranches": 1404,
+        "elapsedMs": 1976.3328459262848,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_985ggtd",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -52.2071
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -55.5463
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "cab6a425"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 1404,
+      "processedBranches": 1404,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -52.2071
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -55.5463
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "3b27e323",
+      "gridFingerprint": "cab6a425",
+      "world": "w/0/p/0/o/0/s/1/c/0"
+    }
+  },
+  "two-aps": {
+    "activeFloor": 0,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_gblcss5",
+            "rays": 702
+          },
+          {
+            "apId": "ap_1mk4jxh",
+            "rays": 734
+          }
+        ],
+        "initialRays": 1436,
+        "processedBranches": 1873,
+        "elapsedMs": 1222.1584441661835,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_pxij79p",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -49.6251
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -32.088
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "9320f6a2"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 1436,
+      "processedBranches": 1873,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -49.6251
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -32.088
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "b3dd037a",
+      "gridFingerprint": "9320f6a2",
+      "world": "w/1/p/0/o/0/s/0/c/0"
+    }
+  },
+  "floor-elevation": {
+    "activeFloor": 1,
+    "old": {
+      "stats": {
+        "quality": "normal",
+        "raysPerAp": [
+          {
+            "apId": "ap_dz1pzxl",
+            "rays": 702
+          },
+          {
+            "apId": "ap_t5dqsnq",
+            "rays": 702
+          }
+        ],
+        "initialRays": 1404,
+        "processedBranches": 1579,
+        "elapsedMs": 1473.4966559410095,
+        "finiteCells": 13800,
+        "belowFloorCells": 0,
+        "totalCells": 13800,
+        "gridCellM": 0.15942028985507245
+      },
+      "meta": {
+        "floorId": "flr_r3f44wl",
+        "minx": -11,
+        "miny": -8,
+        "maxx": 11,
+        "maxy": 8,
+        "cols": 138,
+        "rows": 100
+      },
+      "grid": {
+        "cols": 138,
+        "rows": 100,
+        "cells": [
+          {
+            "i": 69,
+            "j": 50,
+            "rssi": -43.3218
+          },
+          {
+            "i": 34,
+            "j": 25,
+            "rssi": -36.6663
+          },
+          {
+            "i": 103,
+            "j": 25,
+            "rssi": -67.1936
+          },
+          {
+            "i": 34,
+            "j": 75,
+            "rssi": -50.4882
+          },
+          {
+            "i": 103,
+            "j": 75,
+            "rssi": -70.545
+          },
+          {
+            "i": 69,
+            "j": 20,
+            "rssi": -40.4145
+          },
+          {
+            "i": 27,
+            "j": 50,
+            "rssi": -44.4313
+          }
+        ],
+        "fingerprint": "2461877e"
+      }
+    },
+    "new": {
+      "cols": 138,
+      "rows": 100,
+      "initialRays": 1404,
+      "processedBranches": 1579,
+      "cells": [
+        {
+          "i": 69,
+          "j": 50,
+          "x": 0.08,
+          "y": 0.08,
+          "rssi": -43.3218
+        },
+        {
+          "i": 34,
+          "j": 25,
+          "x": -5.5,
+          "y": -3.92,
+          "rssi": -36.6663
+        },
+        {
+          "i": 103,
+          "j": 25,
+          "x": 5.5,
+          "y": -3.92,
+          "rssi": -67.1936
+        },
+        {
+          "i": 34,
+          "j": 75,
+          "x": -5.5,
+          "y": 4.08,
+          "rssi": -50.4882
+        },
+        {
+          "i": 103,
+          "j": 75,
+          "x": 5.5,
+          "y": 4.08,
+          "rssi": -70.545
+        },
+        {
+          "i": 69,
+          "j": 20,
+          "x": 0.08,
+          "y": -4.72,
+          "rssi": -40.4145
+        },
+        {
+          "i": 27,
+          "j": 50,
+          "x": -6.616,
+          "y": 0.08,
+          "rssi": -44.4313
+        }
+      ],
+      "fingerprint": "a751d8f0",
+      "gridFingerprint": "2461877e",
+      "world": "w/1/p/0/o/0/s/1/c/0"
+    }
+  }
+}

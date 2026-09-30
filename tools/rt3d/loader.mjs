@@ -1,0 +1,125 @@
+// Headless loader for the wifi-simulator app + the new RT3D kernel.
+// The app is a single <script> with no modules and no build step, so the
+// whole engine can be evaluated in a Node vm with a minimal DOM stub.
+// Nothing here is shipped: this file exists only to validate the kernel.
+import fs from 'node:fs';
+import vm from 'node:vm';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const APP = path.join(HERE, '..', '..', 'index.html');
+
+export function readAppScript(file = APP) {
+  const html = fs.readFileSync(file, 'utf8');
+  const m = html.match(/<script>\n([\s\S]*?)\n<\/script>/);
+  if (!m) throw new Error('app <script> block not found in ' + file);
+  return m[1];
+}
+
+// Split the app script into the part before `start()` is wired up and the
+// part after, so we can install state without booting the UI.
+export function splitApp(src) {
+  const i = src.indexOf('document.addEventListener(\'DOMContentLoaded\',start);');
+  if (i < 0) throw new Error('bootstrap marker not found');
+  return { core: src.slice(0, i), tail: src.slice(i) };
+}
+
+function el() {
+  const e = {
+    style: {}, dataset: {}, classList: { add(){}, remove(){}, contains(){return false;} },
+    children: [], options: [], className: '', value: '', checked: false,
+    getContext(){ return ctx2d(); }, addEventListener(){}, removeEventListener(){},
+    appendChild(){}, append(){}, remove(){}, insertBefore(){}, setAttribute(){},
+    getAttribute(){ return null; }, removeAttribute(){}, focus(){}, blur(){},
+    querySelector(){ return el(); }, querySelectorAll(){ return []; },
+    getBoundingClientRect(){ return {x:0,y:0,width:800,height:600,left:0,top:0,right:800,bottom:600}; },
+    toDataURL(){ return ''; },
+  };
+  return e;
+}
+function ctx2d() {
+  const noop = () => {};
+  return new Proxy({}, {
+    get(t, k) {
+      if (k === 'canvas') return el();
+      if (k === 'measureText') return () => ({ width: 10 });
+      if (k === 'createLinearGradient' || k === 'createRadialGradient')
+        return () => ({ addColorStop: noop });
+      if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+      if (k === 'putImageData') return noop;
+      return typeof k === 'string' ? (t[k] !== undefined ? t[k] : noop) : noop;
+    },
+    set(t, k, v) { t[k] = v; return true; },
+  });
+}
+
+export function makeDom() {
+  const doc = {
+    readyState: 'complete',
+    body: el(), head: el(), documentElement: el(),
+    createElement: () => el(), createElementNS: () => el(),
+    createTextNode: (t) => ({ nodeValue: t }),
+    getElementById: () => el(),
+    querySelector: () => el(), querySelectorAll: () => [],
+    addEventListener(){}, removeEventListener(){},
+    createDocumentFragment: () => el(),
+  };
+  const store = new Map();
+  const win = {
+    document: doc,
+    devicePixelRatio: 1,
+    innerWidth: 1280, innerHeight: 800,
+    addEventListener(){}, removeEventListener(){}, dispatchEvent(){},
+    requestAnimationFrame: (cb) => setTimeout(() => cb(Date.now()), 0),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    matchMedia: () => ({ matches: false, addEventListener(){}, removeEventListener(){} }),
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    },
+    THREE: undefined,
+    URL: { createObjectURL: () => '', revokeObjectURL(){} },
+    Blob: class { constructor(){} },
+    FileReader: class { readAsDataURL(){} },
+    navigator: { userAgent: 'node' },
+    MutationObserver: class { observe(){} disconnect(){} takeRecords(){ return []; } },
+    ResizeObserver: class { observe(){} disconnect(){} unobserve(){} },
+    IntersectionObserver: class { observe(){} disconnect(){} unobserve(){} },
+    Image: class { set src(v){} get src(){ return ''; } },
+    OffscreenCanvas: class { getContext(){ return ctx2d(); } },
+    TextDecoder, TextEncoder, URL, URLSearchParams, Buffer,
+    setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
+    performance,
+    console,
+  };
+  win.window = win;
+  win.self = win;
+  win.globalThis = win;
+  return win;
+}
+
+// Build a fresh sandbox with the app's engine code evaluated.
+// Returns the sandbox, on which state/floor()/etc. are now live.
+export function loadApp(file = APP) {
+  const src = readAppScript(file);
+  const { core } = splitApp(src);
+  const win = makeDom();
+  const ctx = vm.createContext(win);
+  vm.runInContext(core, ctx, { filename: 'index.html<script>' });
+  return ctx;
+}
+
+// Evaluate code INSIDE the sandbox, so lexical bindings declared by the
+// app script (notably `let state`) are visible to it. Assigning
+// sandbox.state from outside would create an unrelated global property.
+export function run(sandbox, code, filename = 'test') {
+  return vm.runInContext(code, sandbox, { filename });
+}
+
+// A fresh state with the app's own material table, no demo geometry.
+export function blankState(sandbox) {
+  return run(sandbox, 'state=freshState(); state');
+}

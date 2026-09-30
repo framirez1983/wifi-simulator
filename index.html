@@ -4338,6 +4338,957 @@ function runRayTrace(onDone){
   }
   requestAnimationFrame(step);
 }
+// ============================================================
+//  TRUE 3D RAY-TRACING KERNEL  (Stage 1: parallel engine)
+//
+//  This kernel is INERT. It is not called by the production
+//  engine, by any UI control, or by any heatmap. runRayTrace()
+//  above is untouched and remains the only propagation engine
+//  in this file. The kernel exists to be validated and, in
+//  later stages, to replace the old engine behind the same
+//  fixtures.
+//
+//  Everything below works on real 3D geometry. There is
+//  deliberately NO equivalent of the legacy rayZAt()
+//  single-plane assumption anywhere in this section: a ray
+//  carries a real origin and a real 3D direction, and Z is
+//  solved for like X and Y.
+// ============================================================
+const RT3D_EPS = 1e-9;          // same scale as RFOBJ_SLAB_EPS / CEIL_RF_EPS
+// PROVISIONAL, KERNEL-ONLY. The production slab RF model charges a
+// zero-thickness plane at each floor base; the new kernel needs a real
+// physical volume to traverse. This value is NOT wired into the
+// production slab model and changes no legacy RF result. Revisit when
+// slab depth becomes a real project parameter.
+const RT3D_SLAB_DEPTH_M = 0.20;
+
+// ------------------------------------------------------------
+//  CANONICAL 3D VECTOR MATH
+//  Vectors are plain {x,y,z} objects. Rays are unit-length in
+//  direction: dx*dx + dy*dy + dz*dz === 1.
+// ------------------------------------------------------------
+function rt3dV(x,y,z){ return {x:x, y:y, z:z}; }
+function rt3dAdd(a,b){ return rt3dV(a.x+b.x, a.y+b.y, a.z+b.z); }
+function rt3dSub(a,b){ return rt3dV(a.x-b.x, a.y-b.y, a.z-b.z); }
+function rt3dScale(a,s){ return rt3dV(a.x*s, a.y*s, a.z*s); }
+function rt3dNegate(a){ return rt3dV(-a.x, -a.y, -a.z); }
+function rt3dDot(a,b){ return a.x*b.x + a.y*b.y + a.z*b.z; }
+function rt3dLenSq(a){ return a.x*a.x + a.y*a.y + a.z*a.z; }
+function rt3dLen(a){ return Math.sqrt(rt3dLenSq(a)); }
+function rt3dUnit(v){
+  const L=rt3dLen(v);
+  if(!(L>0) || !Number.isFinite(L)) return null;
+  return rt3dScale(v, 1/L);
+}
+// P(t) = O + D*t, the only way a point is ever produced in this kernel.
+// `o` and `d` are both plain vectors, like every other primitive in this
+// layer. Because D is a unit vector, t is a true distance in metres.
+// (rt3dRay() is the only place a direction is allowed to be un-normalised,
+// and it normalises before anything else can see it.)
+function rt3dPointAlongRay(o, d, t){
+  return rt3dV(o.x + d.x*t, o.y + d.y*t, o.z + d.z*t);
+}
+// The general 3D reflection law: R = D - 2(D.N)N.
+// Both arguments are plain vectors, like every other primitive in this
+// layer. There is no XY special case. For a vertical wall N=(nx,ny,0)
+// and a horizontal ray D=(dx,dy,0) this reproduces the legacy 2D
+// reflection exactly, and for D with dz != 0 it preserves dz, because
+// N.z = 0 removes no vertical component.
+function rt3dReflect(d, n){
+  const k = 2*rt3dDot(d, n);
+  return rt3dV(d.x - k*n.x, d.y - k*n.y, d.z - k*n.z);
+}
+
+// ---- Ray3D --------------------------------------------------------
+// { x, y, z, dx, dy, dz } with |D| === 1. Constructed only through
+// rt3dRay, so an un-normalized direction can never reach a kernel.
+function rt3dRay(x,y,z, dx,dy,dz){
+  const d=rt3dUnit(rt3dV(dx,dy,dz));
+  if(!d) return null;
+  if(!(Number.isFinite(x)&&Number.isFinite(y)&&Number.isFinite(z))) return null;
+  return { x:x, y:y, z:z, dx:d.x, dy:d.y, dz:d.z };
+}
+function rt3dRayOrigin(ray){ return rt3dV(ray.x, ray.y, ray.z); }
+function rt3dRayDir(ray){ return rt3dV(ray.dx, ray.dy, ray.dz); }
+function rt3dRayPoint(ray, t){ return rt3dPointAlongRay(rt3dRayOrigin(ray), rt3dRayDir(ray), t); }
+function rt3dRayReflect(ray, n){
+  const d=rt3dReflect(rt3dRayDir(ray), n);
+  return { x:ray.x, y:ray.y, z:ray.z, dx:d.x, dy:d.y, dz:d.z };
+}
+function rt3dIsHorizontal(ray, tol){
+  return Math.abs(ray.dz) <= (tol==null?RT3D_EPS:tol);
+}
+function rt3dLenSqOk(ray, tol){
+  const s=ray.dx*ray.dx + ray.dy*ray.dy + ray.dz*ray.dz;
+  return Math.abs(s-1) <= (tol==null?1e-12:tol);
+}
+
+// ------------------------------------------------------------
+//  COLLISION GEOMETRY, DERIVED FROM CANONICAL PROJECT ENTITIES
+//
+//  rt3dBuildWorld() READS walls, slabs, openings, RF Objects,
+//  Ceiling Areas and floors, and derives typed collision volumes
+//  from them. It never writes to them and there is no persisted
+//  "RT world": the canonical entities stay the single source of
+//  truth, so an edit in the editor is visible to the tracer with
+//  no synchronisation step. The world is a pure cache and is
+//  rebuilt on demand.
+// ------------------------------------------------------------
+function rt3dBuildWorld(){
+  const w = { floors:[], walls:[], pillars:[], rfObjects:[], slabs:[], ceilings:[] };
+  for(let fi=0; fi<state.floors.length; fi++){
+    const f=state.floors[fi];
+    if(!f) continue;
+    w.floors.push(fi);
+    (f.walls||[]).forEach(wl=>{ const b=rt3dWallBody(wl,fi,f); if(b) w.walls.push(b); });
+    (f.pillars||[]).forEach(p=>{ const b=rt3dPillarBody(p,fi,f); if(b) w.pillars.push(b); });
+    (f.rfObjects||[]).forEach(o=>{ const b=rt3dRfObjectBody(o,fi,f); if(b) w.rfObjects.push(b); });
+    (f.ceilingAreas||[]).forEach(c=>{ const b=rt3dCeilingBody(c,fi,f); if(b) w.ceilings.push(b); });
+    // Ownership: every non-bottom floor owns the slab at its own base
+    // elevation, separating it from the floor below; floor 0 owns none.
+    if(fi>0){ const b=rt3dSlabBody(f,fi); if(b) w.slabs.push(b); }
+  }
+  return w;
+}
+function rt3dWorldSignature(w){
+  return ['w',w.walls.length,'p',w.pillars.length,'o',w.rfObjects.length,
+          's',w.slabs.length,'c',w.ceilings.length].join('/');
+}
+// Approximate world bounds, used only to size a future accelerator.
+function rt3dWorldBounds(w){
+  // Union of every body's own AABB plus its full vertical interval. Built from
+  // rt3dBodyAabb so it can never disagree with what the broadphase sees.
+  let minx=Infinity,miny=Infinity,minz=Infinity,maxx=-Infinity,maxy=-Infinity,maxz=-Infinity;
+  const all = w.walls.concat(w.pillars, w.rfObjects, w.slabs, w.ceilings);
+  for(const b of all){
+    const a=rt3dBodyAabb(b);
+    if(!a) continue;
+    if(a.minx<minx) minx=a.minx; if(a.maxx>maxx) maxx=a.maxx;
+    if(a.miny<miny) miny=a.miny; if(a.maxy>maxy) maxy=a.maxy;
+    if(a.minz<minz) minz=a.minz;
+    const top = (b.zTop!=null) ? b.zTop : a.maxz;
+    if(top>maxz) maxz=top;
+  }
+  if(!Number.isFinite(minx)) return null;
+  return {minx,miny,minz,maxx,maxy,maxz};
+}
+// ---- broadphase seam ----------------------------------------------
+// Every query in this kernel goes through rt3dQuery with an AABB. The
+// default implementation is a linear scan, which is O(N) and is NOT
+// meant to be permanent: a uniform grid, BVH or spatial hash only has
+// to replace this one function to accelerate every primitive, with no
+// change to any caller and no change to any intersection contract.
+//
+// The seam is deliberately narrow and is everything an accelerator
+// needs:
+//   rt3dBodyAabb(b)        the world-space box of one body
+//   rt3dBodyOverlapsAabb() box/box rejection
+//   rt3dRayAabbWindow()    ray/box, i.e. the node test a BVH descends with
+//   rt3dQuery(list, aabb)  the single entry point every caller uses
+// rt3dBodyAabb caches into b._aabb, which is a property of the DERIVED
+// world only; it is never written onto a canonical project entity.
+function rt3dQuery(list, aabb, out){
+  out.length=0;
+  for(let i=0;i<list.length;i++) if(rt3dBodyOverlapsAabb(list[i], aabb)) out.push(list[i]);
+  return out;
+}
+function rt3dBodyAabb(b){
+  if(b._aabb) return b._aabb;
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  const acc=(x,y)=>{ if(x<minx)minx=x; if(y<miny)miny=y; if(x>maxx)maxx=x; if(y>maxy)maxy=y; };
+  if(b.x1!=null){
+    // the wall BODY, so the half-thickness is applied to BOTH sides of the
+    // segment, not just one
+    const t=b.halfThickness||0;
+    acc(b.x1-b.nx*t, b.y1-b.ny*t); acc(b.x1+b.nx*t, b.y1+b.ny*t);
+    acc(b.x2-b.nx*t, b.y2-b.ny*t); acc(b.x2+b.nx*t, b.y2+b.ny*t);
+  }
+  if(b.px!=null){ acc(b.px-b.r,b.py-b.r); acc(b.px+b.r,b.py+b.r); }
+  if(b.cx!=null){ acc(b.cx-b.hw,b.cy-b.hd); acc(b.cx+b.hw,b.cy+b.hd); }
+  if(b.plan){ for(const pt of b.plan.parts){ for(const p of pt.outer) acc(p.x,p.y); for(const h of (pt.holes||[])) for(const p of h) acc(p.x,p.y); } }
+  if(!Number.isFinite(minx)) return null;
+  const zLo = (b.zBottom!=null) ? b.zBottom : b.zBase;
+  return (b._aabb={minx,miny,minz: zLo!=null?zLo:0, maxx,maxy,maxz: b.zTop!=null?b.zTop:0});
+}
+function rt3dBodyOverlapsAabb(b, q){
+  const a=rt3dBodyAabb(b);
+  if(!a||!q) return true;
+  return a.minx<=q.maxx && a.maxx>=q.minx && a.miny<=q.maxy && a.maxy>=q.miny
+      && a.minz<=q.maxz && a.maxz>=q.minz;
+}
+// Ray AABB slab window, clipped to t >= 0.
+function rt3dRayAabbWindow(ray, aabb){
+  let tmin=0, tmax=Infinity;
+  const ax=['x','y','z'], o=[ray.x,ray.y,ray.z], d=[ray.dx,ray.dy,ray.dz];
+  for(let k=0;k<3;k++){
+    const lo = ax[k]==='x'?aabb.minx:(ax[k]==='y'?aabb.miny:aabb.minz);
+    const hi = ax[k]==='x'?aabb.maxx:(ax[k]==='y'?aabb.maxy:aabb.maxz);
+    if(Math.abs(d[k])<RT3D_EPS){ if(o[k]<lo-RT3D_EPS || o[k]>hi+RT3D_EPS) return null; continue; }
+    let t1=(lo-o[k])/d[k], t2=(hi-o[k])/d[k];
+    if(t1>t2){ const s=t1; t1=t2; t2=s; }
+    if(t1>tmin) tmin=t1;
+    if(t2<tmax) tmax=t2;
+    if(tmin>tmax+RT3D_EPS) return null;
+  }
+  return [tmin,tmax];
+}
+
+// ------------------------------------------------------------
+//  BODY BUILDERS  (canonical entity -> collision volume)
+// ------------------------------------------------------------
+// Approved wall/pillar height semantics, verbatim:
+//   absolute bottom = owner floor base elevation
+//   absolute top    = base + owner floor height   (full height)
+//   explicit height = the explicit height, if set
+function rt3dSpanInterval(o, fi, f){
+  const base = floorElevation(fi);
+  const h = Math.max(0, objectHeightOnFloor(o, f));
+  return { base: base, top: base + h, height: h, explicit: hasExplicitHeight(o) };
+}
+// A wall is its real vertical volume: the resolved wall BODY in XY
+// (segment swept by the wall half-thickness) crossed with its
+// vertical interval.
+function rt3dWallBody(wl, fi, f){
+  if(!wl) return null;
+  if(!(Number.isFinite(wl.x1)&&Number.isFinite(wl.y1)&&Number.isFinite(wl.x2)&&Number.isFinite(wl.y2))) return null;
+  const ddx=wl.x2-wl.x1, ddy=wl.y2-wl.y1, L=Math.hypot(ddx,ddy);
+  if(!(L>0)) return null;
+  const ux=ddx/L, uy=ddy/L;
+  const iv=rt3dSpanInterval(wl, fi, f);
+  return { kind:'wall', object:wl, objectId:wl.id, floorIndex:fi,
+           x1:wl.x1, y1:wl.y1, x2:wl.x2, y2:wl.y2,
+           L:L, ux:ux, uy:uy,
+           // planar normal: the wall direction rotated +90 deg in XY.
+           // Identical to the legacy (-wdy, wdx) normal, and extended
+           // to 3D with nz = 0 because the wall surface is vertical.
+           nx:-uy, ny:ux, nz:0,
+           halfThickness: wallHalfThickness(wl),
+           zBase:iv.base, zTop:iv.top, height:iv.height, explicitHeight:iv.explicit,
+           materialId: wl.materialId, loss: matById(wl.materialId).db };
+}
+// A pillar is a real finite vertical cylinder over the owner-floor Z
+// interval. With dz == 0 this is exactly the legacy circle range,
+// because the Z axis is then parallel and inside.
+function rt3dPillarBody(p, fi, f){
+  if(!p) return null;
+  if(!(Number.isFinite(p.x)&&Number.isFinite(p.y))) return null;
+  const iv=rt3dSpanInterval(p, fi, f);
+  return { kind:'pillar', object:p, objectId:p.id, floorIndex:fi,
+           px:p.x, py:p.y, r:(p.diameter||0.6)/2,
+           zBase:iv.base, zTop:iv.top, height:iv.height, explicitHeight:iv.explicit,
+           materialId: p.materialId, loss: matById(p.materialId).db };
+}
+// An RF Object is a real finite rotated box: existing width, depth,
+// rotation, height, base Z = owner floor elevation, top Z = base +
+// height. One traversal, one material + clamped extra charge.
+function rt3dRfObjectBody(o, fi, f){
+  if(!o) return null;
+  if(!(Number.isFinite(o.x)&&Number.isFinite(o.y)&&Number.isFinite(o.width)&&Number.isFinite(o.depth))) return null;
+  const th=(o.rotation||0)*Math.PI/180;
+  return { kind:'rfObject', object:o, objectId:o.id, floorIndex:fi,
+           cx:o.x, cy:o.y, hw:o.width/2, hd:o.depth/2, c:Math.cos(th), s:Math.sin(th),
+           zBase:floorElevation(fi), zTop:floorElevation(fi)+Math.max(0,o.height||0),
+           materialId:o.materialId,
+           loss: matById(o.materialId).db + rfObjectExtraLoss(o) };
+}
+// A Slab is a horizontal physical volume: the floor footprint with the
+// Openings folded in as holes, crossed with the slab's vertical
+// thickness interval hanging below its owning floor base plane.
+function rt3dSlabBody(f, fi){
+  if(!f) return null;
+  const plan=slabPlanForFloor(f);
+  if(!plan || !plan.parts || !plan.parts.length) return null;
+  const top=floorElevation(fi);
+  return { kind:'slab', object:f, objectId:f.id, floorIndex:fi, plan:plan,
+           zTop:top, zBottom:top-RT3D_SLAB_DEPTH_M, thickness:RT3D_SLAB_DEPTH_M,
+           materialId:f.slabMaterialId, loss: slabLossForFloor(f) };
+}
+// A Ceiling Area is a horizontal physical volume: its footprint
+// (parts, each with holes) crossed with the canonical
+// ceilingInterval() of its owner floor. No constant-Z workaround.
+function rt3dCeilingBody(c, fi, f){
+  if(!c) return null;
+  const plan=ceilPlan(c);
+  if(!plan || !plan.parts || !plan.parts.length) return null;
+  const iv=ceilingInterval(c);
+  const base=floorElevation(fi);
+  return { kind:'ceiling', object:c, objectId:c.id, floorIndex:fi, plan:plan,
+           zTop:base+iv.top, zBottom:base+iv.bottom, thickness:iv.thickness,
+           materialId:c.materialId, loss: ceilEffectiveLoss(c) };
+}
+
+// ------------------------------------------------------------
+//  INTERSECTION CONTRACTS
+//
+//  Every 3D primitive in this kernel returns the SAME structured
+//  physical record, so a later stage can mix obstacle types in one
+//  nearest-event search without another geometry rewrite:
+//
+//    { kind, object, objectId, floorIndex, materialId, loss,
+//      tEnter, tExit,                // ray parameters, D is a unit vector
+//      pointEnter, pointExit,        // world points
+//      normalEnter, normalExit,      // unit 3D surface normals
+//      traversals,                   // number of POSITIVE-LENGTH material runs
+//      runs,                         // [[t0,t1],...] one per traversal
+//      tangential,                   // true => contact with NO material traversal
+//      empty }                       // true => zero volume contact
+//
+//  The distinctions are deliberate and load-bearing:
+//    * tangential (tExit - tEnter <= eps, traversals === 0) is a
+//      graze and is NOT a transmission;
+//    * a positive-length run is a real traversal and is charged once
+//      per run;
+//    * normalEnter is a REFLECTION surface event input; tEnter/tExit
+//      describe a TRANSMISSION traversal. They are separate fields
+//      because a future reflective slab or ceiling needs both.
+// ------------------------------------------------------------
+function rt3dContact(kind, b, tEnter, tExit, runs, nEnter, nExit){
+  const positive = (runs||[]).filter(r=> (r[1]-r[0]) > RT3D_EPS );
+  if(!positive.length){
+    // zero-length tangency: report the contact, charge nothing
+    const t = Number.isFinite(tEnter) ? tEnter : 0;
+    return { kind, object:b.object, objectId:b.objectId, floorIndex:b.floorIndex,
+             materialId:b.materialId, loss:b.loss,
+             tEnter:t, tExit:t,
+             pointEnter:null, pointExit:null,
+             normalEnter:nEnter, normalExit:nExit,
+             traversals:0, runs:[], tangential:true, empty:false };
+  }
+  const first=positive[0], last=positive[positive.length-1];
+  return { kind, object:b.object, objectId:b.objectId, floorIndex:b.floorIndex,
+           materialId:b.materialId, loss:b.loss,
+           tEnter:first[0], tExit:last[1],
+           pointEnter:null, pointExit:null,
+           normalEnter:nEnter, normalExit:nExit,
+           traversals:positive.length, runs:positive, tangential:false, empty:false };
+}
+function rt3dEmpty(kind, b){
+  return { kind, object:b.object, objectId:b.objectId, floorIndex:b.floorIndex,
+           materialId:b.materialId, loss:b.loss,
+           tEnter:Infinity, tExit:-Infinity, pointEnter:null, pointExit:null,
+           normalEnter:null, normalExit:null, traversals:0, runs:[],
+           tangential:false, empty:true };
+}
+function rt3dTotalLoss(contact){
+  if(!contact || contact.empty || contact.tangential) return 0;
+  return contact.loss * contact.traversals;
+}
+function rt3dFillPoints(contact, ray){
+  if(!contact || contact.empty || !Number.isFinite(contact.tEnter)) return contact;
+  contact.pointEnter = rt3dRayPoint(ray, contact.tEnter);
+  contact.pointExit  = rt3dRayPoint(ray, contact.tExit);
+  return contact;
+}
+function rt3dHasTraversal(contact){
+  return !!(contact && !contact.empty && !contact.tangential && contact.traversals>0);
+}
+
+// Clip a parameter window to one axis slab [lo,hi] of a local frame.
+// This is the single shared 3D slab clip used by every closed volume.
+function rt3dClipAxis(ov, dv, lo, hi, win, track){
+  let tmin=win[0], tmax=win[1];
+  if(Math.abs(dv)<RT3D_EPS){
+    if(ov<lo-RT3D_EPS || ov>hi+RT3D_EPS) return null;   // parallel and outside
+    return [tmin,tmax];
+  }
+  let t1=(lo-ov)/dv, t2=(hi-ov)/dv;
+  if(t1>t2){ const s=t1; t1=t2; t2=s; }
+  if(t1>tmin){ tmin=t1; if(track!=null) track.axisEnter=dv<0?1:-1; }
+  if(t2<tmax) tmax=t2;
+  if(tmin>tmax+RT3D_EPS) return null;
+  return [tmin,tmax];
+}
+
+// ---- WALL ---------------------------------------------------------
+// The reflection SURFACE event. A wall is treated as a vertical
+// plane, so this solves one plane crossing and then tests the two
+// remaining constraints: the crossing must lie on the wall segment,
+// and its Z must lie inside the wall's vertical interval. That Z test
+// is the real 3D finite-height test; with dz == 0 it degenerates to
+// the legacy single-plane height gate.
+function rt3dWallSurfaceHit(ray, b, tMax){
+  if(!b) return null;
+  const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
+  const dn = rt3dDot(d, rt3dV(b.nx, b.ny, 0));    // nz is 0: a vertical plane
+  if(!(Math.abs(dn)>RT3D_EPS)) return null;       // parallel to the wall plane
+  const t = -((o.x-b.x1)*b.nx + (o.y-b.y1)*b.ny) / dn;
+  if(!Number.isFinite(t) || t<0) return null;
+  if(tMax!=null && t>tMax+RT3D_EPS) return null;
+  const u = (o.x-b.x1)*b.ux + (o.y-b.y1)*b.uy + t*(d.x*b.ux + d.y*b.uy);
+  if(u < -RT3D_EPS || u > b.L+RT3D_EPS) return null;
+  const z = o.z + d.z*t;
+  if(z < b.zBase-RT3D_EPS || z > b.zTop+RT3D_EPS) return null;
+  return { t:t, u:u, z:z,
+           point: rt3dV(o.x+d.x*t, o.y+d.y*t, z),
+           // 3D surface normal of a vertical wall: nz is 0 by construction
+           normal: rt3dV(b.nx, b.ny, 0) };
+}
+// The wall VOLUME traversal: the resolved body (half-thickness in the
+// normal direction) crossed with the vertical interval, solved as a
+// 3-axis slab clip in the wall's local frame.
+function rt3dWallVolumeHit(ray, b, tMax){
+  if(!b) return rt3dEmpty('wall', b||{object:null});
+  const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
+  const rx=o.x-b.x1, ry=o.y-b.y1, rz=o.z-b.zBase;
+  // local frame: u along the wall, n across it, z up
+  const ou= rx*b.ux + ry*b.uy,            du= d.x*b.ux + d.y*b.uy;
+  const on= rx*b.nx + ry*b.ny,            dn= d.x*b.nx + d.y*b.ny;
+  const track={axisEnter:null};
+  let win=[0, (tMax==null? Infinity : tMax)];
+  win = rt3dClipAxis(ou, du, 0, b.L, win); if(!win) return rt3dEmpty('wall', b);
+  win = rt3dClipAxis(on, dn, -b.halfThickness, b.halfThickness, win, track); if(!win) return rt3dEmpty('wall', b);
+  win = rt3dClipAxis(rz, d.z, 0, Math.max(0, b.height), win, track); if(!win) return rt3dEmpty('wall', b);
+  if(win[1] < -RT3D_EPS) return rt3dEmpty('wall', b);
+  const tEnter=Math.max(0, win[0]);
+  // the face that produced tEnter decides the entry normal
+  const nEnter = (track.axisEnter==null) ? rt3dV(b.nx,b.ny,0)
+             : (track.axisEnter<0 ? rt3dV(-b.nx,-b.ny,0) : rt3dV(b.nx,b.ny,0));
+  const c = rt3dContact('wall', b, tEnter, win[1], [[tEnter, win[1]]], nEnter, rt3dNegate(nEnter));
+  return rt3dFillPoints(c, ray);
+}
+
+// ---- PILLAR -------------------------------------------------------
+function rt3dPillarVolumeHit(ray, b, tMax){
+  if(!b) return rt3dEmpty('pillar', b||{object:null});
+  const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
+  const fx=o.x-b.px, fy=o.y-b.py;
+  const qa = d.x*d.x + d.y*d.y;
+  let win=null;
+  if(qa < RT3D_EPS){
+    // ray is vertical: it is inside the footprint only if it is
+    // already within the radius
+    if(fx*fx + fy*fy > b.r*b.r) return rt3dEmpty('pillar', b);
+    win=[0, (tMax==null? Infinity : tMax)];
+  } else {
+    const qb=2*(fx*d.x + fy*d.y), qc=fx*fx + fy*fy - b.r*b.r;
+    const disc=qb*qb - 4*qa*qc;
+    if(!(disc>=0)) return rt3dEmpty('pillar', b);
+    const s=Math.sqrt(disc);
+    let t1=(-qb-s)/(2*qa), t2=(-qb+s)/(2*qa);
+    if(t1>t2){ const w=t1; t1=t2; t2=w; }
+    win=[Math.max(0,t1), t2];
+  }
+  // clip against the finite vertical interval: a real 3D cylinder
+  let zwin=[win[0], win[1]];
+  if(Math.abs(d.z)<RT3D_EPS){
+    if(o.z < b.zBase-RT3D_EPS || o.z > b.zTop+RT3D_EPS) return rt3dEmpty('pillar', b);
+  } else {
+    const za=(b.zBase-o.z)/d.z, zb=(b.zTop-o.z)/d.z;
+    const lo=Math.max(win[0], Math.min(za,zb)), hi=Math.min(win[1], Math.max(za,zb));
+    if(hi < lo-RT3D_EPS) return rt3dEmpty('pillar', b);
+    zwin=[lo,hi];
+  }
+  if(tMax!=null && zwin[0] > tMax+RT3D_EPS) return rt3dEmpty('pillar', b);
+  if(zwin[1] < -RT3D_EPS) return rt3dEmpty('pillar', b);
+  const tEnter=Math.max(0, zwin[0]);
+  const pIn=rt3dRayPoint(ray, tEnter);
+  const radial=rt3dUnit(rt3dV(pIn.x-b.px, pIn.y-b.py, 0));
+  const c=rt3dContact('pillar', b, tEnter, zwin[1], [[tEnter, zwin[1]]],
+                      radial, rt3dNegate(radial||rt3dV(1,0,0)));
+  return rt3dFillPoints(c, ray);
+}
+function rt3dPillarContains(b, x,y,z){
+  if(!b) return false;
+  if(z < b.zBase-RT3D_EPS || z > b.zTop+RT3D_EPS) return false;
+  const dx=x-b.px, dy=y-b.py;
+  return (dx*dx + dy*dy) <= b.r*b.r;
+}
+
+// ---- RF OBJECT ----------------------------------------------------
+function rt3dRfObjectVolumeHit(ray, b, tMax){
+  if(!b) return rt3dEmpty('rfObject', b||{object:null});
+  const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
+  const pax=o.x-b.cx, pay=o.y-b.cy;
+  const lax= pax*b.c + pay*b.s, lay=-pax*b.s + pay*b.c;
+  const ldx=  d.x*b.c + d.y*b.s, ldy= -d.x*b.s + d.y*b.c;
+  const track={axisEnter:null};
+  let win=[0, (tMax==null? Infinity : tMax)];
+  win=rt3dClipAxis(lax, ldx, -b.hw, b.hw, win, track); if(!win) return rt3dEmpty('rfObject', b);
+  win=rt3dClipAxis(lay, ldy, -b.hd, b.hd, win, track); if(!win) return rt3dEmpty('rfObject', b);
+  win=rt3dClipAxis(o.z, d.z, b.zBase, b.zTop, win, track); if(!win) return rt3dEmpty('rfObject', b);
+  if(win[1] < -RT3D_EPS) return rt3dEmpty('rfObject', b);
+  const tEnter=Math.max(0, win[0]);
+  // local face normal -> world
+  let ln=null;
+  if(track.axisEnter!=null){
+    if(track.axisEnter===1) ln=rt3dV(0,-1,0);
+    else if(track.axisEnter===-1) ln=rt3dV(0,1,0);
+    else if(track.axisEnter===2) ln=rt3dV(0,0,-1);
+    else if(track.axisEnter===3) ln=rt3dV(0,0,1);
+  }
+  let nEnter=null;
+  if(ln){
+    if(ln.x||ln.y) nEnter=rt3dUnit(rt3dV(ln.x*b.c - ln.y*b.s, ln.x*b.s + ln.y*b.c, 0));
+    else nEnter=ln;
+  } else {
+    nEnter=rt3dV(0,0,1);
+  }
+  const c=rt3dContact('rfObject', b, tEnter, win[1], [[tEnter, win[1]]], nEnter, rt3dNegate(nEnter));
+  return rt3dFillPoints(c, ray);
+}
+function rt3dRfObjectContains(b, x,y,z){
+  if(!b) return false;
+  if(z < b.zBase-RT3D_EPS || z > b.zTop+RT3D_EPS) return false;
+  const th=Math.atan2(b.s,b.c);
+  const pax=x-b.cx, pay=y-b.cy;
+  const lax= pax*b.c + pay*b.s, lay=-pax*b.s + pay*b.c;
+  return Math.abs(lax)<=b.hw+RT3D_EPS && Math.abs(lay)<=b.hd+RT3D_EPS;
+}
+
+// ---- FOOTPRINT MATERIAL (slabs and Ceiling Areas) -----------------
+// THE material predicate: a point is inside a footprint when it lies
+// inside some part's outer ring and outside EVERY hole of that part.
+// One interpretation, so traversal, containment and the Simple/SINR
+// model can never disagree about holes or multipart footprints.
+function rt3dFootprintHoldsAt(plan, x, y){
+  if(!plan || !plan.parts) return false;
+  for(const pt of plan.parts){
+    if(!pointInPolygon(x,y,pt.outer)) continue;
+    let holed=false;
+    for(const h of (pt.holes||[])) if(pointInPolygon(x,y,h)){ holed=true; break; }
+    if(!holed) return true;
+  }
+  return false;
+}
+// The parameter window of a ray on which z lies inside [zBot, zTop],
+// clipped to t >= 0. Null when the ray never enters the interval.
+function rt3dZWindow(ray, zBot, zTop){
+  if(zTop - zBot <= 0) return null;
+  const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
+  if(Math.abs(d.z)<RT3D_EPS){
+    if(o.z < zBot-RT3D_EPS || o.z > zTop+RT3D_EPS) return null;
+    return [0, Infinity];
+  }
+  const ta=(zBot-o.z)/d.z, tb=(zTop-o.z)/d.z;
+  const lo=Math.max(0, Math.min(ta,tb)), hi=Math.max(ta,tb);
+  if(hi<lo-RT3D_EPS) return null;
+  return [lo,hi];
+}
+// Maximal runs of material the XY projection makes inside [t0,t1],
+// each run being one physical traversal of the horizontal volume.
+// Zero-length contacts are dropped, so a graze can never manufacture
+// attenuation. Holes and multipart footprints fall out of the shared
+// material predicate, so an opening bypasses the volume naturally.
+function rt3dFootprintRuns(plan, ox, oy, sdx, sdy, t0, t1){
+  const out={ runs:[], touched:false };
+  if(!plan||!plan.parts||!plan.parts.length) return out;
+  if(!(t1>t0)) return out;
+  const ts=[];
+  const edges=ring=>{
+    if(!ring||ring.length<2) return;
+    for(let i=0;i<ring.length;i++){
+      const p=ring[i], q=ring[(i+1)%ring.length];
+      const t=segIntersectT(ox,oy, ox+sdx, oy+sdy, p.x,p.y, q.x,q.y);
+      if(t<0) continue;
+      if(t<t0-RT3D_EPS || t>t1+RT3D_EPS) continue;
+      ts.push(Math.min(t1, Math.max(t0,t)));
+    }
+  };
+  plan.parts.forEach(pt=>{ edges(pt.outer); (pt.holes||[]).forEach(edges); });
+  ts.push(t0, t1);
+  ts.sort((a,b)=>a-b);
+  const u=[];
+  for(let i=0;i<ts.length;i++) if(!u.length || ts[i]-u[u.length-1]>RT3D_EPS) u.push(ts[i]);
+  if(u.length<2) return out;          // no positive-length window at all
+  out.touched = true;
+  for(let i=0;i+1<u.length;i++){
+    const a=u[i], b=u[i+1];
+    if(b-a<=RT3D_EPS) continue;        // tangent contact: no traversal
+    if(rt3dFootprintHoldsAt(plan, ox+sdx*(a+b)/2, oy+sdy*(a+b)/2)) out.runs.push([a,b]);
+  }
+  return out;
+}
+// A horizontal physical volume: a footprint crossed with a vertical
+// thickness interval. Used for both Slabs and Ceiling Areas.
+function rt3dHorizontalVolumeHit(ray, b, tMax){
+  if(!b) return rt3dEmpty(b&&b.kind||'volume', b||{object:null});
+  const zwin=rt3dZWindow(ray, b.zBottom, b.zTop);
+  if(!zwin) return rt3dEmpty(b.kind, b);
+  const t1 = (tMax==null) ? zwin[1] : Math.min(zwin[1], tMax);
+  if(zwin[1]-zwin[0] <= RT3D_EPS){
+    // grazes a horizontal face from above or below: contact, no material
+    const c=rt3dContact(b.kind, b, zwin[0], zwin[0], [], rt3dV(0,0,1), rt3dV(0,0,-1));
+    return rt3dFillPoints(c, ray);
+  }
+  if(zwin[0] > t1+RT3D_EPS) return rt3dEmpty(b.kind, b);
+  // rt3dFootprintRuns works in the SEGMENT convention: t is normalised over
+  // the vector it is given, matching the legacy ceiling primitive. So the
+  // sub-segment that lies inside the vertical band is passed explicitly and
+  // its normalised runs are mapped back to ray-metres afterwards. Mixing the
+  // two conventions here would silently shrink the XY window to 1 m.
+  const lo=zwin[0], hi=t1;
+  const len=hi-lo;
+  const r=rt3dFootprintRuns(b.plan, ray.x + ray.dx*lo, ray.y + ray.dy*lo,
+                            ray.dx*len, ray.dy*len, 0, 1);
+  if(!r.runs.length){
+    if(!r.touched) return rt3dEmpty(b.kind, b);
+    // inside the band and inside the footprint, but only grazing:
+    // the XY contact has zero length, so there is no traversal
+    const c=rt3dContact(b.kind, b, lo, lo, [], rt3dV(0,0,1), rt3dV(0,0,-1));
+    return rt3dFillPoints(c, ray);
+  }
+  const runs=r.runs.map(run=>[lo+run[0]*len, lo+run[1]*len]);
+  const c=rt3dContact(b.kind, b, runs[0][0], runs[runs.length-1][1], runs,
+                      rt3dV(0,0,1), rt3dV(0,0,-1));
+  return rt3dFillPoints(c, ray);
+}
+function rt3dVolumeContains(b, x,y,z){
+  if(!b) return false;
+  if(b.kind==='wall'){
+    const rx=x-b.x1, ry=y-b.y1;
+    const u=rx*b.ux + ry*b.uy;
+    if(u< -RT3D_EPS || u> b.L+RT3D_EPS) return false;
+    if(Math.abs(rx*b.nx + ry*b.ny) > b.halfThickness+RT3D_EPS) return false;
+    return z>=b.zBase-RT3D_EPS && z<=b.zTop+RT3D_EPS;
+  }
+  if(b.kind==='pillar') return rt3dPillarContains(b,x,y,z);
+  if(b.kind==='rfObject') return rt3dRfObjectContains(b,x,y,z);
+  if(z < b.zBottom-RT3D_EPS || z > b.zTop+RT3D_EPS) return false;
+  return rt3dFootprintHoldsAt(b.plan, x, y);
+}
+
+// ------------------------------------------------------------
+//  STAGE 1A  COMPATIBILITY ORACLE
+//
+//  Deterministic fixtures captured from the PRODUCTION engine, plus a
+//  horizontal run of the NEW kernel over the same geometry. The new
+//  kernel is a pure function of the canonical project state, so this
+//  comparison is reproducible headlessly and needs no browser.
+//
+//  A fixture is a complete project state. Old and new are compared on:
+//  initial ray count, processed branch count, grid dimensions,
+//  representative RSSI cells and the full grid fingerprint.
+// ------------------------------------------------------------
+function rt3dFixtureWorlds(stateOverride){
+  if(stateOverride!=null) state=stateOverride;
+  return rt3dBuildWorld();
+}
+// One representative cell, rounded to 0.01 dB for a stable comparison.
+function rt3dCellDigest(best, cols, rows, bounds, cw, ch, samples){
+  const out=[];
+  (samples||[[0.5,0.5],[0.25,0.25],[0.75,0.25],[0.25,0.75],[0.75,0.75],[0.5,0.2],[0.2,0.5]]).forEach(s=>{
+    const i=clamp(Math.floor(s[0]*cols),0,cols-1), j=clamp(Math.floor(s[1]*rows),0,rows-1);
+    const v=best[j*cols+i];
+    out.push({ i:i, j:j,
+               x:+(bounds.minx + (i+0.5)*cw).toFixed(3), y:+(bounds.miny + (j+0.5)*ch).toFixed(3),
+               rssi: Number.isFinite(v) ? +v.toFixed(4) : null });
+  });
+  return out;
+}
+// Grid fingerprint: an order-sensitive FNV-1a over the rounded cell
+// values plus the reach mask, so any numeric drift anywhere in the
+// grid changes it.
+function rt3dGridFingerprint(best, reach){
+  let h=0x811c9dc5;
+  const put=v=>{ h^=v&0xff; h=Math.imul(h,0x01000193)>>>0;
+                 h^=(v>>>8)&0xff; h=Math.imul(h,0x01000193)>>>0;
+                 h^=(v>>>16)&0xff; h=Math.imul(h,0x01000193)>>>0; };
+  for(let k=0;k<best.length;k++){
+    const v=best[k];
+    if(!Number.isFinite(v)) put(0x7fffffff);
+    else{
+      // quantise to 0.01 dB: below the model's own reporting resolution
+      put(Math.round(v*100)|0);
+    }
+    if(reach) put(reach[k]||0);
+  }
+  return ('00000000'+h.toString(16)).slice(-8);
+}
+// The shared, deterministic grid definition. The production engine
+// builds its grid with these exact expressions; the new horizontal
+// tracer uses the same, so a difference in the fingerprint can only
+// come from a difference in the physics.
+function rt3dGridSpec(f){
+  const b=floorBounds(f);
+  const cell=0.16;
+  const cols=clamp(Math.ceil((b.maxx-b.minx)/cell),16,460);
+  const rows=clamp(Math.ceil((b.maxy-b.miny)/cell),16,460);
+  const cw=(b.maxx-b.minx)/cols, ch=(b.maxy-b.miny)/rows;
+  return { b:b, cell:cell, cols:cols, rows:rows, cw:cw, ch:ch, raySpacing:Math.min(cw,ch) };
+}
+
+// ---- LAUNCH Z: production 3D semantics vs compatibility mode --------
+// THE PRODUCTION 3D LAUNCH Z. A true 3D ray starts at the AP's real
+// absolute height above the world origin:
+//
+//     floorElevation(AP owner floor) + apMount(AP)
+//
+// This is the value the future 3D engine MUST use, and it is the reason a
+// ceiling-mounted AP's rays pass over a low RF Object instead of through it.
+//
+// It is deliberately NOT what the horizontal compatibility tracer below uses.
+// The legacy 2.5D engine marches on a single receiver-height plane for every
+// ray regardless of AP mount height, and folds the AP/receiver difference into
+// the path length as `verticalDelta` instead. Compatibility mode reproduces
+// that ONE assumption on purpose, so the fixtures measure the 3D mathematics
+// against the old engine. The assumption must NOT survive the cutover.
+function rt3dApOriginZ(apFloorIndex, ap){
+  return floorElevation(apFloorIndex) + apMount(ap);
+}
+// The legacy 2.5D march plane, exposed so the difference is explicit and
+// testable rather than buried in a comment. Compatibility mode only.
+function rt3dReceiverPlaneZ(){
+  return floorElevation(state.activeFloor) + receiverHeight();
+}
+
+// ---- the new kernel, run in HORIZONTAL COMPATIBILITY MODE ----------
+// This is a complete tracer, but deliberately a horizontal one: every
+// ray is launched with dz = 0. It is not the production engine and it
+// is not wired to anything; it exists to prove that a ray with dz = 0
+// in the 3D kernel reproduces the physics the legacy 2.5D engine
+// already implements, event for event and dB for dB.
+function rt3dHorizontalTrace(world, f){
+  const gs = rt3dGridSpec(f);
+  const b=gs.b, cols=gs.cols, rows=gs.rows, cw=gs.cw, ch=gs.ch, stepM=gs.cell*0.6;
+  const mhz = BANDS[state.band].mhz, pl1=fsplAt1m(mhz);
+  const best = new Float32Array(cols*rows).fill(-Infinity);
+  const reach = new Uint8Array(cols*rows);
+  const aps=[];
+  state.floors.forEach((fl,af)=>fl.aps.forEach(ap=>{
+    if(apParticipatesInRf(ap) && ap.bands.includes(state.band)) aps.push({ap,af});
+  }));
+  const MAXREFL=2, MAX_TRANSMISSION_EVENTS=128, REFL_LOSS=5;
+  const maxDist = Math.hypot(b.maxx-b.minx, b.maxy-b.miny)*1.5;
+  const activeWalls = world.walls.filter(wb=>wb.floorIndex===state.activeFloor);
+  let initialRays=0, processedBranches=0;
+  const raysPerAp=[];
+
+  const depositCell=(x,y,rssi)=>{
+    const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
+    if(i<0||j<0||i>=cols||j>=rows) return;
+    const k=j*cols+i; if(rssi>best[k]) best[k]=rssi; reach[k]=1;
+  };
+  const markBelowFloorCell=(x,y)=>{
+    const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
+    if(i<0||j<0||i>=cols||j>=rows) return;
+    const k=j*cols+i; if(reach[k]===0) reach[k]=2;
+  };
+  const markBelowFloorSegment=(x1,y1,x2,y2)=>{
+    const steps=Math.max(1,Math.ceil(Math.hypot(x2-x1,y2-y1)/(Math.min(cw,ch)*0.45)));
+    for(let s=0;s<=steps;s++) markBelowFloorCell(lerp(x1,x2,s/steps), lerp(y1,y2,s/steps));
+  };
+  const continueBelowFloor=(x,y,dx,dy,dst,steps)=>{
+    while(dst<maxDist && steps<2600){
+      const nx=x+dx*stepM, ny=y+dy*stepM;
+      markBelowFloorSegment(x,y,nx,ny);
+      if(x<b.minx-1||x>b.maxx+1||y<b.miny-1||y>b.maxy+1) break;
+      x=nx; y=ny; dst+=stepM; steps++;
+    }
+  };
+
+  const queue=[];
+  aps.forEach(({ap,af})=>{
+    const RAYS=rayCountForAP(ap,b,gs.raySpacing);
+    raysPerAp.push({apId:ap.id, rays:RAYS});
+    initialRays+=RAYS;
+    for(let r=0;r<RAYS;r++){
+      const angDeg=r/RAYS*360, ang=angDeg*Math.PI/180;
+      const gain=antennaAzGain(ap, angDeg);
+      // HORIZONTAL COMPATIBILITY MODE: every ray is launched on the ACTIVE
+      // FLOOR'S RECEIVER PLANE (rt3dReceiverPlaneZ), dz = 0. This is the
+      // ONE legacy 2.5D assumption this mode keeps on purpose - the legacy
+      // tracer marches on that plane for every ray regardless of AP mount
+      // height and accounts for the difference as `verticalDelta` in the path
+      // length. Constraining it here is what makes the comparison with the old
+      // engine like-for-like.
+      //
+      // It is NOT the production semantic. At cutover the launcher must use
+      // rt3dApOriginZ(af, ap) - the AP's real absolute Z - so a ceiling AP's
+      // rays pass over a low RF Object instead of through it. That
+      // difference is real and is one of the things this migration exists to
+      // resolve; it must not be smuggled into the compatibility fixtures,
+      // because then they would stop measuring the 3D mathematics.
+      const z0 = rt3dReceiverPlaneZ();
+      const ray = rt3dRay(ap.x, ap.y, z0, Math.cos(ang), Math.sin(ang), 0);
+      if(!ray) continue;
+      queue.push({ ray:ray, dB:-gain, dist:0, refl:0, transmissions:0,
+                   charged:{}, ap:ap, af:af, tx:ap.txPower });
+    }
+  });
+
+  function chargedContains(ch,x,y,z){
+    let inside=false;
+    for(const id in ch){
+      const body=ch[id].body;
+      if(!rt3dVolumeContains(body, x,y,z)){ delete ch[id]; continue; }
+      inside=true;
+    }
+    return inside;
+  }
+  function inheritAt(ch,x,y,z){
+    const out={};
+    for(const id in ch) if(rt3dVolumeContains(ch[id].body,x,y,z)) out[id]={body:ch[id].body};
+    return out;
+  }
+
+  function march(item){
+    // The ray is ONE mutable record. Its origin advances in place, so the
+    // nearest-event search below always re-solves from the current 3D
+    // position. (Keeping origin and direction in separate locals would let
+    // the search silently re-test the stale launch position.)
+    const ray=item.ray;
+    let dst=item.dist, steps=0, transmissionEvents=item.transmissions;
+    let dB=item.dB, refl=item.refl;
+    const {dx,dy,dz} = ray;
+    const af=item.af, tx=item.tx, ap=item.ap;
+    const apz=floorElevation(af)+apMount(ap);
+    const evz=floorElevation(state.activeFloor)+receiverHeight();
+    const verticalDelta=Math.abs(apz-evz);
+    const rfDist=(path2d)=> af===state.activeFloor ? path2d : Math.hypot(path2d, verticalDelta);
+    const slabAtPt=(px,py)=> af===state.activeFloor ? 0
+      : slabLossBetweenPoints(ap.x, ap.y, apz, af, px, py, evz, state.activeFloor);
+    const sameFloor = af===state.activeFloor;
+    const bodies = { walls: sameFloor? activeWalls : [], pillars: world.pillars,
+                     rfObjects: world.rfObjects };
+    while(dst<maxDist && steps<2600 && transmissionEvents<MAX_TRANSMISSION_EVENTS){
+      const nx=ray.x+dx*stepM, ny=ray.y+dy*stepM, nz=ray.z+dz*stepM;
+      // 3D nearest-event search over ALL obstacle types at once, using
+      // the shared contact contract. The legacy engine resolved this in
+      // three separate searches with hand-written precedence rules; the
+      // kernel resolves it with one distance comparison, so the two agree
+      // only if the physics is identical.
+      let bestT=Infinity, bestKind=null, bestBody=null, bestContact=null;
+      const consider=(kind, list, hitFn)=>{
+        for(const body of list){
+          const c=hitFn(ray, body, stepM);
+          if(!rt3dHasTraversal(c)) continue;
+          if(c.tEnter > stepM) continue;                // entry beyond this step
+          if(c.tEnter < bestT){ bestT=c.tEnter; bestKind=kind; bestBody=body; bestContact=c; }
+        }
+      };
+      if(sameFloor) consider('wall', bodies.walls, rt3dWallSurfaceTraversalHit);
+      consider('pillar', bodies.pillars, rt3dPillarVolumeHit);
+      // One prism is charged ONCE per continuous traversal. A ray that is
+      // already inside a prism it has paid for must not be charged again on
+      // the next step, and the interior is never sampled. The entry is
+      // dropped from `charged` as soon as the ray leaves the prism
+      // (chargedContains), so a genuine later re-entry is charged again.
+      for(const body of bodies.rfObjects){
+        if(item.charged[body.objectId]) continue;
+        const c=rt3dRfObjectVolumeHit(ray, body, stepM);
+        if(!rt3dHasTraversal(c)) continue;
+        if(c.tEnter > stepM) continue;
+        if(c.tEnter < bestT){ bestT=c.tEnter; bestKind='rfObject'; bestBody=body; bestContact=c; }
+      }
+
+      if(bestKind){
+        const body=bestBody, c=bestContact;
+        const ex=ray.x+dx*bestT, ey=ray.y+dy*bestT, ez=ray.z+dz*bestT;
+        const entryDist=dst+bestT;
+        depositCell(ex,ey, tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(entryDist)))+dB+slabAtPt(ex,ey)));
+        if(bestKind==='wall'){
+          const h=c.surface;
+          if(refl<MAXREFL){
+            const r=rt3dReflect(rt3dRayDir(ray), h.normal);
+            const nray=rt3dRay(h.point.x+r.x*1e-3, h.point.y+r.y*1e-3, h.point.z+r.z*1e-3, r.x,r.y,r.z);
+            if(nray) queue.push({ ray:nray, dB: dB + body.loss*0.5 + REFL_LOSS, dist:entryDist,
+                                  refl:refl+1, transmissions:transmissionEvents,
+                                  charged: inheritAt(item.charged, h.point.x,h.point.y,h.point.z),
+                                  ap:ap, af:af, tx:tx });
+          }
+          dB+=body.loss; transmissionEvents++;
+          ray.x=h.point.x+dx*1e-3; ray.y=h.point.y+dy*1e-3; ray.z=h.point.z+dz*1e-3;
+          dst=entryDist;
+          continue;
+        }
+        if(bestKind==='pillar'){
+          dB+=body.loss; transmissionEvents++;
+          // advance to the exit face, exactly like the legacy pillar chord
+          const px2=ray.x+dx*c.tExit, py2=ray.y+dy*c.tExit, pz2=ray.z+dz*c.tExit;
+          dst+=c.tExit; ray.x=px2+dx*1e-3; ray.y=py2+dy*1e-3; ray.z=pz2+dz*1e-3;
+          dst+=1e-3; steps++; continue;
+        }
+        // rfObject: one traversal, one charge; keep marching from just
+        // inside the entry so a wall inside the chord is still found
+        dB+=body.loss; transmissionEvents++;
+        item.charged[body.objectId]={body:body};
+        dst+=c.tEnter; ray.x=ex+dx*1e-3; ray.y=ey+dy*1e-3; ray.z=ez+dz*1e-3;
+        dst+=1e-3; steps++; continue;
+      }
+      dst+=stepM;
+      if(!chargedContains(item.charged,nx,ny,nz)){
+        const rssi=tx-(pl1+10*state.plExp*Math.log10(Math.max(0.5,rfDist(dst)))+dB+slabAtPt(nx,ny));
+        if(rssi<RT_FLOOR_DBM){ continueBelowFloor(nx,ny,dx,dy,dst,steps); break; }
+        depositCell(nx,ny,rssi);
+      }
+      ray.x=nx; ray.y=ny; ray.z=nz; steps++;
+      if(ray.x<b.minx-1||ray.x>b.maxx+1||ray.y<b.miny-1||ray.y>b.maxy+1) break;
+    }
+  }
+
+  while(queue.length){ const it=queue.pop(); processedBranches++; march(it); }
+
+  return { cols:cols, rows:rows, cw:cw, ch:ch, bounds:{minx:b.minx,miny:b.miny,maxx:b.maxx,maxy:b.maxy},
+           initialRays:initialRays, processedBranches:processedBranches, raysPerAp:raysPerAp,
+           best:best, reach:reach,
+           fingerprint: rt3dGridFingerprint(best, reach),
+           cells: rt3dCellDigest(best, cols, rows, b, cw, ch) };
+}
+// Wall transmission uses the resolved BODY volume (so wall thickness is
+// real geometry), but deposits and reflects on the mid-plane surface
+// event, exactly like the legacy engine. Exposed separately so the
+// distinction between a surface event and a traversal stays explicit.
+function rt3dWallSurfaceTraversalHit(ray, b, tMax){
+  // The body volume is the physical extent (wall thickness is real
+  // geometry), but the legacy engine charges, deposits and reflects on the
+  // wall's mid-plane. A ray that clips the body without ever crossing the
+  // mid-plane is a pure graze: it is a contact, not a transmission, and it
+  // must not manufacture a loss or a reflection.
+  const surf=rt3dWallSurfaceHit(ray, b, tMax);
+  if(!surf) return rt3dEmpty('wall', b);
+  // A wall crossing is a PLANE event, not a material chord: the legacy
+  // engine charges one material value per crossing regardless of wall
+  // thickness, so the "traversal" is the plane itself. It is therefore
+  // built directly rather than through rt3dContact's positive-length run
+  // filter (which would correctly reject a zero-length chord and report a
+  // tangency, losing the crossing entirely).
+  const c=rt3dEmpty('wall', b);
+  c.empty=false;
+  c.tangential=false;
+  c.tEnter=surf.t;
+  c.tExit=surf.t;
+  c.traversals=1;
+  c.runs=[[surf.t, surf.t]];
+  c.normalEnter=surf.normal;
+  c.normalExit=rt3dNegate(surf.normal);
+  c.pointEnter=surf.point;
+  c.pointExit=surf.point;
+  c.surface=surf;
+  c.bodyRange=rt3dWallVolumeHit(ray, b, tMax);   // resolved body extent, for later stages
+  return c;
+}
+
+// ------------------------------------------------------------
+//  STAGE 1C  PERFORMANCE
+//
+//  Measure the PURE intersection primitives now, before any engine
+//  uses them. This is a microbenchmark, not a production trace, so it
+//  is intentionally run only on demand and is never called by the app.
+// ------------------------------------------------------------
+function rt3dBenchmark(world, iterations){
+  const N = iterations||20000;
+  const probe=rt3dRay(0,0,1.6, Math.cos(0.7), Math.sin(0.7), 0);
+  const r3 = rt3dRay(0,0,1.6, Math.cos(0.7), Math.sin(0.7), -0.12);
+  const cands = rt3dQuery(world.walls.concat(world.pillars, world.rfObjects, world.slabs, world.ceilings),
+                          {minx:-1e4,miny:-1e4,minz:-1e4,maxx:1e4,maxy:1e4,maxz:1e4}, []);
+  const out={ iterations:N, bodies:cands.length };
+  const time=(label, fn)=>{
+    fn();                                  // warm up
+    const t0=(typeof performance!=='undefined'? performance.now(): Date.now());
+    let acc=0;
+    for(let i=0;i<N;i++) acc += fn(i)?1:0;
+    const t1=(typeof performance!=='undefined'? performance.now(): Date.now());
+    out[label]={ hits:acc, totalMs:+(t1-t0).toFixed(3), nsPerCall:+(((t1-t0)*1e6)/N).toFixed(1) };
+  };
+  time('wallSurfaceHit', (i)=> rt3dWallSurfaceHit(probe, world.walls[i%Math.max(1,world.walls.length)], 4));
+  time('wallVolumeHit',  (i)=> rt3dWallVolumeHit(r3,  world.walls[i%Math.max(1,world.walls.length)], 4));
+  time('pillarHit',      (i)=> rt3dPillarVolumeHit(probe, world.pillars[i%Math.max(1,world.pillars.length)], 4));
+  time('rfObjectHit',    (i)=> rt3dRfObjectVolumeHit(probe, world.rfObjects[i%Math.max(1,world.rfObjects.length)], 4));
+  time('slabHit',        (i)=> rt3dHorizontalVolumeHit(probe, world.slabs[i%Math.max(1,world.slabs.length)], 4));
+  time('ceilingHit',     (i)=> rt3dHorizontalVolumeHit(r3, world.ceilings[i%Math.max(1,world.ceilings.length)], 4));
+  time('broadphaseScan', (i)=> rt3dQuery(world.walls, {minx:0,miny:0,minz:0,maxx:i%20,maxy:20,maxz:3}, []).length);
+  return out;
+}
 function smoothRSSI(src,w,h){
   const NEG=-300; const a=Float32Array.from(src, v=> v===-Infinity?NEG:v);
   const d=new Float32Array(w*h);
