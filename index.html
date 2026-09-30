@@ -2927,12 +2927,18 @@ cv.addEventListener('pointerdown',e=>{
     // an opening captures the click only when nothing higher-priority is under the pointer.
     const op=pickOpening(w.x,w.y);
     if(op){ select('opening',op.id); commit(); dragging={type:'opening',id:op.id,startWx:w.x,startWy:w.y,start:op.points.map(p=>({x:p.x,y:p.y}))}; return; }
-    const f=floor();
-    if(f.bg&&f.bg._img&&insideBg(w.x,w.y)){ select('bg'); if(!f.bg.locked){ commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; } return; }
-    // Ceiling Areas are selectable with the normal Select tool. No drag in this
-    // stage: full vertex editing is explicitly out of scope, delete+recreate is.
+    // Ceiling Areas are selectable with the normal Select tool, and they are a
+    // real object drawn ON the plan, so they are tested BEFORE the Background
+    // Plan: the plan is a full-floor backdrop and would otherwise swallow every
+    // click anywhere inside it, making any Ceiling on such a floor impossible
+    // to select. No drag in this stage: full vertex editing is explicitly out of
+    // scope, delete+recreate is.
     const cz=pickCeiling(w.x,w.y);
     if(cz){ select('ceiling',cz.id); renderProp(); draw2d(); return; }
+    // The Background Plan is the lowest-priority click target: only when nothing
+    // else is under the pointer does it capture the click and allow a drag.
+    const f=floor();
+    if(f.bg&&f.bg._img&&insideBg(w.x,w.y)){ select('bg'); if(!f.bg.locked){ commit(); dragging={type:'bg',ox:w.x-f.bg.x,oy:w.y-f.bg.y}; } return; }
     const z=pickZone(w.x,w.y);
     if(z){ select('zone',z.id); commit(); dragging={type:'zone',id:z.id,ox:w.x-Math.min(z.x1,z.x2),oy:w.y-Math.min(z.y1,z.y2)}; return; }
     multiWalls=[]; selection=null; boxing={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; renderProp(); draw2d();
