@@ -3419,6 +3419,141 @@ function rfObjectLossOnSegment(ax,ay,az, bx,by,bz){
   return loss;
 }
 
+// ============================================================
+//  CEILING AREAS in the RF model  (Simple / SINR propagation)
+// ============================================================
+//
+// A Ceiling Area is a real horizontal RF barrier: the persisted footprint in
+// project XY, extruded over the canonical vertical interval that
+// ceilingInterval() defines for its OWNER floor:
+//
+//   zTop    = floorElevation(owner) + interval.top
+//   zBottom = floorElevation(owner) + interval.bottom
+//
+// Both faces come from ceilingInterval(), so nothing here reinterprets height or
+// thickness: the RF model reads the same interval the 2D/3D/glTF consumers do.
+//
+// LOSS is per BARRIER TRAVERSAL, never per face and never scaled by thickness:
+//   one traversal = matById(c.materialId).db + c.extraLossDb
+// which is exactly ceilEffectiveLoss(). A 3 dB material with 2 dB extra loses
+// 5 dB per crossing, whether the Ceiling is 5 cm or 40 cm thick. Thickness moves
+// the physical volume and nothing else.
+//
+// CANONICAL INTERSECTION MODEL. The barrier is a finite prism, so "does the
+// segment cross Z = height" is not sufficient. Instead:
+//   1. solve the parameter interval [t0,t1] on which z(t) lies inside
+//      [zBottom, zTop] - the vertical window;
+//   2. inside that window, gather every parameter value where the XY
+//      projection crosses a footprint edge (part outers AND holes);
+//   3. classify the midpoint of each resulting sub-interval as material or not,
+//      where material means "inside some part's outer ring and outside every
+//      hole of that part";
+//   4. each maximal material sub-interval is ONE physical traversal.
+//
+// That yields the required semantics directly: an ordinary below-to-above
+// crossing of one connected region is one loss; a path through two disconnected
+// regions is two; the bottom face, the interior and the top face are never
+// counted separately; and a tangential contact produces a zero-length
+// sub-interval, which is discarded, so it cannot add attenuation.
+//
+// This is the single model that Ray Tracing will consume next, per ray segment.
+// It is deliberately a pure function of one 3D segment, with no knowledge of
+// heatmaps, cells or rays.
+const CEIL_RF_EPS = 1e-9;   // same scale as RFOBJ_SLAB_EPS
+
+// The parameter window of the segment on which z lies inside [zBot, zTop],
+// clamped to [0,1]. Null when the segment never enters the vertical interval.
+function ceilingZWindow(az, bz, zBot, zTop){
+  const dz=bz-az;
+  if(!(Math.abs(dz)>CEIL_RF_EPS)){
+    // horizontal segment: either wholly inside the slab or wholly outside
+    if(az<zBot-CEIL_RF_EPS || az>zTop+CEIL_RF_EPS) return null;
+    return [0,1];
+  }
+  const ta=(zBot-az)/dz, tb=(zTop-az)/dz;
+  const lo=Math.max(0, Math.min(ta,tb));
+  const hi=Math.min(1, Math.max(ta,tb));
+  if(hi-lo<=CEIL_RF_EPS) return null;      // merely touching a face
+  return [lo,hi];
+}
+
+// Physical material traversals of the segment through one ceiling footprint,
+// restricted to the parameter window t0..t1. Returns how many maximal runs of
+// material the XY projection makes.
+function ceilingFootprintTraversals(plan, ax,ay, sdx,sdy, t0, t1){
+  if(!plan||!plan.parts||!plan.parts.length) return 0;
+  const ts=[];
+  const edges=ring=>{
+    if(!ring||ring.length<2) return;
+    for(let i=0;i<ring.length;i++){
+      const p=ring[i], q=ring[(i+1)%ring.length];
+      const t=segIntersectT(ax,ay, ax+sdx, ay+sdy, p.x,p.y, q.x,q.y);
+      if(t<0) continue;                    // no proper crossing
+      if(t<t0-CEIL_RF_EPS || t>t1+CEIL_RF_EPS) continue;
+      ts.push(Math.min(t1, Math.max(t0,t)));
+    }
+  };
+  plan.parts.forEach(pt=>{ edges(pt.outer); (pt.holes||[]).forEach(edges); });
+  ts.push(t0, t1);
+  ts.sort((a,b)=>a-b);
+  const u=[];
+  for(let i=0;i<ts.length;i++) if(!u.length || ts[i]-u[u.length-1]>CEIL_RF_EPS) u.push(ts[i]);
+  if(u.length<2) return 0;
+  const inside=t=>{
+    const x=ax+sdx*t, y=ay+sdy*t;
+    for(const pt of plan.parts){
+      if(!pointInPolygon(x,y,pt.outer)) continue;
+      let holed=false;
+      for(const h of (pt.holes||[])) if(pointInPolygon(x,y,h)){ holed=true; break; }
+      if(!holed) return true;
+    }
+    return false;
+  };
+  let runs=0;
+  for(let i=0;i+1<u.length;i++){
+    const a=u[i], b=u[i+1];
+    if(b-a<=CEIL_RF_EPS) continue;         // tangent contact: no traversal
+    if(inside((a+b)/2)) runs++;
+  }
+  return runs;
+}
+
+// Canonical physical traversal information for EVERY Ceiling Area in the
+// project, for one 3D segment. Whole-project and owner-floor-relative, exactly
+// like rfObjectLossOnSegment(); there are no copies and no per-view instances.
+// Returns [{ c, loss, crossings }] for the ceilings the segment actually
+// traverses. This is the entry point Ray Tracing will reuse.
+function ceilingCrossingsBetweenPoints(ax,ay,az, bx,by,bz){
+  const out=[];
+  if(!(az>=-Infinity && bz>=-Infinity)) return out;
+  const sdx=bx-ax, sdy=by-ay;
+  for(let i=0;i<state.floors.length;i++){
+    const list=state.floors[i].ceilingAreas;
+    if(!list||!list.length) continue;
+    const base=floorElevation(i);
+    for(const c of list){
+      const plan=ceilPlan(c);
+      if(!plan) continue;
+      const iv=ceilingInterval(c);
+      const win=ceilingZWindow(az,bz, base+iv.bottom, base+iv.top);
+      if(!win) continue;
+      const n=ceilingFootprintTraversals(plan, ax,ay, sdx,sdy, win[0], win[1]);
+      if(n>0) out.push({ c:c, loss:ceilEffectiveLoss(c), crossings:n, floorIndex:i });
+    }
+  }
+  return out;
+}
+
+// Total Ceiling attenuation of one 3D segment, in dB. Additive to the other
+// physical losses; zero for any project without Ceiling Areas, so legacy RF
+// results are bit-identical.
+function ceilingLossBetweenPoints(ax,ay,az, bx,by,bz){
+  let loss=0;
+  const list=ceilingCrossingsBetweenPoints(ax,ay,az, bx,by,bz);
+  for(let i=0;i<list.length;i++) loss += list[i].loss*list[i].crossings;
+  return loss;
+}
+
 // number of wall crossings of segment a-b on floor f, summed attenuation
 function wallLossOnFloor(f, ax,ay,bx,by, az=null,bz=null, floorIdx=null){
   let loss=0;
@@ -3524,6 +3659,11 @@ function rssiFromAP(ap, af, px,py, tf, mhz){
   // RF Objects: canonical 3D prisms, whole-project, once per traversal.
   // With no RF Objects this adds exactly 0 and stays bit-identical.
   pl += rfObjectLossOnSegment(ap.x,ap.y,apz, px,py,evz);
+  // Ceiling Areas: one per physical barrier traversal of the real 3D segment,
+  // with the owner floor's base elevation applied. Added here, at the single
+  // shared propagation layer, so Simple RSSI (bestRSSI) and SINR (cellField)
+  // consume the identical result and neither heatmap mode recomputes it.
+  pl += ceilingLossBetweenPoints(ap.x,ap.y,apz, px,py,evz);
   return ap.txPower + antennaGain(ap,px,py,apz,evz) - pl; // dBm
 }
 
