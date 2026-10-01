@@ -109,6 +109,45 @@ ok('Stage-2 keeps the compatibility launch isolated to rt3dReceiverPlaneZ',
    (curKernel.match(/rt3dReceiverPlaneZ\(\)/g) || []).length >= 1 &&
    !/rt3dTracePath[\s\S]{0,200}?rt3dReceiverPlaneZ/.test(curKernelCode));
 
+// ---- 5. Stage 3 specifics: acceleration only -------------------------
+ok('the linear oracle broadphase is retained (not replaced by the BVH)',
+   /function\s+rt3dQueryLinear\s*\(/.test(curKernel) &&
+   /function\s+rt3dNearestLinear\s*\(/.test(curKernel) &&
+   /function\s+rt3dQuery\(list, aabb, out/.test(curKernel));
+ok('rt3dQuery remains the narrow selectable seam',
+   /rt3dQuery\(list, aabb, out, opts\)/.test(curKernel) &&
+   /opts && opts\.bvh\) return rt3dQueryBvhAabb/.test(curKernel));
+ok('the BVH is built with a deterministic median split and a fixed leaf size',
+   /RT3D_BVH_LEAF_SIZE = \d+/.test(curKernel) &&   // a literal, not a tuned value
+   /const mid=count>>1/.test(curKernel) &&          // median split
+   /if\(ey>ex\) axis=1/.test(curKernel) &&          // longest axis, fixed tie order
+   /a\.ord-b\.ord/.test(curKernel));                // equal centroids -> ordinal
+// Scoped to the Stage-3 section: Date.now() legitimately appears in the
+// Stage-1 performance microbenchmark as a timer fallback, which is not a
+// determinism concern. The BVH itself must have neither.
+const bvhSrc = curKernel.slice(curKernel.indexOf('DETERMINISTIC AABB BVH'));
+ok('the BVH introduces no randomness or hash-order dependence',
+   !/\bMath\.random\b/.test(bvhSrc) &&
+   !/\bDate\.now\b/.test(bvhSrc) &&
+   !/\bperformance\.now\b/.test(bvhSrc));
+ok('the BVH never decides physics: it only proposes bodies to rt3dBodyEvent',
+   /rt3dBodyEvent\(ray, body, horizon\)/.test(curKernel) &&
+   !/rt3dFootprintHoldsAt[\s\S]{0,40}rt3dNearestBvh/.test(curKernelCode));
+ok('the BVH reuses the existing rt3dRayAabbWindow for node rejection',
+   /rt3dRayAabbWindow\(ray, n\.aabb\)/.test(curKernel) &&
+   !/function\s+rt3dBvhSlabClip|function\s+rt3dBvhRayBox/.test(curKernel));
+ok('the derived world/BVH is never persisted as project state',
+   !/state\.[A-Za-z0-9_.]*(bvh|accel|accelerat)/i.test(curKernelCode) &&
+   !/localStorage[^\n]*bvh/i.test(curKernel));
+ok('the BVH is derived runtime state, cached on the derived world only',
+   /if\(!world\._bvh\) world\._bvh=rt3dBuildBvh\(world\)/.test(curKernel));
+ok('all five physical families go through the one tree',
+   /RT3D_FAMILIES = \['wall','pillar','rfObject','slab','ceiling'\]/.test(curKernel) &&
+   /function\s+rt3dAllBodies\s*\(world\)/.test(curKernel));
+ok('every tie resolves through the canonical family/ordinal order',
+   /function\s+rt3dBodyLess\s*\(a, b\)/.test(curKernel) &&
+   /function\s+rt3dEventBetter\s*\(e, best\)/.test(curKernel));
+
 // ---- 4. the oracle still reproduces ----
 try {
   const out = execFileSync('node', [path.join(HERE, 'oracle.mjs'), 'check'],

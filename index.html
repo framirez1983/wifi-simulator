@@ -4508,7 +4508,38 @@ function rt3dBuildWorld(){
     // elevation, separating it from the floor below; floor 0 owns none.
     if(fi>0){ const b=rt3dSlabBody(f,fi); if(b) w.slabs.push(b); }
   }
+  // Stamp each DERIVED body with its canonical position in this world's
+  // enumeration: family index and ordinal. This is the tie-break order every
+  // broadphase must reproduce, so node traversal order can never become a
+  // physical rule. Both fields live on the derived body only; no canonical
+  // project entity is touched.
+  rt3dStampOrdinals(w);
   return w;
+}
+// The canonical family order: the enumeration order of the world, and
+// therefore the primary tie-break for any two events at equal distance.
+const RT3D_FAMILIES = ['wall','pillar','rfObject','slab','ceiling'];
+function rt3dFamilyList(w, kind){
+  if(kind==='wall') return w.walls;
+  if(kind==='pillar') return w.pillars;
+  if(kind==='rfObject') return w.rfObjects;
+  if(kind==='slab') return w.slabs;
+  if(kind==='ceiling') return w.ceilings;
+  return [];
+}
+function rt3dStampOrdinals(w){
+  let ord=0;
+  for(let fi=0; fi<RT3D_FAMILIES.length; fi++){
+    const list=rt3dFamilyList(w, RT3D_FAMILIES[fi]);
+    for(const b of list){ b.family=fi; b.ord=ord++; }
+  }
+}
+// Canonical total order over derived bodies: family first, then the world's
+// own enumeration ordinal. Every tie-break goes through this, so no result can
+// depend on which broadphase happened to reach a body first.
+function rt3dBodyLess(a, b){
+  if(a.family !== b.family) return a.family < b.family;
+  return a.ord < b.ord;
 }
 function rt3dWorldSignature(w){
   return ['w',w.walls.length,'p',w.pillars.length,'o',w.rfObjects.length,
@@ -4564,7 +4595,17 @@ function rt3dBodyAabb(b){
     acc(b.x2-b.nx*t, b.y2-b.ny*t); acc(b.x2+b.nx*t, b.y2+b.ny*t);
   }
   if(b.px!=null){ acc(b.px-b.r,b.py-b.r); acc(b.px+b.r,b.py+b.r); }
-  if(b.cx!=null){ acc(b.cx-b.hw,b.cy-b.hd); acc(b.cx+b.hw,b.cy+b.hd); }
+  if(b.cx!=null){
+    // A ROTATED box's axis-aligned bound is |cos|*hw + |sin|*hd, not hw/hd.
+    // Using the unrotated extents produces a box that can FAIL TO CONTAIN
+    // the object it describes at 45 degrees, which is unsound for a broadphase:
+    // a ray starting inside such an object is culled and the event is lost.
+    // The AABB must be conservative - it may be larger than the geometry, but
+    // never smaller.
+    const ex = Math.abs(b.c)*b.hw + Math.abs(b.s)*b.hd;
+    const ey = Math.abs(b.s)*b.hw + Math.abs(b.c)*b.hd;
+    acc(b.cx-ex,b.cy-ey); acc(b.cx+ex,b.cy+ey);
+  }
   if(b.plan){ for(const pt of b.plan.parts){ for(const p of pt.outer) acc(p.x,p.y); for(const h of (pt.holes||[])) for(const p of h) acc(p.x,p.y); } }
   if(!Number.isFinite(minx)) return null;
   const zLo = (b.zBottom!=null) ? b.zBottom : b.zBase;
@@ -5448,23 +5489,26 @@ function rt3dContactEvent(c, body, kind){
 
 // Every candidate event on a ray, ordered by true 3D distance. This is the
 // event-ordering primitive: ordering is by distance ALONG THE RAY, which for
-// an inclined ray is not the XY projection, and it is computed over the whole
-// body set at once rather than per obstacle family.
-function rt3dCandidateEvents(world, ray, horizon, kinds){
+// an inclined ray is not the XY projection.
+//
+// The chosen broadphase only proposes BODIES; each is then exact-tested with
+// rt3dBodyEvent() and ordered with the one shared comparator, so the result is
+// identical whichever backend proposed the candidates. Footprint semantics
+// (Openings, holes, concavities, multipart) are decided by that exact test,
+// never by the broadphase.
+function rt3dCandidateEvents(world, ray, horizon, kinds, opts){
   const out=[];
-  const consider=(list)=>{
-    for(const body of list){
-      if(kinds && kinds.indexOf(body.kind)<0) continue;
-      const e=rt3dBodyEvent(ray, body, horizon);
-      if(e) out.push(e);
-    }
-  };
-  consider(world.walls);
-  consider(world.pillars);
-  consider(world.rfObjects);
-  consider(world.slabs);
-  consider(world.ceilings);
-  out.sort((a,b)=>a.tEnter-b.tEnter);
+  const bodies = rt3dCandidateBodies(world, ray, horizon, kinds, opts);
+  for(const body of bodies){
+    const e=rt3dBodyEvent(ray, body, horizon);
+    if(e){ e.body=body; out.push(e); }
+  }
+  out.sort((a,b)=>{
+    const d=a.tEnter - b.tEnter;
+    if(d < -RT3D_TOL.zeroLength) return -1;
+    if(d >  RT3D_TOL.zeroLength) return 1;
+    return rt3dBodyLess(a.body, b.body) ? -1 : (rt3dBodyLess(b.body, a.body) ? 1 : 0);
+  });
   return out;
 }
 
@@ -5499,6 +5543,10 @@ function rt3dTracePath(world, ray0, opts){
   const maxEvents     = opts.maxEvents!=null ? opts.maxEvents : 256;
   const kinds         = opts.kinds || null;           // optional body filter
   const collectAll    = opts.collectCandidates ? [] : null;
+  // The broadphase backend for this path: 'linear' (the oracle) or 'bvh'.
+  // Defaults to the module-wide seam, so Stage-2 callers are unaffected.
+  const backend       = opts.backend || rt3dBroadphaseBackend;
+  const qopts         = { backend: backend, stats: opts.stats || null };
 
   let ray = rt3dRay(ray0.x, ray0.y, ray0.z, ray0.dx, ray0.dy, ray0.dz);
   if(!ray) return null;
@@ -5510,6 +5558,8 @@ function rt3dTracePath(world, ray0, opts){
   let terminated='escaped';
   // bodies currently being traversed: {body, exitDist}
   let inside=[];
+  // same set, as a Set for the broadphase's O(1) exclusion test
+  let excludeSet=new Set();
 
   for(let iter=0; iter<maxEvents; iter++){
     // Everything below is compared in ABSOLUTE path distance, never in the
@@ -5526,23 +5576,21 @@ function rt3dTracePath(world, ray0, opts){
     // primitives take; convert from the absolute limit.
     const horizon = Math.max(0, limit - dist);
 
-    const cands = rt3dCandidateEvents(world, ray, horizon, kinds);
+    const cands = rt3dCandidateEvents(world, ray, horizon, kinds, opts);
     if(collectAll && iter===0) for(const c of cands) collectAll.push({
       kind:c.kind, objectId:(c.body && c.body.objectId), t:+c.tEnter.toFixed(9),
       absoluteDistance:+(dist + c.tEnter).toFixed(9),
       point:{x:+c.point.x.toFixed(6), y:+c.point.y.toFixed(6), z:+c.point.z.toFixed(6)},
       loss:c.loss });
 
-    // Skip a body we are already inside: its traversal is paid for. Choose
-    // the nearest by ABSOLUTE distance along the path.
-    let best=null, bestAbs=Infinity;
-    for(const c of cands){
-      let inHere=false;
-      for(const s of inside) if(s.body===c.body){ inHere=true; break; }
-      if(inHere) continue;
-      const abs = dist + c.tEnter;
-      if(abs < bestAbs){ bestAbs=abs; best=c; }
-    }
+    // Nearest physically reachable event, by TRUE 3D distance. The broadphase
+    // (linear oracle or BVH) only decides which bodies are worth TESTING;
+    // rt3dBodyEvent() and the one shared comparator decide the physics. A body
+    // the ray is already inside is excluded, because its traversal is paid
+    // for, and a genuine later re-entry is charged again.
+    const exclude = excludeSet.size ? excludeSet : null;
+    const best = rt3dNearestEvent(world, ray, horizon, kinds, exclude, opts);
+    const bestAbs = best ? dist + best.tEnter : Infinity;
 
     if(best && bestAbs < exitAt){
       const advance = best.tEnter;
@@ -5603,14 +5651,17 @@ function rt3dTracePath(world, ray0, opts){
       // volume: a wall plane has no interior to be inside of
       if(!isWall){
         const exitAbs = dist + (best.tExit - best.tEnter);
-        if(Number.isFinite(exitAbs) && exitAbs > dist + RT3D_TOL.zeroLength)
+        if(Number.isFinite(exitAbs) && exitAbs > dist + RT3D_TOL.zeroLength){
           inside.push({ body:best.body, exitDist: exitAbs });
+          excludeSet.add(best.body);
+        }
       }
       continue;
     }
 
     if(exitIdx>=0){
       // leave the body: no loss, just resume from the far side
+      excludeSet.delete(inside[exitIdx].body);
       inside.splice(exitIdx,1);
       const step = exitAt - dist;
       dist = exitAt;
@@ -5679,6 +5730,315 @@ function rt3dCountByType(trace, type){
 function rt3dEventsFor(trace, objectId){
   if(!trace) return [];
   return trace.events.filter(e=>e.objectId===objectId);
+}
+
+
+// ============================================================
+//  DETERMINISTIC AABB BVH  (Stage 3: broadphase acceleration)
+//
+//  ACCELERATION ONLY. This section finds candidate bodies faster. It never
+//  decides a physical question: every candidate it returns is handed to
+//  rt3dBodyEvent() for the canonical exact geometry test. Openings, holes,
+//  concavities and multipart footprints are therefore never encoded here -
+//  a BVH can only say "this body might be worth testing".
+//
+//  Both backends are kept. rt3dQueryLinear() is the ORACLE and remains the
+//  correctness reference even once the BVH is the default: Stage-3 validation
+//  compares every BVH answer against a full linear enumeration.
+// ============================================================
+
+// Body count per leaf. Small enough that a leaf's linear scan is cheaper than
+// another node test, large enough that node overhead does not dominate.
+// Documented and fixed: it is part of the deterministic build, not a tuned
+// value that changes with scene size.
+const RT3D_BVH_LEAF_SIZE = 4;
+
+// ---- the selectable seam ----------------------------------------------
+// Which backend the tracer uses by default. 'bvh' is the production intent
+// for the parallel engine; 'linear' exists so the oracle can be selected
+// explicitly and so a fallback is always available.
+let rt3dBroadphaseBackend = 'bvh';
+function rt3dSetBroadphase(backend){
+  rt3dBroadphaseBackend = (backend==='linear') ? 'linear' : 'bvh';
+  return rt3dBroadphaseBackend;
+}
+function rt3dGetBroadphase(){ return rt3dBroadphaseBackend; }
+
+// ---- ORACLE: the linear implementation ---------------------------------
+// Unfiltered enumeration. This is deliberately the dumbest correct thing: no
+// AABB prefilter, no pruning, no ordering assumptions. It is the reference
+// every accelerated result is checked against.
+function rt3dQueryLinear(list, aabb, out){
+  out.length=0;
+  for(let i=0;i<list.length;i++) if(rt3dBodyOverlapsAabb(list[i], aabb)) out.push(list[i]);
+  return out;
+}
+
+// All derived bodies of a world, in canonical family order.
+function rt3dAllBodies(world){
+  const out=[];
+  for(let fi=0; fi<RT3D_FAMILIES.length; fi++){
+    const list=rt3dFamilyList(world, RT3D_FAMILIES[fi]);
+    for(let i=0;i<list.length;i++) out.push(list[i]);
+  }
+  return out;
+}
+
+// ---- the narrow AABB seam ---------------------------------------------
+// Kept as the single selectable entry point for AABB queries. Without a BVH
+// it is exactly the linear oracle, so existing callers are unaffected.
+function rt3dQuery(list, aabb, out, opts){
+  if(opts && opts.bvh) return rt3dQueryBvhAabb(opts.bvh, aabb, out, list);
+  return rt3dQueryLinear(list, aabb, out);
+}
+
+// ---- BVH construction --------------------------------------------------
+// Median split on the LONGEST CENTROID axis, with a fixed leaf size.
+//
+// Determinism guarantees, all of which the harness checks:
+//   * no randomness and no Date/iteration-order dependence;
+//   * the partition is a deterministic sort on (centroid, ordinal), so equal
+//     centroids - the degenerate case - still split reproducibly, by ordinal;
+//   * the axis is chosen by longest centroid extent, ties broken x, then y,
+//     then z, which is a fixed order and not a floating-point coin flip;
+//   * the split point is count/2, so recursion is balanced and always
+//     terminates;
+//   * a node's AABB is the union of the bodies beneath it, computed from the
+//     bodies themselves and never widened, so pruning stays conservative.
+//
+// The BVH is DERIVED RUNTIME STATE. It is built from an immutable derived
+// world, cached on that world object, and discarded with it. It is never
+// persisted and never attached to a canonical project entity.
+function rt3dBvhCentroid(b, out){
+  const a=rt3dBodyAabb(b);
+  if(!a) return false;
+  out[0]=(a.minx+a.maxx)*0.5;
+  out[1]=(a.miny+a.maxy)*0.5;
+  out[2]=(a.minz+a.maxz)*0.5;
+  return true;
+}
+function rt3dBvhNode(bvh, start, count){
+  // Union AABB and centroid bounds for this range
+  let minx=Infinity,miny=Infinity,minz=Infinity,maxx=-Infinity,maxy=-Infinity,maxz=-Infinity;
+  let cminx=Infinity,cminy=Infinity,cminz=Infinity,cmaxx=-Infinity,cmaxy=-Infinity,cmaxz=-Infinity;
+  const c=[0,0,0];
+  for(let i=start;i<start+count;i++){
+    const b=bvh.bodies[i];
+    const a=rt3dBodyAabb(b);
+    if(!a) continue;
+    if(a.minx<minx)minx=a.minx; if(a.maxx>maxx)maxx=a.maxx;
+    if(a.miny<miny)miny=a.miny; if(a.maxy>maxy)maxy=a.maxy;
+    if(a.minz<minz)minz=a.minz; if(a.maxz>maxz)maxz=a.maxz;
+    if(!rt3dBvhCentroid(b,c)) continue;
+    b._c=[c[0],c[1],c[2]];
+    if(c[0]<cminx)cminx=c[0]; if(c[0]>cmaxx)cmaxx=c[0];
+    if(c[1]<cminy)cminy=c[1]; if(c[1]>cmaxy)cmaxy=c[1];
+    if(c[2]<cminz)cminz=c[2]; if(c[2]>cmaxz)cmaxz=c[2];
+  }
+  const node = { aabb:{minx,miny,minz,maxx,maxy,maxz},
+                 start, count, leaf:true, left:-1, right:-1 };
+  const ni = bvh.nodes.length;
+  bvh.nodes.push(node);
+  if(!Number.isFinite(minx)) return ni;                 // nothing real beneath
+  if(count <= RT3D_BVH_LEAF_SIZE) return ni;
+
+  // longest centroid axis; ties resolved in fixed x,y,z order
+  const ex=cmaxx-cminx, ey=cmaxy-cminy, ez=cmaxz-cminz;
+  let axis=0;
+  if(ey>ex) axis=1;
+  if(ez>((axis===0)?ex:ey)) axis=2;
+
+  // deterministic partition: sort by centroid, then canonical ordinal
+  const sub=bvh.bodies.slice(start, start+count);
+  sub.sort((a,b)=>{
+    const d=(a._c[axis]-b._c[axis]);
+    if(d!==0) return d;
+    return a.ord-b.ord;                                 // equal centroids
+  });
+  for(let i=0;i<count;i++) bvh.bodies[start+i]=sub[i];
+
+  const mid=count>>1;                                   // >= 1, < count: terminates
+  node.leaf=false;
+  node.left = rt3dBvhNode(bvh, start, mid);
+  node.right= rt3dBvhNode(bvh, start+mid, count-mid);
+  return ni;
+}
+function rt3dBuildBvh(world){
+  const bodies=rt3dAllBodies(world);
+  const bvh={ bodies, nodes:[], root:-1, leafSize:RT3D_BVH_LEAF_SIZE,
+              totalBodies:bodies.length, built:true };
+  if(bodies.length) bvh.root=rt3dBvhNode(bvh, 0, bodies.length);
+  bvh.nodeCount=bvh.nodes.length;
+  return bvh;
+}
+// Build cost and the derived world's lifetime, stated once. The BVH is valid
+// for exactly one immutable derived world; a new rt3dBuildWorld() means a new
+// BVH. No incremental update, because there is nothing to update: the world
+// itself is rebuilt from the canonical entities on demand.
+function rt3dBvhFor(world){
+  if(!world._bvh) world._bvh=rt3dBuildBvh(world);
+  return world._bvh;
+}
+// A stable description of the built tree, used to prove determinism.
+function rt3dBvhSignature(bvh){
+  if(!bvh) return 'null';
+  if(bvh.root<0) return 'empty/'+bvh.totalBodies;
+  const parts=[];
+  const walk=(ni, depth)=>{
+    const n=bvh.nodes[ni];
+    parts.push(depth+':'+(n.leaf?'L'+n.count:'I')+
+      ':'+n.aabb.minx.toFixed(6)+','+n.aabb.miny.toFixed(6)+','+n.aabb.minz.toFixed(6)+','+
+              n.aabb.maxx.toFixed(6)+','+n.aabb.maxy.toFixed(6)+','+n.aabb.maxz.toFixed(6));
+    if(!n.leaf){ walk(n.left, depth+1); walk(n.right, depth+1); }
+  };
+  walk(bvh.root, 0);
+  return 'nodes='+bvh.nodeCount+'/'+parts.join('|');
+}
+
+// ---- BVH queries -------------------------------------------------------
+// AABB query against the tree. `restrict` (optional) filters the result to a
+// specific list, which is how the list-based seam stays list-based.
+function rt3dQueryBvhAabb(bvh, aabb, out, restrict){
+  out.length=0;
+  if(!bvh || bvh.root<0) return out;
+  let filter=null;
+  if(restrict) filter=new Set(restrict);
+  const stack=[bvh.root];
+  while(stack.length){
+    const n=bvh.nodes[stack.pop()];
+    if(!rt3dAabbOverlap(n.aabb, aabb)) continue;
+    if(n.leaf){
+      for(let i=0;i<n.count;i++){
+        const b=bvh.bodies[n.start+i];
+        if(filter && !filter.has(b)) continue;
+        if(rt3dBodyOverlapsAabb(b, aabb)) out.push(b);
+      }
+    } else { stack.push(n.left); stack.push(n.right); }
+  }
+  return out;
+}
+function rt3dAabbOverlap(a, b){
+  return a.minx<=b.maxx && a.maxx>=b.minx &&
+         a.miny<=b.maxy && a.maxy>=b.miny &&
+         a.minz<=b.maxz && a.maxz>=b.minz;
+}
+
+// The ONE physical event comparator. Both backends use it, so "same distance"
+// resolves identically no matter which one found the bodies, and no traversal
+// order can leak into the physics.
+function rt3dEventBetter(e, best){
+  if(!best) return true;
+  const d=e.tEnter - best.tEnter;
+  if(d < -RT3D_TOL.zeroLength) return true;
+  if(d >  RT3D_TOL.zeroLength) return false;
+  return rt3dBodyLess(e.body, best.body);
+}
+function rt3dNewStats(){
+  return { nodesVisited:0, leavesVisited:0, candidatesTested:0, totalBodies:0, prunedNodes:0 };
+}
+
+// ORACLE nearest event: full enumeration of every body, no AABB prefilter and
+// no pruning. Correct by construction, and the reference for the BVH.
+function rt3dNearestLinear(world, ray, horizon, kinds, exclude, stats){
+  const bodies=rt3dAllBodies(world);
+  if(stats) stats.totalBodies=bodies.length;
+  let best=null;
+  for(let i=0;i<bodies.length;i++){
+    const body=bodies[i];
+    if(kinds && kinds.indexOf(body.kind)<0) continue;
+    if(exclude && exclude.has(body)) continue;
+    if(stats) stats.candidatesTested++;
+    const e=rt3dBodyEvent(ray, body, horizon);
+    if(!e) continue;
+    e.body=body;
+    if(rt3dEventBetter(e, best)) best=e;
+  }
+  return best;
+}
+
+// BVH nearest event. Pruning only; the physical answer is still
+// rt3dBodyEvent(). Rejection rules, all in the existing tolerance:
+//   * rt3dRayAabbWindow() returns null  -> the ray misses the node's box
+//   * the window starts beyond the horizon -> the node is out of reach
+//   * the window starts beyond the best event found so far -> cannot win
+function rt3dNearestBvh(bvh, ray, horizon, kinds, exclude, stats){
+  if(stats) stats.totalBodies=bvh? bvh.totalBodies : 0;
+  if(!bvh || bvh.root<0) return null;
+  const T=RT3D_TOL.zeroLength;
+  let best=null, bestT=Infinity;
+  const stack=[bvh.root];
+  while(stack.length){
+    const n=bvh.nodes[stack.pop()];
+    if(stats) stats.nodesVisited++;
+    const w=rt3dRayAabbWindow(ray, n.aabb);
+    if(!w){ if(stats) stats.prunedNodes++; continue; }
+    if(w[0] > horizon + T){ if(stats) stats.prunedNodes++; continue; }
+    if(w[0] > bestT + T){ if(stats) stats.prunedNodes++; continue; }
+    if(n.leaf){
+      if(stats) stats.leavesVisited++;
+      for(let i=0;i<n.count;i++){
+        const body=bvh.bodies[n.start+i];
+        if(kinds && kinds.indexOf(body.kind)<0) continue;
+        if(exclude && exclude.has(body)) continue;
+        if(stats) stats.candidatesTested++;
+        const e=rt3dBodyEvent(ray, body, horizon);
+        if(!e) continue;
+        e.body=body;
+        if(rt3dEventBetter(e, best)){ best=e; bestT=e.tEnter; }
+      }
+    } else {
+      // visit the nearer child FIRST so bestT tightens as early as possible.
+      // This is purely an optimisation: the comparator, not this order,
+      // decides which event wins.
+      const wl=rt3dRayAabbWindow(ray, bvh.nodes[n.left].aabb);
+      const wr=rt3dRayAabbWindow(ray, bvh.nodes[n.right].aabb);
+      const dl=wl? wl[0] : Infinity, dr=wr? wr[0] : Infinity;
+      if(dl<=dr){ if(dr<=bestT+T) stack.push(n.right); if(dl<=bestT+T) stack.push(n.left); }
+      else      { if(dl<=bestT+T) stack.push(n.left);  if(dr<=bestT+T) stack.push(n.right); }
+    }
+  }
+  return best;
+}
+
+// The selectable nearest-event seam used by the path tracer.
+function rt3dNearestEvent(world, ray, horizon, kinds, exclude, opts){
+  opts=opts||{};
+  const backend=opts.backend || rt3dBroadphaseBackend;
+  if(backend==='linear') return rt3dNearestLinear(world, ray, horizon, kinds, exclude, opts.stats);
+  return rt3dNearestBvh(rt3dBvhFor(world), ray, horizon, kinds, exclude, opts.stats);
+}
+
+// All candidate bodies the chosen backend considers, for diagnostics. The
+// linear backend deliberately returns every body, unfiltered.
+function rt3dCandidateBodies(world, ray, horizon, kinds, opts){
+  opts=opts||{};
+  const backend=opts.backend || rt3dBroadphaseBackend;
+  const out=[];
+  if(backend==='linear'){
+    for(const b of rt3dAllBodies(world)){
+      if(kinds && kinds.indexOf(b.kind)<0) continue;
+      out.push(b);
+    }
+    return out;
+  }
+  const bvh=rt3dBvhFor(world);
+  if(!bvh || bvh.root<0) return out;
+  const T=RT3D_TOL.zeroLength;
+  const stack=[bvh.root];
+  while(stack.length){
+    const n=bvh.nodes[stack.pop()];
+    const w=rt3dRayAabbWindow(ray, n.aabb);
+    if(!w) continue;
+    if(w[0] > horizon + T) continue;
+    if(n.leaf){
+      for(let i=0;i<n.count;i++){
+        const b=bvh.bodies[n.start+i];
+        if(kinds && kinds.indexOf(b.kind)<0) continue;
+        out.push(b);
+      }
+    } else { stack.push(n.left); stack.push(n.right); }
+  }
+  return out;
 }
 
 function smoothRSSI(src,w,h){
