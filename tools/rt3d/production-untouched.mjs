@@ -89,6 +89,26 @@ ok('kernel has no constant-Z ray assumption (no rayZAt call)',
 ok('kernel never mutates the world it derives from',
    !/rt3dBuildWorld[\s\S]{0,400}?\.(x1|x2|y1|y2|height|width|depth|rotation)\s*=[^=]/.test(curKernelCode));
 
+// ---- 4. Stage 2 specifics: still a parallel engine, still no heatmap ----
+// The Stage-2 path tracer exists beside the production engine. It must not
+// publish a result anywhere, and it must not be reachable from the UI.
+ok('Stage-2 tracer writes no heatmap / no production display state',
+   !/\b(heatGridRssi|heatGridDisp|heatMeta|heatMode|heatRtReach|showHeat|lastRayTraceStats)\b/.test(curKernelCode),
+   (curKernelCode.match(/\b(heatGridRssi|heatGridDisp|heatMeta|heatMode|heatRtReach|showHeat|lastRayTraceStats)\b/g) || []).join(', '));
+ok('Stage-2 tracer calls no production tracer',
+   !/\brunRayTrace\b|\bmarchRay\b/.test(curKernelCode));
+ok('Stage-2 tracer has no UI affordance (no element id, class or event wiring)',
+   !/\b(getElementById|querySelector|onclick|addEventListener|tbtn|btn[A-Z])\b/.test(curKernelCode));
+ok('Stage-2 tracer produces no volumetric fan (no azimuth x elevation emitter)',
+   !/\b(fanElevation|elevationSteps|azimuthSteps|emissionFan|voxel)\b/.test(curKernelCode));
+ok('Stage-2 reflects from vertical walls only (no slab/Ceiling reflection)',
+   // a reflection may only be raised for a wall body
+   !/best\.kind\s*!==\s*'wall'|kind==='slab'[^;]{0,80}reflect|kind==='ceiling'[^;]{0,80}reflect/.test(curKernelCode) &&
+   /isWall\s*=\s*best\.kind==='wall'/.test(curKernelCode));
+ok('Stage-2 keeps the compatibility launch isolated to rt3dReceiverPlaneZ',
+   (curKernel.match(/rt3dReceiverPlaneZ\(\)/g) || []).length >= 1 &&
+   !/rt3dTracePath[\s\S]{0,200}?rt3dReceiverPlaneZ/.test(curKernelCode));
+
 // ---- 4. the oracle still reproduces ----
 try {
   const out = execFileSync('node', [path.join(HERE, 'oracle.mjs'), 'check'],

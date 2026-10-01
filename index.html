@@ -1537,6 +1537,28 @@ function wallLen(w){ return dist(w.x1,w.y1,w.x2,w.y2); }
 // sides of the centerline, so it is purely a body/geometry property.
 const DEFAULT_WALL_THICKNESS_M = 0.15;  // legacy walls resolve to this
 const WALL_THICKNESS_MIN_M = 0.01;       // modern UI input minimum
+
+// CANONICAL SLAB THICKNESS, in meters.
+//
+// This is the single source of truth for how thick a structural floor slab
+// is, and it is read by ALL THREE consumers:
+//   - the interactive 3D slab (explicit footprint and legacy rectangle),
+//   - the glTF export (GLTF_SLAB_THICKNESS, derived from this),
+//   - the RT3D kernel's physical slab volume.
+//
+// It previously existed as a bare 0.12 literal in four places in the 3D view
+// plus a separate GLTF_SLAB_THICKNESS const. That is exactly the split this
+// constant removes: a slab that is 0.12 m thick on screen and some other
+// thickness to the tracer is a physical inconsistency, not a rounding detail.
+//
+// Convention, unchanged and shared by every consumer: the slab's TOP sits on
+// the owning floor's base elevation and its body hangs DOWNWARD from there, so
+// the volume is [elev - SLAB_THICKNESS_M, elev].
+//
+// This is geometry only. The legacy RF slab model charges a zero-thickness
+// plane at the elevation and is deliberately NOT derived from this value, so
+// no existing RF result changes.
+const SLAB_THICKNESS_M = 0.12;
 // Canonical READ of a wall's physical thickness. Legacy walls carry no
 // thickness field and resolve to the centralized default; nothing is injected
 // into stored walls on load, so old projects need no migration. Read-side
@@ -4354,13 +4376,51 @@ function runRayTrace(onDone){
 //  carries a real origin and a real 3D direction, and Z is
 //  solved for like X and Y.
 // ============================================================
-const RT3D_EPS = 1e-9;          // same scale as RFOBJ_SLAB_EPS / CEIL_RF_EPS
-// PROVISIONAL, KERNEL-ONLY. The production slab RF model charges a
-// zero-thickness plane at each floor base; the new kernel needs a real
-// physical volume to traverse. This value is NOT wired into the
-// production slab model and changes no legacy RF result. Revisit when
-// slab depth becomes a real project parameter.
-const RT3D_SLAB_DEPTH_M = 0.20;
+// ------------------------------------------------------------
+//  CENTRALISED NUMERICAL TOLERANCES
+//
+//  Every numeric slack in the kernel comes from here. Nothing else in this
+//  file may invent an epsilon: a scattered constant is how two halves of a
+//  tracer end up disagreeing about whether a face was touched. Each value
+//  states the physical decision it protects, and they are deliberately of
+//  very different magnitudes, because they answer different questions.
+// ------------------------------------------------------------
+const RT3D_TOL = {
+  // slack in the 3-axis slab clip and in the Z window. Same scale as
+  // RFOBJ_SLAB_EPS / CEIL_RF_EPS. clipSlack is what RT3D_EPS aliases, so the
+  // Stage-1 behaviour is bit-identical.
+  clipSlack:      1e-9,
+  // a chord shorter than this is a GRAZE, not a material traversal. Kept well
+  // above double-precision noise at building scale (~1e-16 relative) and well
+  // below any real wall or slab thickness.
+  zeroLength:     1e-9,
+  // rejection threshold for tangency as a physical event: a contact whose
+  // material run is shorter than this is reported but never charged.
+  tangency:       1e-9,
+  // how far a ray origin is pushed along its NEW direction after a
+  // transmission or a reflection, so it cannot re-hit the face it just left
+  // through floating-point noise alone. 1 micron is ~10 orders of magnitude
+  // above the noise floor and ~4 orders below any modelled feature.
+  originNudge:    1e-6,
+  // a direction this parallel to a surface is treated as parallel rather than
+  // solved. Kept at the legacy threshold so grazing behaviour is unchanged;
+  // a genuinely parallel ray produces an enormous t, which the search horizon
+  // rejects anyway.
+  planeParallel:  1e-12,
+  // extra reach allowed when testing whether a body still contains a point,
+  // used for the "am I still inside a body I have paid for" test.
+  containsSlack:  1e-9
+};
+const RT3D_EPS = RT3D_TOL.clipSlack;
+// The RT3D slab volume is NOT given its own thickness. It derives from the
+// canonical SLAB_THICKNESS_M above, the same constant the interactive 3D slab
+// and the glTF export use, so a slab cannot be one thickness on screen and
+// another to the tracer. A previous revision carried a private
+// RT3D_SLAB_DEPTH_M = 0.20 here, which was exactly that inconsistency.
+//
+// The legacy RF slab model still charges a zero-thickness plane at the floor
+// elevation and is deliberately NOT derived from SLAB_THICKNESS_M, so no
+// existing RF result changes.
 
 // ------------------------------------------------------------
 //  CANONICAL 3D VECTOR MATH
@@ -4594,13 +4654,18 @@ function rt3dRfObjectBody(o, fi, f){
 // A Slab is a horizontal physical volume: the floor footprint with the
 // Openings folded in as holes, crossed with the slab's vertical
 // thickness interval hanging below its owning floor base plane.
+//
+// The thickness is the canonical SLAB_THICKNESS_M, so the volume the tracer
+// traverses is exactly the plate the 3D view draws and the glTF export
+// writes. The loss below is per crossing and is NOT scaled by this
+// thickness, matching how walls, pillars and RF Objects are charged.
 function rt3dSlabBody(f, fi){
   if(!f) return null;
   const plan=slabPlanForFloor(f);
   if(!plan || !plan.parts || !plan.parts.length) return null;
   const top=floorElevation(fi);
   return { kind:'slab', object:f, objectId:f.id, floorIndex:fi, plan:plan,
-           zTop:top, zBottom:top-RT3D_SLAB_DEPTH_M, thickness:RT3D_SLAB_DEPTH_M,
+           zTop:top, zBottom:top-SLAB_THICKNESS_M, thickness:SLAB_THICKNESS_M,
            materialId:f.slabMaterialId, loss: slabLossForFloor(f) };
 }
 // A Ceiling Area is a horizontal physical volume: its footprint
@@ -4643,7 +4708,7 @@ function rt3dCeilingBody(c, fi, f){
 //      because a future reflective slab or ceiling needs both.
 // ------------------------------------------------------------
 function rt3dContact(kind, b, tEnter, tExit, runs, nEnter, nExit){
-  const positive = (runs||[]).filter(r=> (r[1]-r[0]) > RT3D_EPS );
+  const positive = (runs||[]).filter(r=> (r[1]-r[0]) > RT3D_TOL.zeroLength );
   if(!positive.length){
     // zero-length tangency: report the contact, charge nothing
     const t = Number.isFinite(tEnter) ? tEnter : 0;
@@ -4686,16 +4751,17 @@ function rt3dHasTraversal(contact){
 // Clip a parameter window to one axis slab [lo,hi] of a local frame.
 // This is the single shared 3D slab clip used by every closed volume.
 function rt3dClipAxis(ov, dv, lo, hi, win, track){
+  const E=RT3D_TOL.clipSlack;
   let tmin=win[0], tmax=win[1];
-  if(Math.abs(dv)<RT3D_EPS){
-    if(ov<lo-RT3D_EPS || ov>hi+RT3D_EPS) return null;   // parallel and outside
+  if(Math.abs(dv)<E){
+    if(ov<lo-E || ov>hi+E) return null;               // parallel and outside
     return [tmin,tmax];
   }
   let t1=(lo-ov)/dv, t2=(hi-ov)/dv;
   if(t1>t2){ const s=t1; t1=t2; t2=s; }
   if(t1>tmin){ tmin=t1; if(track!=null) track.axisEnter=dv<0?1:-1; }
   if(t2<tmax) tmax=t2;
-  if(tmin>tmax+RT3D_EPS) return null;
+  if(tmin>tmax+E) return null;
   return [tmin,tmax];
 }
 
@@ -4710,7 +4776,7 @@ function rt3dWallSurfaceHit(ray, b, tMax){
   if(!b) return null;
   const o=rt3dRayOrigin(ray), d=rt3dRayDir(ray);
   const dn = rt3dDot(d, rt3dV(b.nx, b.ny, 0));    // nz is 0: a vertical plane
-  if(!(Math.abs(dn)>RT3D_EPS)) return null;       // parallel to the wall plane
+  if(!(Math.abs(dn)>RT3D_TOL.planeParallel)) return null;   // parallel to the plane
   const t = -((o.x-b.x1)*b.nx + (o.y-b.y1)*b.ny) / dn;
   if(!Number.isFinite(t) || t<0) return null;
   if(tMax!=null && t>tMax+RT3D_EPS) return null;
@@ -4893,7 +4959,7 @@ function rt3dFootprintRuns(plan, ox, oy, sdx, sdy, t0, t1){
   out.touched = true;
   for(let i=0;i+1<u.length;i++){
     const a=u[i], b=u[i+1];
-    if(b-a<=RT3D_EPS) continue;        // tangent contact: no traversal
+    if(b-a<=RT3D_TOL.tangency) continue;   // tangent contact: no traversal
     if(rt3dFootprintHoldsAt(plan, ox+sdx*(a+b)/2, oy+sdy*(a+b)/2)) out.runs.push([a,b]);
   }
   return out;
@@ -4905,7 +4971,7 @@ function rt3dHorizontalVolumeHit(ray, b, tMax){
   const zwin=rt3dZWindow(ray, b.zBottom, b.zTop);
   if(!zwin) return rt3dEmpty(b.kind, b);
   const t1 = (tMax==null) ? zwin[1] : Math.min(zwin[1], tMax);
-  if(zwin[1]-zwin[0] <= RT3D_EPS){
+  if(zwin[1]-zwin[0] <= RT3D_TOL.zeroLength){
     // grazes a horizontal face from above or below: contact, no material
     const c=rt3dContact(b.kind, b, zwin[0], zwin[0], [], rt3dV(0,0,1), rt3dV(0,0,-1));
     return rt3dFillPoints(c, ray);
@@ -5289,6 +5355,332 @@ function rt3dBenchmark(world, iterations){
   time('broadphaseScan', (i)=> rt3dQuery(world.walls, {minx:0,miny:0,minz:0,maxx:i%20,maxy:20,maxz:3}, []).length);
   return out;
 }
+// ============================================================
+//  TRUE 3D RAY PATHS  (Stage 2: experimental path tracing)
+//
+//  Stage 1 proved the geometry and the mathematics with rays that were
+//  deliberately held horizontal. Stage 2 lets the ray actually move through
+//  Z: it starts at an AP's real elevation and follows genuinely inclined
+//  paths through the real building volumes.
+//
+//  This is STILL a parallel engine. Nothing here is called by runRayTrace(),
+//  no heatmap is populated, there is no UI, and no azimuth x elevation fan
+//  exists. A path is traced one at a time, on request, for validation.
+// ============================================================
+
+// ------------------------------------------------------------
+//  LAUNCHER
+//
+//  Every true-3D ray starts at the AP's REAL absolute height:
+//      floorElevation(AP owner floor) + apMount(AP)
+//  never at the compatibility receiver plane. See rt3dApOriginZ() above.
+//
+//  This is a single targeted ray, NOT a fan. It answers exactly one question:
+//  "given this AP and this 3D target point, which way is the ray, and where
+//  does it go?". Direction is the normalised difference, so dz is positive,
+//  negative or zero purely as a consequence of the geometry, and a target on
+//  another floor is just a target with a different z.
+// ------------------------------------------------------------
+function rt3dApOrigin(ap, apFloorIndex){
+  return rt3dV(ap.x, ap.y, rt3dApOriginZ(apFloorIndex, ap));
+}
+// A ray from an AP to an explicit 3D target point.
+function rt3dRayToTarget(ap, apFloorIndex, target){
+  const o = rt3dApOrigin(ap, apFloorIndex);
+  return rt3dRayBetween(o, target);
+}
+// A ray between two explicit 3D points. Returns null when the points coincide,
+// because a zero direction has no meaning - the caller must supply a real
+// target rather than have the launcher invent one.
+function rt3dRayBetween(origin, target){
+  const d = rt3dSub(target, origin);
+  if(!(rt3dLenSq(d) > 0)) return null;
+  return rt3dRay(origin.x, origin.y, origin.z, d.x, d.y, d.z);
+}
+
+// ------------------------------------------------------------
+//  EVENT RESOLUTION
+//
+//  One body -> its next physical event along the ray, as a distance along
+//  the ray. This is where the Stage-1 intersection contracts are consumed.
+//
+//  For a closed volume the event is its ENTRY, and the entry and exit
+//  parameters together define the single physical traversal. For a wall the
+//  event is the mid-plane SURFACE crossing (the reflection site) while the
+//  surrounding body still supplies the traversal extent, so thickness stays
+//  real geometry without changing the loss.
+//
+//  Returns null when the body cannot be reached within `horizon` metres.
+// ------------------------------------------------------------
+function rt3dBodyEvent(ray, body, horizon){
+  const tMax = (horizon==null || !Number.isFinite(horizon)) ? null : Math.max(0, horizon);
+  if(body.kind==='wall'){
+    const surf = rt3dWallSurfaceHit(ray, body, tMax);
+    if(!surf) return null;
+    // the resolved BODY is the traversal extent; the plane is the surface
+    const vol = rt3dWallVolumeHit(ray, body, tMax);
+    const tExit = (vol && !vol.empty && vol.tExit > surf.t) ? vol.tExit : surf.t;
+    return { body:body, kind:'wall', tEnter:surf.t, tExit:tExit,
+             point:surf.point, normal:surf.normal,
+             loss:body.loss, traversals:1, surface:true };
+  }
+  if(body.kind==='pillar'){
+    const c = rt3dPillarVolumeHit(ray, body, tMax);
+    return rt3dContactEvent(c, body, 'pillar');
+  }
+  if(body.kind==='rfObject'){
+    const c = rt3dRfObjectVolumeHit(ray, body, tMax);
+    return rt3dContactEvent(c, body, 'rfObject');
+  }
+  if(body.kind==='slab' || body.kind==='ceiling'){
+    const c = rt3dHorizontalVolumeHit(ray, body, tMax);
+    return rt3dContactEvent(c, body, body.kind);
+  }
+  return null;
+}
+function rt3dContactEvent(c, body, kind){
+  if(!c || c.empty || !rt3dHasTraversal(c)) return null;
+  return { body:body, kind:kind, tEnter:c.tEnter, tExit:c.tExit,
+           point:c.pointEnter, normal:c.normalEnter,
+           loss:body.loss, traversals:c.traversals, surface:false,
+           runs:c.runs, tangential:false };
+}
+
+// Every candidate event on a ray, ordered by true 3D distance. This is the
+// event-ordering primitive: ordering is by distance ALONG THE RAY, which for
+// an inclined ray is not the XY projection, and it is computed over the whole
+// body set at once rather than per obstacle family.
+function rt3dCandidateEvents(world, ray, horizon, kinds){
+  const out=[];
+  const consider=(list)=>{
+    for(const body of list){
+      if(kinds && kinds.indexOf(body.kind)<0) continue;
+      const e=rt3dBodyEvent(ray, body, horizon);
+      if(e) out.push(e);
+    }
+  };
+  consider(world.walls);
+  consider(world.pillars);
+  consider(world.rfObjects);
+  consider(world.slabs);
+  consider(world.ceilings);
+  out.sort((a,b)=>a.tEnter-b.tEnter);
+  return out;
+}
+
+// ------------------------------------------------------------
+//  EXPERIMENTAL PATH TRACER
+//
+//  Advances in CONTINUOUS ray-parameter space. There is no fixed step and no
+//  XY marcher here: at every stage the tracer asks the whole world for its
+//  next physical event and jumps straight to it.
+//
+//  Loop, in plain terms:
+//      nearest event over all bodies
+//      -> advance to it, recording the real 3D point
+//      -> charge ONE material loss per positive traversal
+//      -> reflect (vertical walls only) or transmit
+//      -> repeat
+//
+//  Transmission bookkeeping is the subtle part and is deliberately NOT a
+//  global "have I paid for this object" set. A body the ray is currently
+//  inside is skipped for ENTRY, because its traversal was already charged on
+//  the way in; the moment the ray leaves it, the body becomes chargeable
+//  again. So one continuous passage charges once, while a path that leaves
+//  and later re-enters - for example after a reflection - is charged again,
+//  as many times as it physically happens.
+// ------------------------------------------------------------
+function rt3dTracePath(world, ray0, opts){
+  opts = opts||{};
+  const maxDistance   = opts.maxDistance!=null ? opts.maxDistance : 120;
+  const maxReflections= opts.maxReflections!=null ? opts.maxReflections : 1;
+  const reflectWalls  = opts.reflectWalls!==false;   // walls only
+  const reflectLossDb = Number.isFinite(opts.reflectLossDb) ? opts.reflectLossDb : 0;
+  const maxEvents     = opts.maxEvents!=null ? opts.maxEvents : 256;
+  const kinds         = opts.kinds || null;           // optional body filter
+  const collectAll    = opts.collectCandidates ? [] : null;
+
+  let ray = rt3dRay(ray0.x, ray0.y, ray0.z, ray0.dx, ray0.dy, ray0.dz);
+  if(!ray) return null;
+  const origin = rt3dV(ray.x, ray.y, ray.z);
+  const initialDirection = rt3dV(ray.dx, ray.dy, ray.dz);
+
+  const events=[];
+  let dist=0, materialLoss=0, reflections=0, transmissions=0;
+  let terminated='escaped';
+  // bodies currently being traversed: {body, exitDist}
+  let inside=[];
+
+  for(let iter=0; iter<maxEvents; iter++){
+    // Everything below is compared in ABSOLUTE path distance, never in the
+    // per-step relative parameter: mixing the two lets the tracer step past a
+    // body exit it still owes, which would leave that body permanently marked
+    // as "inside" and silently suppress a genuine later re-entry.
+    let exitAt=Infinity, exitIdx=-1;
+    for(let i=0;i<inside.length;i++){
+      const e=inside[i].exitDist;
+      if(e > dist + RT3D_TOL.zeroLength && e < exitAt){ exitAt=e; exitIdx=i; }
+    }
+    const limit = Math.min(exitAt, maxDistance);
+    // horizon is a RELATIVE reach, because that is what the intersection
+    // primitives take; convert from the absolute limit.
+    const horizon = Math.max(0, limit - dist);
+
+    const cands = rt3dCandidateEvents(world, ray, horizon, kinds);
+    if(collectAll && iter===0) for(const c of cands) collectAll.push({
+      kind:c.kind, objectId:(c.body && c.body.objectId), t:+c.tEnter.toFixed(9),
+      absoluteDistance:+(dist + c.tEnter).toFixed(9),
+      point:{x:+c.point.x.toFixed(6), y:+c.point.y.toFixed(6), z:+c.point.z.toFixed(6)},
+      loss:c.loss });
+
+    // Skip a body we are already inside: its traversal is paid for. Choose
+    // the nearest by ABSOLUTE distance along the path.
+    let best=null, bestAbs=Infinity;
+    for(const c of cands){
+      let inHere=false;
+      for(const s of inside) if(s.body===c.body){ inHere=true; break; }
+      if(inHere) continue;
+      const abs = dist + c.tEnter;
+      if(abs < bestAbs){ bestAbs=abs; best=c; }
+    }
+
+    if(best && bestAbs < exitAt){
+      const advance = best.tEnter;
+      const point = best.point;
+      const dirBefore = rt3dV(ray.dx, ray.dy, ray.dz);
+      dist = bestAbs;
+      const isWall = best.kind==='wall';
+      const canReflect = isWall && reflectWalls && reflections < maxReflections;
+
+      if(canReflect){
+        // Reflection is a SURFACE event: the path leaves at the plane and
+        // does not enter the body, so no transmission is charged. The wall's
+        // material is still reported for diagnostics.
+        const r = rt3dReflect(dirBefore, best.normal);
+        events.push({ type:'reflection', objectType:best.kind,
+                      objectId:best.body.objectId,
+                      point:rt3dV(point.x,point.y,point.z), normal:rt3dV(best.normal.x,best.normal.y,best.normal.z),
+                      distance:dist, material:best.body.materialId,
+                      loss:reflectLossDb, reflected:true, transmitted:false,
+                      dzBefore:dirBefore.z, dzAfter:r.z,
+                      traversals:0, tEnter:best.tEnter, tExit:best.tExit });
+        materialLoss += reflectLossDb;
+        reflections++;
+        if(reflections >= maxReflections && opts.stopAfterReflection !== false){
+          // keep going: a reflected path must be able to collide again. The
+          // flag only records the budget, it does not end the path.
+        }
+        // new origin nudged along the NEW direction, so the plane just left
+        // cannot be re-hit through floating-point noise
+        const nd = rt3dRay(point.x + r.x*RT3D_TOL.originNudge,
+                           point.y + r.y*RT3D_TOL.originNudge,
+                           point.z + r.z*RT3D_TOL.originNudge, r.x, r.y, r.z);
+        if(!nd){ terminated='degenerate'; break; }
+        ray = nd;
+        continue;
+      }
+
+      // Transmission: ONE effective material loss per positive traversal,
+      // regardless of how much material the ray actually crossed. Thickness
+      // is geometry only and never scales the dB.
+      const charge = best.loss * best.traversals;
+      materialLoss += charge;
+      transmissions += best.traversals;
+      events.push({ type:'transmission', objectType:best.kind,
+                    objectId:best.body.objectId,
+                    point:rt3dV(point.x,point.y,point.z),
+                    normal:best.normal? rt3dV(best.normal.x,best.normal.y,best.normal.z):null,
+                    distance:dist, material:best.body.materialId,
+                    loss:charge, reflected:false, transmitted:true,
+                    traversals:best.traversals, tEnter:best.tEnter, tExit:best.tExit });
+      const nd = rt3dRay(point.x + dirBefore.x*RT3D_TOL.originNudge,
+                         point.y + dirBefore.y*RT3D_TOL.originNudge,
+                         point.z + dirBefore.z*RT3D_TOL.originNudge,
+                         dirBefore.x, dirBefore.y, dirBefore.z);
+      if(!nd){ terminated='degenerate'; break; }
+      ray = nd;
+      // the exit is recorded in ABSOLUTE path distance, and only for a real
+      // volume: a wall plane has no interior to be inside of
+      if(!isWall){
+        const exitAbs = dist + (best.tExit - best.tEnter);
+        if(Number.isFinite(exitAbs) && exitAbs > dist + RT3D_TOL.zeroLength)
+          inside.push({ body:best.body, exitDist: exitAbs });
+      }
+      continue;
+    }
+
+    if(exitIdx>=0){
+      // leave the body: no loss, just resume from the far side
+      inside.splice(exitIdx,1);
+      const step = exitAt - dist;
+      dist = exitAt;
+      const d0 = rt3dRayDir(ray);
+      const p = rt3dRayPoint(ray, step);
+      const nr = rt3dRay(p.x + d0.x*RT3D_TOL.originNudge,
+                         p.y + d0.y*RT3D_TOL.originNudge,
+                         p.z + d0.z*RT3D_TOL.originNudge, d0.x, d0.y, d0.z);
+      if(!nr){ terminated='degenerate'; break; }
+      ray = nr;
+      continue;
+    }
+
+    // nothing left to hit
+    dist = maxDistance;
+    terminated = 'maxDistance';
+    break;
+  }
+  if(terminated==='escaped' && events.length && dist>=maxDistance) terminated='maxDistance';
+
+  return {
+    origin: origin,
+    initialDirection: initialDirection,
+    events: events,
+    totalDistance: dist,
+    totalMaterialLoss: materialLoss,
+    reflections: reflections,
+    transmissions: transmissions,
+    terminated: terminated,
+    finalRay: { x:ray.x, y:ray.y, z:ray.z, dx:ray.dx, dy:ray.dy, dz:ray.dz }
+  };
+}
+
+// Convenience: the full diagnostic for one AP -> one 3D target, on a world
+// built from the live canonical project state.
+function rt3dTraceApToPoint(world, ap, apFloorIndex, target, opts){
+  const ray = rt3dRayToTarget(ap, apFloorIndex, target);
+  if(!ray) return null;
+  const cands = (opts && opts.collectCandidates) ? [] : null;
+  const o = opts ? Object.assign({}, opts) : {};
+  if(cands) o.collectCandidates = true;
+  const r = rt3dTracePath(world, ray, o);
+  if(r && cands) r.candidates = cands;
+  return r;
+}
+
+// Sum the material loss of every event of one kind, e.g. how much a Ceiling
+// cost a path. `type` matches either the event kind ('transmission',
+// 'reflection') or the physical body kind ('wall', 'pillar', 'rfObject',
+// 'slab', 'ceiling'), so an assertion about a specific barrier is readable.
+function rt3dMatchEvent(e, type){
+  return e.type===type || e.objectType===type;
+}
+function rt3dLossByType(trace, type){
+  if(!trace) return 0;
+  let s=0;
+  for(const e of trace.events) if(rt3dMatchEvent(e, type)) s+=e.loss;
+  return s;
+}
+function rt3dCountByType(trace, type){
+  if(!trace) return 0;
+  let n=0;
+  for(const e of trace.events) if(rt3dMatchEvent(e, type)) n++;
+  return n;
+}
+function rt3dEventsFor(trace, objectId){
+  if(!trace) return [];
+  return trace.events.filter(e=>e.objectId===objectId);
+}
+
 function smoothRSSI(src,w,h){
   const NEG=-300; const a=Float32Array.from(src, v=> v===-Infinity?NEG:v);
   const d=new Float32Array(w*h);
@@ -7337,7 +7729,7 @@ function bgPlaneGeometryClipped(f){
 function slabGeometryForPlan(plan, thickness){
   const parts=slabSolidForPlan(plan);
   if(!parts.length) return null;
-  const th=(thickness==null)?0.12:thickness;
+  const th=(thickness==null)?SLAB_THICKNESS_M:thickness;
   const pos=[], nrm=[], idx=[];
   const v=(x,y,z,nx,ny,nz)=>{ pos.push(x,y,z); nrm.push(nx,ny,nz); return pos.length/3-1; };
   parts.forEach(part=>{
@@ -7365,7 +7757,7 @@ function slabGeometryForPlan(plan, thickness){
 }
 // Slab geometry with real holes for slab openings (visual only; RF untouched).
 // Shape coords use (worldX, -worldY); after rotateX(-PI/2) + translate the mesh
-// occupies world x∈[minx,maxx], y∈[-0.12,0], z(worldY)∈[miny,maxy] — exactly the
+// occupies world x∈[minx,maxx], y∈[-SLAB_THICKNESS_M,0], z(worldY)∈[miny,maxy] — exactly the
 // legacy BoxGeometry volume. Returns null when there is no usable opening, in
 // which case the caller keeps the legacy solid-slab path.
 function slabGeometryForFloor(b, openings){
@@ -7387,9 +7779,9 @@ function slabGeometryForFloor(b, openings){
     shape.lineTo(b.maxx,-b.maxy); shape.lineTo(b.minx,-b.maxy);
     shape.closePath();
     shape.holes=holes;
-    const geo=new THREE.ExtrudeGeometry(shape,{depth:0.12,bevelEnabled:false});
+    const geo=new THREE.ExtrudeGeometry(shape,{depth:SLAB_THICKNESS_M,bevelEnabled:false});
     geo.rotateX(-Math.PI/2);
-    geo.translate(0,-0.12,0);
+    geo.translate(0,-SLAB_THICKNESS_M,0);
     return geo;
   }catch(_){ return null; }
 }
@@ -7440,7 +7832,7 @@ function build3d(){
       const holedSlabGeo=slabGeometryForFloor(b, f.openings);
       if(holedSlabGeo){ slab=new THREE.Mesh(holedSlabGeo,slabMat); slab.position.set(-cx,0,-cz); }
       else {
-        slab=new THREE.Mesh(new THREE.BoxGeometry(fw,0.12,fd),slabMat);
+        slab=new THREE.Mesh(new THREE.BoxGeometry(fw,SLAB_THICKNESS_M,fd),slabMat);
         slab.position.set((b.minx+b.maxx)/2-cx, -0.06, (b.miny+b.maxy)/2-cz);
       }
     }
@@ -9160,12 +9552,12 @@ function gltfExtras(type,id,fi,more){
   return e;
 }
 // ---- floor slab geometry for the export ----
-// Mirrors the interactive 3D slab: a 0.12 m plate whose top sits on the floor
+// Mirrors the interactive 3D slab: a SLAB_THICKNESS_M plate whose top sits on the floor
 // elevation and whose plan area is floorBounds(f) minus the floor openings, cut as
 // real holes. Interactive 3D builds the same solid with THREE.ExtrudeGeometry;
 // the export triangulates it in plain 2D, using the same ring cleaning and the same
 // plan bounds, so both readings agree. Plan (x,y) maps to glTF (x, elevation, z).
-const GLTF_SLAB_THICKNESS=0.12;
+const GLTF_SLAB_THICKNESS=SLAB_THICKNESS_M;
 const GLTF_SLAB_COLOR=[0x1b/255,0x24/255,0x30/255];   // #1b2430, same as interactive 3D
 // Outer rectangle + opening rings for one floor, in plan coordinates. Openings are
 // cleaned exactly like the interactive helper and clipped to the footprint, so an

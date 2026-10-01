@@ -222,11 +222,13 @@ console.log('Stage 1 validation — true 3D ray kernel\n');
     // ray descending through the slab plane
     var hit=rt3dHorizontalVolumeHit(rt3dRay(0,0,4.0, 0,0,-1), b, 100);
     return {zB:b.zBottom, zT:b.zTop, tr:hit.traversals, e:hit.tEnter, x:hit.tExit,
-            loss:hit.loss, floorIndex:b.floorIndex};
+            loss:hit.loss, floorIndex:b.floorIndex, th:b.thickness, canonical:SLAB_THICKNESS_M};
   })()`);
-  check(11, 'slab horizontal-volume traversal',
-    near(r.zT, 3) && near(r.zB, 3 - 0.20) &&
-    r.tr === 1 && near(r.e, 1.0) && near(r.x, 1.2) && r.loss > 0 && r.floorIndex === 1,
+  // the slab volume uses the CANONICAL slab thickness, the same plate the 3D
+  // view draws and the glTF export writes
+  check(11, 'slab horizontal-volume traversal (canonical SLAB_THICKNESS_M interval)',
+    near(r.zT, 3) && near(r.th, r.canonical) && near(r.zB, 3 - r.canonical) &&
+    r.tr === 1 && near(r.e, 1.0) && near(r.x, 1.0 + r.canonical) && r.loss > 0 && r.floorIndex === 1,
     JSON.stringify(r));
 }
 
