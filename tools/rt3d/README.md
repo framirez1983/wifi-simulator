@@ -24,7 +24,10 @@ node tools/rt3d/run-all.mjs      # everything below, in order
 | `stage3.test.mjs`, `stage3-paths.test.mjs`, `stage3-stress.test.mjs` | Stage 3: deterministic AABB BVH, path equivalence against the linear oracle, and a 12 000-ray differential stress run |
 | `slab-thickness.test.mjs` | one canonical slab thickness shared by interactive 3D, glTF export and RT3D |
 | `stage4.test.mjs` | Stage 4: deterministic 3D emission fan, receiver-plane crossing, and the sample-record budget |
-| `bench2.mjs`, `bench3.mjs`, `bench4.mjs` | per-stage performance harnesses (nearest query, full path, emission fan) |
+| `stage5.test.mjs` | Stage 5: the `?rt3d=1` experimental browser layer — gating, live-project feeding, binning, no-interpolation and no-persistence |
+| `stage5-completion.test.mjs` | Stage 5 async completion: `cursor >= total` must finalize exactly once, never strand, on a faked clock |
+| `stage5-contract.test.mjs` | Stage 5 result/grid-spec contract, executed through the **real** `rt3dExpStart()` path: snapshot semantics, painting, cache consistency |
+| `bench2.mjs`, `bench3.mjs`, `bench4.mjs`, `stage5-bench.mjs` | per-stage performance harnesses (nearest query, full path, emission fan, experimental browser layer) |
 | `manual-scenes.mjs` | **not a check** — writes development-only diagnostic SVGs for visual inspection |
 
 `oracle.mjs` defaults to `check`. Use `node tools/rt3d/oracle.mjs record` only
@@ -56,6 +59,52 @@ drift from the geometry.
 
 Nothing in this directory is loaded by `index.html`. The SVGs are regenerated
 from scratch on every run and are not committed as reference artifacts.
+
+## Stage 5: the `?rt3d=1` experimental browser layer
+
+Stage 5 is the first stage whose acceptance surface is the real application in
+a browser with a real loaded project. It is **not production**:
+
+- The layer exists only when the page is opened with `?rt3d=1`. Without that
+  flag it creates no DOM, stores nothing, and the single production call site
+  (`rt3dExpInit()` from `start()`) returns immediately.
+- `runRayTrace()` remains the default engine and is byte-identical to baseline
+  `78876a2`. The experimental layer does not replace it, merge with it, or
+  change what the Ray tracing button does.
+- The layer reads the live `state` object through the same
+  `rt3dBuildWorld()` validated in Stages 1–4. Nothing is exported to Node and
+  re-imported through another representation.
+- The mode is not persisted. Nothing in it is reachable from `state`, and
+  `saveProject()` cannot serialise it.
+
+```
+node tools/rt3d/stage5-bench.mjs   # performance + sample coverage on a project-like scene
+```
+
+`stage5-bench.mjs` builds a PROJECT-LIKE two-floor scene with the ingredients
+S4 exercises (shell, glass partition, pillars, racks at several heights, a
+normal-height Ceiling with holes, a slab with Openings, APs on two floors). It is
+a stand-in, not S4Optik: its timings carry the Node vm cross-context overhead
+seen in the other benches and exclude rendering, so read them as an order of
+magnitude.
+
+### Engine rules, all printed in the in-app panel
+
+| rule | value |
+|---|---|
+| AP inclusion | `apParticipatesInRf(ap) && ap.bands.includes(state.band)` over **all** floors; no filter by floor, height or distance |
+| receiver plane | `rt3dReceiverPlaneZForFloor(state.activeFloor)` — absolute Z |
+| grid | `rt3dGridSpec(activeFloor)` — the same cells as the legacy tracer |
+| binning | direct cell binning; no interpolation, blur, smoothing, splat or IDW |
+| aggregation | strongest single sample per cell (the legacy `depositCell` rule); never averaged, never summed, no power summation |
+| no-data | unsampled cell = `-Infinity` = fully transparent |
+| antenna | azimuth-only (`antennaAzGain`); the Simple/SINR vertical/downtilt model is **not** reconciled here |
+| fan | Stage-4 `equalSolidAngle`, unchanged |
+
+RT3D paints through its own canvas rather than `heatGridDisp`, because
+`paintHeat()` honours the user's `heatmapSmoothing` preference and would
+interpolate an RT3D grid. Colour comes from the application's own `rssiColor()`,
+so there is no second colour interpretation.
 
 ## How it works
 

@@ -209,6 +209,41 @@
     padding:3px 0;color:var(--muted)}
   .stat b{color:var(--ink);font-weight:500}
   input[type=file]{display:none}
+
+  /* ---- RT3D experimental panel (?rt3d=1 only) --------------------
+     Development-only surface. Created by rt3dExpBuildPanel(), which runs
+     only when the ?rt3d=1 flag is present, so without the flag none of this
+     styling is ever applied to anything. */
+  #rt3dExpPanel{position:absolute;right:14px;top:64px;width:330px;z-index:31;
+    background:rgba(13,17,23,.95);border:1px solid #2a3542;border-radius:8px;
+    padding:10px 11px;color:#cdd7e3;font-size:11px;
+    box-shadow:0 6px 22px rgba(0,0,0,.45);max-height:calc(100vh - 90px);overflow:auto}
+  #rt3dExpPanel .rt3dh{color:#ffb454;font-weight:700;font-size:12px;letter-spacing:.4px}
+  #rt3dExpPanel .rt3dh2{color:#ffb454;font-weight:700;font-size:11.5px;
+    border-bottom:1px solid #2a3542;padding-bottom:3px;margin:2px 0 5px}
+  #rt3dExpPanel .rt3dsub{color:#7d8b98;margin-bottom:7px}
+  #rt3dExpPanel .rt3dsub2{color:#7d8b98;font-weight:400}
+  #rt3dExpPanel .rt3drow{display:flex;gap:6px;align-items:center;margin:4px 0}
+  #rt3dExpPanel .rt3drow label{flex:0 0 78px;color:#8b98a5}
+  #rt3dExpPanel select{flex:1;min-width:0;background:#1b232c;color:#cdd7e3;
+    border:1px solid #2a3542;border-radius:4px;font-size:11px;padding:2px}
+  #rt3dExpPanel .rt3dbtns{display:flex;gap:5px;margin:7px 0}
+  #rt3dExpPanel .rt3dbtns button{flex:1;background:#1b232c;color:#cdd7e3;
+    border:1px solid #2a3542;border-radius:4px;font-size:11px;padding:4px 2px;cursor:pointer}
+  #rt3dExpPanel .rt3dbtns button.primary{border-color:#ffb454;color:#ffb454}
+  #rt3dExpPanel .rt3dbtns button:disabled{opacity:.4;cursor:default}
+  #rt3dExpPanel .rt3dout{border-top:1px solid #2a3542;padding-top:6px;margin-top:2px}
+  #rt3dExpPanel .rt3dr{display:flex;justify-content:space-between;gap:8px;
+    font-family:var(--mono);font-size:10px;line-height:1.55}
+  #rt3dExpPanel .rt3dr span{color:#7d8b98;flex:0 0 auto}
+  #rt3dExpPanel .rt3dr b{color:#d7e1ea;font-weight:600;text-align:right}
+  #rt3dExpPanel .rt3deng[data-e="rt3d"]{color:#5ad0ff}
+  #rt3dExpPanel .rt3deng[data-e="legacy"]{color:#7ee0a8}
+  #rt3dExpPanel .rt3dn{color:#8b98a5;font-size:10px;line-height:1.5;margin-top:5px}
+  #rt3dExpPanel .rt3dwarn{color:#ffc98a;font-size:10px;line-height:1.5;
+    margin-top:6px;border-left:2px solid #ffb454;padding-left:6px}
+  #rt3dExpPanel hr{border:0;border-top:1px solid #2a3542;margin:6px 0}
+  #rt3dExpPanel progress{width:100%;height:6px}
 </style>
 </head>
 <body>
@@ -694,6 +729,59 @@ const translations = {
     "auto.run": "Colocar",
     "coverage.leaked": "⚠︎ No se pudo delimitar el interior. ¿Están completamente cerradas las paredes exteriores? Por ahora se cuenta toda la superficie.",
     "coverage.indoorHint": "La cobertura se calcula solo en el interior (deducido de las paredes).",
+    "rt3d.exp.title": "RT3D EXPERIMENTAL",
+    "rt3d.exp.sub": "modo de desarrollo · ?rt3d=1 · no es producción",
+    "rt3d.exp.engine": "motor",
+    "rt3d.exp.engine.none": "oculto",
+    "rt3d.exp.engine.legacy": "Ray Tracing clásico",
+    "rt3d.exp.engine.rt3d": "RT3D experimental",
+    "rt3d.exp.hidden": "oculto",
+    "rt3d.exp.legacy": "Ray Tracing clásico",
+    "rt3d.exp.rt3d": "RT3D experimental",
+    "rt3d.exp.fan": "abanico",
+    "rt3d.exp.fanLow": "bajo · {az}×{el} = {rays} rayos/AP",
+    "rt3d.exp.fanMedium": "medio · {az}×{el} = {rays} rayos/AP",
+    "rt3d.exp.fanHigh": "alto · {az}×{el} = {rays} rayos/AP",
+    "rt3d.exp.cells": "mostrar celdas muestreadas",
+    "rt3d.exp.runLegacy": "Ejecutar RT clásico",
+    "rt3d.exp.runRt3d": "Ejecutar RT3D",
+    "rt3d.exp.cancel": "Cancelar",
+    "rt3d.exp.noRun": "Todavía no hay ninguna ejecución RT3D.",
+    "rt3d.exp.cancelled": "ejecución cancelada — resultado parcial",
+    "rt3d.exp.failed": "Falló la finalización de RT3D",
+    "rt3d.exp.stalled": "La ejecución RT3D se ha quedado atascada antes de completarse",
+    "rt3d.exp.stalledProgress": "procesados {done} / {total} rayos",
+    "rt3d.exp.stalledDiscard": "resultado parcial descartado",
+    "rt3d.exp.stalledKept": "Se conserva el último resultado RT3D válido:",
+    "rt3d.exp.stalledKeptNone": "No hay ningún resultado RT3D válido que conservar.",
+    "rt3d.exp.building": "construyendo mundo y BVH…",
+    "rt3d.exp.tracing": "trazando",
+    "rt3d.exp.runningLegacy": "ejecutando el Ray Tracing clásico…",
+    "rt3d.exp.legacyStats": "RT clásico",
+    "rt3d.d.displayed": "mostrando",
+    "rt3d.d.activeFloor": "planta activa",
+    "rt3d.d.planeZ": "Z plano receptor",
+    "rt3d.d.apCount": "AP considerados",
+    "rt3d.d.ownerFloors": "plantas propietarias",
+    "rt3d.d.fan": "abanico",
+    "rt3d.d.fanScheme": "esquema del abanico",
+    "rt3d.d.emitted": "rayos emitidos",
+    "rt3d.d.reached": "rayos que alcanzan el plano",
+    "rt3d.d.samples": "muestras",
+    "rt3d.d.cells": "celdas",
+    "rt3d.d.coverage": "cobertura de muestras",
+    "rt3d.d.bodies": "cuerpos del mundo",
+    "rt3d.d.timing": "tiempos",
+    "rt3d.d.gridCell": "celda de la rejilla",
+    "rt3d.d.maxDistance": "distancia máx.",
+    "rt3d.d.antenna": "ganancia de antena",
+    "rt3d.d.cellRule": "regla de celda",
+    "rt3d.d.rasterRule": "regla de rasterizado",
+    "rt3d.d.aggregation": "agregación",
+    "rt3d.d.noData": "sin datos",
+    "rt3d.d.apRule": "regla de AP",
+    "rt3d.d.wrongFloor": "resultado RT3D pertenece a otra planta",
+    "rt3d.d.noDataLegend": "Leyenda: el color es la escala RSSI de la aplicación; transparente = ninguna muestra de RT3D alcanzó esa celda.",
     "trace.progress": "Ray tracing — calculando propagación…",
     "trace.pillarsWarning": "Ray tracing — calculando propagación… Los pilares RF se tratan como obstáculos de transmisión; sin reflexiones cilíndricas.",
     "error.lastFloor": "Se requiere al menos una planta.",
@@ -1018,6 +1106,59 @@ const translations = {
     "auto.run": "Place",
     "coverage.leaked": "⚠︎ Could not determine the indoor boundary — are the outer walls fully closed? Counting the entire area for now.",
     "coverage.indoorHint": "Coverage counts only indoor areas (derived from walls).",
+    "rt3d.exp.title": "RT3D EXPERIMENTAL",
+    "rt3d.exp.sub": "development mode · ?rt3d=1 · not production",
+    "rt3d.exp.engine": "engine",
+    "rt3d.exp.engine.none": "hidden",
+    "rt3d.exp.engine.legacy": "Legacy Ray Tracing",
+    "rt3d.exp.engine.rt3d": "RT3D Experimental",
+    "rt3d.exp.hidden": "hidden",
+    "rt3d.exp.legacy": "Legacy Ray Tracing",
+    "rt3d.exp.rt3d": "RT3D Experimental",
+    "rt3d.exp.fan": "fan",
+    "rt3d.exp.fanLow": "low · {az}×{el} = {rays} rays/AP",
+    "rt3d.exp.fanMedium": "medium · {az}×{el} = {rays} rays/AP",
+    "rt3d.exp.fanHigh": "high · {az}×{el} = {rays} rays/AP",
+    "rt3d.exp.cells": "show sampled cells",
+    "rt3d.exp.runLegacy": "Run Legacy RT",
+    "rt3d.exp.runRt3d": "Run RT3D",
+    "rt3d.exp.cancel": "Cancel",
+    "rt3d.exp.noRun": "No RT3D run yet.",
+    "rt3d.exp.cancelled": "run cancelled — partial result",
+    "rt3d.exp.failed": "RT3D finalisation failed",
+    "rt3d.exp.stalled": "RT3D run stalled before completion",
+    "rt3d.exp.stalledProgress": "processed {done} / {total} rays",
+    "rt3d.exp.stalledDiscard": "partial result discarded",
+    "rt3d.exp.stalledKept": "Keeping the last valid RT3D result:",
+    "rt3d.exp.stalledKeptNone": "There is no valid RT3D result to keep.",
+    "rt3d.exp.building": "building world and BVH…",
+    "rt3d.exp.tracing": "tracing",
+    "rt3d.exp.runningLegacy": "running legacy Ray Tracing…",
+    "rt3d.exp.legacyStats": "Legacy RT",
+    "rt3d.d.displayed": "displayed",
+    "rt3d.d.activeFloor": "active floor",
+    "rt3d.d.planeZ": "receiver plane Z",
+    "rt3d.d.apCount": "APs considered",
+    "rt3d.d.ownerFloors": "owner floors",
+    "rt3d.d.fan": "fan",
+    "rt3d.d.fanScheme": "fan scheme",
+    "rt3d.d.emitted": "emitted rays",
+    "rt3d.d.reached": "rays reaching plane",
+    "rt3d.d.samples": "samples",
+    "rt3d.d.cells": "cells",
+    "rt3d.d.coverage": "sample coverage",
+    "rt3d.d.bodies": "world bodies",
+    "rt3d.d.timing": "timing",
+    "rt3d.d.gridCell": "grid cell",
+    "rt3d.d.maxDistance": "max distance",
+    "rt3d.d.antenna": "antenna gain",
+    "rt3d.d.cellRule": "cell rule",
+    "rt3d.d.rasterRule": "raster rule",
+    "rt3d.d.aggregation": "aggregation",
+    "rt3d.d.noData": "no-data",
+    "rt3d.d.apRule": "AP rule",
+    "rt3d.d.wrongFloor": "cached RT3D result belongs to a different floor",
+    "rt3d.d.noDataLegend": "Legend: colour is the application RSSI scale; transparent = no RT3D sample reached that cell.",
     "trace.progress": "Ray tracing — calculating propagation…",
     "trace.pillarsWarning": "Ray tracing — calculating propagation… RF pillars are modeled as transmission obstacles; cylindrical reflections are not included.",
     "error.lastFloor": "At least one floor is required.",
@@ -1342,6 +1483,59 @@ const translations = {
     "auto.run": "Placera",
     "coverage.leaked": "⚠︎ Kunde inte avgränsa inomhus — är ytterväggarna helt slutna? Räknar hela ytan tills vidare.",
     "coverage.indoorHint": "Täckning räknas bara på inomhusytan (härledd från väggarna).",
+    "rt3d.exp.title": "RT3D EXPERIMENTAL",
+    "rt3d.exp.sub": "utvecklingsläge · ?rt3d=1 · inte produktion",
+    "rt3d.exp.engine": "motor",
+    "rt3d.exp.engine.none": "dold",
+    "rt3d.exp.engine.legacy": "Legacy Ray Tracing",
+    "rt3d.exp.engine.rt3d": "RT3D experimentell",
+    "rt3d.exp.hidden": "dold",
+    "rt3d.exp.legacy": "Legacy Ray Tracing",
+    "rt3d.exp.rt3d": "RT3D experimentell",
+    "rt3d.exp.fan": "fläkt",
+    "rt3d.exp.fanLow": "låg · {az}×{el} = {rays} strålar/AP",
+    "rt3d.exp.fanMedium": "medel · {az}×{el} = {rays} strålar/AP",
+    "rt3d.exp.fanHigh": "hög · {az}×{el} = {rays} strålar/AP",
+    "rt3d.exp.cells": "visa provtagna celler",
+    "rt3d.exp.runLegacy": "Kör legacy RT",
+    "rt3d.exp.runRt3d": "Kör RT3D",
+    "rt3d.exp.cancel": "Avbryt",
+    "rt3d.exp.noRun": "Ingen RT3D-körning ännu.",
+    "rt3d.exp.cancelled": "körningen avbröts — delvis resultat",
+    "rt3d.exp.failed": "RT3D-slutbearbetningen misslyckades",
+    "rt3d.exp.stalled": "RT3D-körningen stannade innan den var klar",
+    "rt3d.exp.stalledProgress": "bearbetade {done} / {total} strålar",
+    "rt3d.exp.stalledDiscard": "delvis resultat kastades",
+    "rt3d.exp.stalledKept": "Behåller senaste giltiga RT3D-resultat:",
+    "rt3d.exp.stalledKeptNone": "Det finns inget giltigt RT3D-resultat att behålla.",
+    "rt3d.exp.building": "bygger värld och BVH…",
+    "rt3d.exp.tracing": "spårar",
+    "rt3d.exp.runningLegacy": "kör legacy Ray Tracing…",
+    "rt3d.exp.legacyStats": "Legacy RT",
+    "rt3d.d.displayed": "visas",
+    "rt3d.d.activeFloor": "aktiv våning",
+    "rt3d.d.planeZ": "Z mottagarenivå",
+    "rt3d.d.apCount": "AP som beaktas",
+    "rt3d.d.ownerFloors": "ägande våningar",
+    "rt3d.d.fan": "fläkt",
+    "rt3d.d.fanScheme": "fläktschema",
+    "rt3d.d.emitted": "utsända strålar",
+    "rt3d.d.reached": "strålar som når nivån",
+    "rt3d.d.samples": "prov",
+    "rt3d.d.cells": "celler",
+    "rt3d.d.coverage": "provtäckning",
+    "rt3d.d.bodies": "världskroppar",
+    "rt3d.d.timing": "tider",
+    "rt3d.d.gridCell": "rutnätscell",
+    "rt3d.d.maxDistance": "maxavstånd",
+    "rt3d.d.antenna": "antennvinst",
+    "rt3d.d.cellRule": "cellregel",
+    "rt3d.d.rasterRule": "rasterregel",
+    "rt3d.d.aggregation": "aggregering",
+    "rt3d.d.noData": "inga data",
+    "rt3d.d.apRule": "AP-regel",
+    "rt3d.d.wrongFloor": "cachat RT3D-resultatet hör till en annan våning",
+    "rt3d.d.noDataLegend": "Förklaring: färgen är programmets RSSI-skala; transparent = inget RT3D-prov nådde den cellen.",
     "trace.progress": "Ray tracing — beräknar utbredning…",
     "trace.pillarsWarning": "Ray tracing — beräknar utbredning… RF-pelare modelleras som transmissionshinder; cylindriska reflektioner ingår inte.",
     "error.lastFloor": "Minst en våning krävs.",
@@ -1945,6 +2139,32 @@ function draw2d(){
     ctx.save(); ctx.globalAlpha=0.62; ctx.imageSmoothingEnabled=(Number(editorPrefs.heatmapSmoothing)||0)>0;
     ctx.drawImage(heatCanvas, a.x, a.y, b.x-a.x, b.y-a.y);
     ctx.restore();
+  }
+
+  // RT3D experimental underlay. Reachable only with ?rt3d=1, and only while the
+  // experimental engine is the one actually selected: rt3dExpActive() is false
+  // unless the flag is present AND showHeat is off, so with no flag, or whenever
+  // anything turns coverage back on (including the stock Ray tracing button),
+  // this block does nothing at all. Painted from its own canvas with smoothing
+  // hard-off, because RT3D cells are raw binning and must not be interpolated.
+  if(rt3dExpActive() && rt3dExpCanvas && rt3dExpMeta && rt3dExpMeta.floorId===f.id){
+    const a=W2S(rt3dExpMeta.minx,rt3dExpMeta.miny), b=W2S(rt3dExpMeta.maxx,rt3dExpMeta.maxy);
+    ctx.save(); ctx.globalAlpha=0.62; ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(rt3dExpCanvas, a.x, a.y, b.x-a.x, b.y-a.y);
+    ctx.restore();
+    // Optional inspection aid: outline every cell that actually holds a sample.
+    // Not interpolation — it only shows where evidence exists.
+    if(rt3dExpShowCells && rt3dExpCells && rt3dExpMeta){
+      const cw=(b.x-a.x)/rt3dExpSpec.cols;
+      const chh=(b.y-a.y)/rt3dExpSpec.rows;
+      ctx.save(); ctx.strokeStyle='rgba(120,220,255,.55)'; ctx.lineWidth=1;
+      ctx.beginPath();
+      for(let q=0;q<rt3dExpCells.length;q+=2){
+        const px=a.x+rt3dExpCells[q]*cw, py=b.y-(rt3dExpCells[q+1]+1)*chh;
+        ctx.rect(px,py,cw,chh);
+      }
+      ctx.stroke(); ctx.restore();
+    }
   }
 
   // no-AP zones
@@ -6371,6 +6591,679 @@ function rt3dTraceFan(world, ap, apFloorIndex, planeZ, opts){
       reflectionLossDb: reflLoss
     }
   };
+}
+
+
+// ============================================================
+//  RT3D EXPERIMENTAL BROWSER LAYER  (Stage 5)
+//
+//  THIS IS NOT PRODUCTION. It is an experimental development mode, reachable
+//  only when the page is opened with ?rt3d=1. Without that flag every line of
+//  this section is inert: the flag is read once at load, it is never stored in
+//  state, it is never written to the project file, and nothing it creates is
+//  rendered. runRayTrace() above is untouched and remains the default engine.
+//
+//  WHAT IT IS FOR: the first human acceptance test of RT3D against a real
+//  loaded project in a real browser. Stage 4 was validated in Node against
+//  fixtures. Nothing so far has shown an engineer what the true-3D engine does
+//  to an actual project.
+//
+//  HONESTY RULES THIS SECTION KEEPS, because they are the point of the stage:
+//    * Receiver-plane samples are binned into heat cells DIRECTLY. No
+//      interpolation, no blur, no smoothing, no splatting into neighbours, no
+//      inverse-distance weighting, no invented value for an unsampled cell.
+//    * A cell that received no RT3D sample stays -Infinity and paints fully
+//      transparent. That is the ONLY new visual semantic.
+//    * Per-cell aggregation is the legacy rule, unchanged: strongest single
+//      contribution wins. dBm are never averaged and never summed.
+//    * It renders through its own canvas rather than heatGridDisp, because
+//      paintHeat() applies the user's heatmapSmoothing preference and any value
+//      above zero makes it interpolate the grid. Smoothing here would be a lie.
+//    * It reuses rssiColor() unchanged, so the colour scale is the same scale
+//      the rest of the application uses.
+// ============================================================
+
+// ------------------------------------------------------------
+//  GATING
+//
+//  An explicit, non-persisted development flag. `typeof location` is guarded
+//  because the headless Node harness has no location and must still be able to
+//  evaluate this file.
+// ------------------------------------------------------------
+const RT3D_EXP_ENABLED = (typeof location!=='undefined'
+  && /(^|[?&])rt3d=1(?:&|$)/.test(String(location.search||''))) ? true : false;
+
+// Explicit fan presets, sized from the Stage-4 measurements rather than chosen
+// for appearance. rays/AP is exactly azimuthSamples * elevationSamples.
+const RT3D_EXP_FANS = {
+  low:    { key:'low',    azimuthSamples:12, elevationSamples:7  },  //   84
+  medium: { key:'medium', azimuthSamples:36, elevationSamples:19 },  //  684
+  high:   { key:'high',   azimuthSamples:72, elevationSamples:33 },  // 2376
+};
+
+// How long a work slice may run before yielding. The legacy tracer uses 35 ms;
+// matching it keeps the two engines comparably responsive.
+const RT3D_EXP_SLICE_MS = 35;
+
+// Watchdog. requestAnimationFrame does NOT fire while the document is hidden,
+// so a user who switches tabs mid-run would otherwise leave a job armed forever
+// with no way to finish. The timer is reset by every slice, so it only fires
+// when NO slice has run for this long — i.e. when the run is genuinely stalled
+// rather than merely slow.
+//
+// A stall is NOT a completion. The run is aborted and flagged `stalled`, and a
+// stalled result is NEVER published: publishing a half-traced grid as a normal
+// RT3D result would put evidence on the map that the engine never actually
+// produced. The previous valid cache and display are left untouched.
+let RT3D_EXP_WATCHDOG_MS = 20000;
+
+// ------------------------------------------------------------
+//  AP INCLUSION — audited, and the audit changed the answer.
+//
+//  Three selectors exist in this application:
+//   1. bestRSSI() / cellField()   Simple + SINR models
+//   2. runRayTrace()              legacy Ray Tracing
+//   3. apParticipatesInRf()       shared participation predicate
+//
+//  Findings:
+//   * (1) and (2) use the SAME predicate and the SAME band test, and BOTH
+//     already iterate every floor: state.floors.forEach((fl,af) => ...).
+//     The legacy tracer does NOT restrict APs to the active floor. That is a
+//     widespread assumption and it is wrong in this codebase.
+//   * What the legacy tracer restricts to the active floor is its GEOMETRY:
+//     `state.floors[state.activeFloor].walls` and a single march height. AP
+//     selection was never the limitation.
+//   * There is NO per-floor visible/enabled flag anywhere in the project model.
+//     The only visibility flag is f.bg.visible, which hides the background
+//     floor-plan drawing and has nothing to do with propagation. Treating a
+//     hidden background plan as "floor disabled" would be an invented rule.
+//   * soloApId is a module-level editor variable ("temporary editor-only RF
+//     solo mode"), not project state. apParticipatesInRf() already honours it,
+//     so RT3D inherits solo mode and stays consistent with the other engines.
+//
+//  DELIBERATE RULE: an AP contributes iff it participates in RF and matches the
+//  current band — the project's own predicate, unchanged. There is NO further
+//  filter: not by floor, not by height, not by distance. A true-3D path from
+//  any floor can reach the receiver plane, and a ray that cannot simply fails
+//  to cross it, so filtering by height would hide physics rather than remove
+//  error. Printed verbatim in the diagnostics.
+// ------------------------------------------------------------
+function rt3dExpParticipatingAps(){
+  const out=[];
+  for(let af=0; af<state.floors.length; af++){
+    const fl=state.floors[af]; if(!fl) continue;
+    const aps=fl.aps||[];
+    for(let i=0;i<aps.length;i++){
+      const ap=aps[i];
+      if(!apParticipatesInRf(ap)) continue;
+      if(!ap.bands || !ap.bands.includes(state.band)) continue;
+      out.push({ ap:ap, floorIndex:af });
+    }
+  }
+  return out;
+}
+const RT3D_EXP_AP_RULE =
+  "apParticipatesInRf(ap) && ap.bands.includes(state.band) — the project's own "+
+  "predicate, unchanged, over ALL floors. No filter by floor, height or distance.";
+
+// ------------------------------------------------------------
+//  RECEIVER PLANE — the Stage-4 helper, for the active floor.
+//
+//  rt3dReceiverPlaneZForFloor() is the Stage-4 function that REQUIRES an
+//  explicit floor. The no-argument rt3dReceiverPlaneZ() is the Stage-2
+//  compatibility helper and is deliberately not used here.
+// ------------------------------------------------------------
+function rt3dExpPlaneZ(){ return rt3dReceiverPlaneZForFloor(state.activeFloor); }
+
+// ------------------------------------------------------------
+//  CELL BINNING — direct, one sample to one cell.
+//
+//  Cell geometry is rt3dGridSpec(), which reproduces the legacy tracer's own
+//  grid exactly (0.16 m target cell, same clamp, same cw/ch derivation), so a
+//  Legacy-vs-RT3D comparison runs over identical cells rather than over two
+//  different discretisations.
+//
+//  Aggregation is the legacy depositCell() rule verbatim:
+//      const i=Math.floor((x-b.minx)/cw), j=Math.floor((y-b.miny)/ch);
+//      if(i<0||j<0||i>=cols||j>=rows) return;
+//      const k=j*cols+i; if(rssi>best[k]) best[k]=rssi;
+//      reach[k]=1;
+//  Strongest single contribution wins. dBm are never averaged and never
+//  summed, and no coherent or incoherent power summation is introduced.
+// ------------------------------------------------------------
+// Returns the bin DATA only. The grid deliberately does NOT carry the grid
+// specification: the RUN RESULT owns it, so there is exactly one place where a
+// spec is bound to a result and the two can never drift apart. Callers that
+// need the spec read it from the result, not from here.
+function rt3dExpBin(samples, spec, apSlotOf){
+  const n=spec.cols*spec.rows;
+  const best=new Float32Array(n).fill(-Infinity);
+  const reach=new Uint8Array(n);             // 1 = an RT3D sample landed here
+  const serving=new Int16Array(n).fill(-1);  // which AP slot won the cell
+  const b=spec.b;
+  let outside=0;
+  for(let s=0;s<samples.length;s++){
+    const sm=samples[s];
+    const i=Math.floor((sm.x-b.minx)/spec.cw);
+    const j=Math.floor((sm.y-b.miny)/spec.ch);
+    if(i<0||j<0||i>=spec.cols||j>=spec.rows){ outside++; continue; }
+    const k=j*spec.cols+i;
+    if(sm.receivedPower>best[k]){
+      best[k]=sm.receivedPower;
+      serving[k]=apSlotOf!=null ? (apSlotOf[sm.apSlot]!=null?apSlotOf[sm.apSlot]:-1) : -1;
+    }
+    reach[k]=1;
+  }
+  let sampled=0;
+  for(let k=0;k<n;k++) if(reach[k]===1) sampled++;
+  return { best:best, reach:reach, serving:serving, sampled:sampled,
+           total:n, unsampled:n-sampled, outsideBounds:outside };
+}
+
+// ------------------------------------------------------------
+//  PAINTING — direct cell to pixel, no smoothing of any kind.
+//
+//  Deliberately NOT paintHeat(): that function honours
+//  editorPrefs.heatmapSmoothing and any value above zero makes it bilinearly
+//  interpolate and then Gaussian-blur the grid. Feeding an RT3D grid to it
+//  would silently invent values between samples, which this stage is forbidden
+//  to do. Colour comes from the application's own rssiColor(), so there is no
+//  second colour interpretation.
+//
+//  Unsampled cells keep -Infinity and are written fully transparent, which is
+//  why "no RT3D sample reached here" shows as a hole rather than as a
+//  fabricated weak reading.
+// ------------------------------------------------------------
+function rt3dExpPaint(result){
+  // The result owns the grid specification. Passing the grid alone used to be
+  // enough because the grid carried a spec; now it does not, and that is the
+  // point: a caller cannot paint cells without also declaring which grid they
+  // belong to. The guard must come BEFORE any dereference, or a missing spec
+  // surfaces as an opaque property error instead of a named one.
+  if(!result || !result.spec) throw new Error('rt3d: result carries no grid spec');
+  const spec=result.spec, grid=result.grid;
+  const W=spec.cols, H=spec.rows;
+  if(!grid || grid.best.length!==W*H)
+    throw new Error('rt3d: grid size does not match its spec');
+  const c=document.createElement('canvas');
+  c.width=W; c.height=H;
+  const cc=c.getContext('2d');
+  const img=cc.createImageData(W,H);
+  const d=img.data;
+  const best=grid.best;
+  for(let k=0;k<W*H;k++){
+    const v=best[k], o=k*4;
+    if(!(v>-Infinity)){ d[o]=0; d[o+1]=0; d[o+2]=0; d[o+3]=0; continue; }
+    const col=rssiColor(v);
+    d[o]=col[0]; d[o+1]=col[1]; d[o+2]=col[2]; d[o+3]=col[3];
+  }
+  cc.putImageData(img,0,0);
+  return c;
+}
+
+// ------------------------------------------------------------
+//  RUN — one pass over the LIVE loaded project state.
+//
+//  Order of operations, exactly as required:
+//     live state -> rt3dBuildWorld() -> BVH built ONCE -> fan traces -> discard
+//
+//  The derived world and its BVH exist only for the duration of this call.
+//  They are never stored, never reused across a run, and never persisted, so a
+//  new run on changed geometry rebuilds both from the canonical entities.
+//
+//  Work is sliced so the browser stays responsive. The result does not depend
+//  on the slicing, because the iteration order (APs in floor order, directions
+//  in fan order) is fixed.
+// ------------------------------------------------------------
+function rt3dExpRun(preset, hooks){
+  const t0=performance.now();
+  const fanSpec=RT3D_EXP_FANS[preset] || RT3D_EXP_FANS.medium;
+  const floorIndex=state.activeFloor;
+  const fl=state.floors[floorIndex];
+  const planeZ=rt3dExpPlaneZ();
+  const spec=rt3dGridSpec(fl);
+  const aps=rt3dExpParticipatingAps();
+  const ownerFloors=[];
+  for(const e of aps) if(ownerFloors.indexOf(e.floorIndex)<0) ownerFloors.push(e.floorIndex);
+  ownerFloors.sort((a,b)=>a-b);
+
+  // --- derived world, from the real loaded project -------------------
+  const world=rt3dBuildWorld();
+  // --- BVH, built exactly once, timed separately from tracing -------
+  const tb0=performance.now();
+  const bvh=rt3dBvhFor(world);
+  const buildMs=performance.now()-tb0;
+
+  const mhz=BANDS[state.band].mhz;
+  const pl1=fsplAt1m(mhz);
+  const plExp=state.plExp;
+  const maxDistance=Math.max(60,
+    Math.hypot(spec.b.maxx-spec.b.minx, spec.b.maxy-spec.b.miny)*2.5);
+
+  const fanOpts={ azimuthSamples:fanSpec.azimuthSamples,
+                  elevationSamples:fanSpec.elevationSamples,
+                  elevationScheme:'equalSolidAngle' };
+  const dirs=rt3dFanDirections(fanOpts);
+  const raysPerAp=fanSpec.azimuthSamples*fanSpec.elevationSamples;
+  const totalUnits=aps.length*raysPerAp;
+
+  const allSamples=[];
+  const stats=rt3dNewStats();
+  const apCounts=aps.map(()=>0);
+  let emitted=0, done=0, cancelled=false, settled=false;
+
+  // COMPLETION CONTRACT, enforced by the order of the checks below:
+  //     cursor >= total  ->  finalize exactly once  ->  stop
+  // Time-budget yielding must NEVER take precedence over completion. A job whose
+  // last ray lands on a batch boundary, or whose time budget expires on the same
+  // iteration, used to yield with a full cursor and never finalize at all: the
+  // progress readout sat at "tracing 100%" forever and no result was ever
+  // painted. Finalization here is unconditional, runs exactly once, and is the
+  // first thing the slice checks after its work loop.
+  let watchdog=null;
+  function armWatchdog(){
+    if(watchdog!==null) clearTimeout(watchdog);
+    watchdog=setTimeout(function(){
+      if(settled) return;
+      finish(cancelled, 'watchdog: no slice ran for '+RT3D_EXP_WATCHDOG_MS+' ms', true);
+    }, RT3D_EXP_WATCHDOG_MS);
+  }
+  const traceStarted=performance.now();
+  function slice(){
+    if(settled) return;
+    armWatchdog();
+    if(cancelled){ finish(true); return; }
+    const s0=performance.now();
+    while(done<totalUnits && performance.now()-s0<RT3D_EXP_SLICE_MS){
+      const apIndex=Math.floor(done/raysPerAp);
+      const d=dirs[done%raysPerAp];
+      const entry=aps[apIndex];
+      const origin=rt3dApOrigin(entry.ap, entry.floorIndex);
+      const ray=rt3dRay(origin.x, origin.y, origin.z, d.dx, d.dy, d.dz);
+      if(ray){
+        emitted++;
+        const tr=rt3dTracePath(world, ray, {
+          backend:'bvh', maxDistance:maxDistance, maxReflections:2,
+          reflectLossDb:RT3D_REFLECTION_LOSS_DB, stats:stats });
+        const cross=rt3dReceiverPlaneCrossing(tr, planeZ);
+        if(cross && cross.hit){
+          const sample={
+            x:cross.x, y:cross.y, z:cross.z,
+            pathDistance:cross.pathDistance,
+            materialLoss:cross.materialLoss,
+            reflectionCount:cross.reflectionCount,
+            transmissionCount:cross.transmissionCount,
+            inPlane:!!cross.inPlane,
+            apSlot:apIndex,
+            receivedPower:0, antennaGainDb:0, distanceUsed:0, belowLegacyFloor:false,
+            rayDirection:{ x:d.dx, y:d.dy, z:d.dz },
+            azDeg:d.azDeg, elDeg:d.elDeg
+          };
+          Object.assign(sample, rt3dSampleReceivedPower(sample, entry.ap, mhz, plExp, pl1));
+          allSamples.push(sample);
+          apCounts[apIndex]++;
+        }
+      }
+      done++;
+    }
+    // 1. COMPLETION FIRST. Nothing below may run when the cursor is full.
+    if(done>=totalUnits){ finish(false); return; }
+    // 2. cancellation
+    if(cancelled){ finish(true); return; }
+    // 3. only now is it safe to yield. Progress is painted only while work
+    //    remains, so the readout can never sit on "100%" for a job that is
+    //    about to finalize (or has already failed to).
+    if(hooks && hooks.onProgress) hooks.onProgress(done/totalUnits, done, totalUnits);
+    requestAnimationFrame(slice);
+  }
+  function finish(wasCancelled, reason, stalled){
+    // Exactly once, always. Returns true only for the call that finalized.
+    if(settled) return false;
+    settled=true;
+    if(watchdog!==null){ clearTimeout(watchdog); watchdog=null; }
+    try{
+      finalize(wasCancelled, reason||null, !!stalled);
+    } catch(e){
+      // A failure while building or painting the result must be VISIBLE. Letting
+      // it escape the animation-frame callback is what stranded the browser at
+      // "tracing 100%" with a blank map: the exception left the UI in whatever
+      // state the progress write had produced, and nothing reported it.
+      if(hooks && hooks.onError) hooks.onError(e, wasCancelled, reason||null);
+      else throw e;
+    }
+    return true;
+  }
+  function finalize(wasCancelled, reason, stalled){
+    const traceMs=performance.now()-traceStarted;
+    const tBin0=performance.now();
+    const binned=rt3dExpBin(allSamples, spec, null);
+    const binMs=performance.now()-tBin0;
+
+    let direct=0, reflected=0, lossSum=0;
+    for(const s of allSamples){
+      if(s.reflectionCount>0) reflected++; else direct++;
+      lossSum+=s.materialLoss;
+    }
+    const res={
+      cancelled:wasCancelled, stalled:!!stalled, finishReason:reason||'completed',
+
+      // ---- RUN SNAPSHOT -------------------------------------------------
+      // Everything the run was DEFINED against, captured when the run started
+      // and never re-read from live state. A PB run stays a PB result even if
+      // the active floor changes while it is still running, and even if it
+      // changes again before the result is painted. Recomputing any of this at
+      // paint time would mean painting one floor's samples with another floor's
+      // geometry, which is precisely the class of bug this snapshot exists to
+      // make impossible.
+      //
+      // `spec` is the CANONICAL grid specification for this run: the exact
+      // rt3dGridSpec() output used for binning, including the floor bounds the
+      // painter needs. The result is its single owner.
+      spec:spec,
+      floorIndex:floorIndex, floorId:fl.id,
+      floorName:fl.name||('F'+(floorIndex+1)),
+      receiverPlaneZ:planeZ,
+      fan:fanSpec, raysPerAp:raysPerAp, fanDirections:dirs.length,
+      fanScheme:'equalSolidAngle',
+      density:rt3dFanDensity(fanOpts),
+      apCount:aps.length, ownerFloors:ownerFloors, apRule:RT3D_EXP_AP_RULE,
+      apSummary:aps.map((e,i)=>({ name:e.ap.name||('AP'+(i+1)), floorIndex:e.floorIndex,
+        z:rt3dApOriginZ(e.floorIndex, e.ap), samples:apCounts[i] })),
+      totalUnits:totalUnits, completedUnits:done, emittedRays:emitted,
+      samples:allSamples, grid:binned,
+      sampledCells:binned.sampled, unsampledCells:binned.unsampled,
+      totalCells:binned.total,
+      coveragePct:binned.total?+(100*binned.sampled/binned.total).toFixed(2):0,
+      samplesOutsideGrid:binned.outsideBounds,
+      directSamples:direct, reflectedSamples:reflected,
+      meanSampleLossDb:allSamples.length?+(lossSum/allSamples.length).toFixed(3):0,
+      worldBodies:rt3dAllBodies(world).length,
+      bvhNodes:bvh?bvh.nodeCount:0,
+      bvhCandidatesTested:stats.candidatesTested, bvhNodesVisited:stats.nodesVisited,
+      buildMs:+buildMs.toFixed(2), traceMs:+traceMs.toFixed(2), binMs:+binMs.toFixed(2),
+      totalMs:+(performance.now()-t0).toFixed(2),
+      maxDistance:+maxDistance.toFixed(1),
+      gridCellM:spec.cell,
+      antennaModel:'azimuth-only (antennaAzGain) — elevation is geometrical only',
+      antennaWarning:'RT3D experimental antenna gain is azimuth-only. '+
+        'Simple/SINR currently use a vertical/downtilt model as well. '+
+        'This divergence is NOT reconciled in this stage.',
+      aggregation:'strongest single RT3D sample per cell (legacy depositCell rule). '+
+        'No averaging, no summing, no coherent or incoherent power summation.',
+      rasterRule:'direct cell binning. No interpolation, blur, smoothing, splat or IDW.',
+      noDataRule:'unsampled cell = -Infinity = fully transparent',
+      cellRule:'rt3dGridSpec(activeFloor) — identical cells to the legacy tracer',
+    };
+    // The grid and the result must describe the same grid. Asserted here rather
+    // than assumed, because a mismatch is invisible until something paints.
+    if(res.grid.total !== res.spec.cols*res.spec.rows)
+      throw new Error('rt3d: grid cell count does not match its spec');
+    if(hooks && hooks.onDone) hooks.onDone(res);
+  }
+  if(!totalUnits){ finish(false, 'no APs to trace'); return { cancel(){ cancelled=true; } }; }
+  armWatchdog();
+  requestAnimationFrame(slice);
+  return { cancel(){ cancelled=true; } };
+}
+
+// ------------------------------------------------------------
+//  BROWSER UI — created only under ?rt3d=1, never persisted.
+//
+//  Everything below is module-level scratch, holds no reference from `state`,
+//  and is written by nothing but saveProject(). It therefore cannot reach the
+//  project file.
+// ------------------------------------------------------------
+let rt3dExpPanel=null, rt3dExpCache=null, rt3dExpChoice='none';
+let rt3dExpShowCells=false, rt3dExpCanvas=null, rt3dExpMeta=null, rt3dExpCells=null;
+let rt3dExpJob=null, rt3dExpLastResult=null, rt3dExpLastError=null, rt3dExpSpec=null;
+let rt3dExpLastStall=null;
+
+// Single source of truth for which engine is on screen. showHeat is the
+// application's own coverage switch, so if anything else turns it back on —
+// including the stock Ray tracing button — the legacy underlay simply wins and
+// RT3D steps aside, with no special-casing and no edit to production painting.
+function rt3dExpDisplayedEngine(){
+  if(!RT3D_EXP_ENABLED) return 'n/a';
+  if(showHeat) return 'legacy';
+  // A cached result belongs to the floor it was traced for. Painting it on a
+  // different floor would be wrong, so switching floors drops it out of the
+  // displayed engine rather than silently showing nothing.
+  const f=state.floors[state.activeFloor];
+  if(rt3dExpCanvas && rt3dExpChoice==='rt3d' && rt3dExpMeta && f && rt3dExpMeta.floorId===f.id)
+    return 'rt3d';
+  return 'none';
+}
+function rt3dExpActive(){ return rt3dExpDisplayedEngine()==='rt3d'; }
+
+function rt3dExpOut(html){ const el=$('#rt3dExpOut'); if(el) el.innerHTML=html; }
+function rt3dExpRow(label, value){
+  return '<div class="rt3dr"><span>'+label+'</span><b>'+value+'</b></div>';
+}
+// The abort report for a stalled run. Says what was traced, says the partial
+// result was discarded, and states which grid is still on screen.
+function rt3dExpStallHtml(res){
+  return '<div class="rt3dwarn"><b>'+t('rt3d.exp.stalled')+'</b><br>'+
+    t('rt3d.exp.stalledProgress',{done:res.completedUnits,total:res.totalUnits})+'<br>'+
+    t('rt3d.exp.stalledDiscard')+'</div>'+
+    rt3dExpRow(t('rt3d.d.displayed'),
+      '<span class="rt3deng" data-e="'+rt3dExpDisplayedEngine()+'">'+
+        t('rt3d.exp.engine.'+rt3dExpDisplayedEngine())+'</span>')+
+    (rt3dExpLastResult
+      ? '<div class="rt3dn">'+escapeHtml(t('rt3d.exp.stalledKept'))+' '+
+        escapeHtml(rt3dExpLastResult.floorName)+' (Z '+rt3dExpLastResult.receiverPlaneZ.toFixed(2)+
+        ' m, '+rt3dExpLastResult.spec.cols+'×'+rt3dExpLastResult.spec.rows+' cells)</div>'
+      : '<div class="rt3dn">'+escapeHtml(t('rt3d.exp.stalledKeptNone'))+'</div>');
+}
+function rt3dExpSummaryHtml(res){
+  const L=[];
+  L.push('<div class="rt3dh2">'+t('rt3d.exp.title')+'</div>');
+  if(rt3dExpLastStall){
+    L.push('<div class="rt3dwarn">'+t('rt3d.exp.stalled')+': '+
+      t('rt3d.exp.stalledProgress',{done:rt3dExpLastStall.completedUnits,
+                                    total:rt3dExpLastStall.totalUnits})+
+      '<br>'+t('rt3d.exp.stalledDiscard')+'</div>');
+  }
+  const fNow=state.floors[state.activeFloor];
+  if(rt3dExpLastResult && fNow && rt3dExpLastResult.floorId!==fNow.id){
+    L.push('<div class="rt3dwarn">'+t('rt3d.d.wrongFloor')+': '+
+           escapeHtml(rt3dExpLastResult.floorName)+' (Z '+rt3dExpLastResult.receiverPlaneZ.toFixed(2)+
+           ' m, '+rt3dExpLastResult.spec.cols+'×'+rt3dExpLastResult.spec.rows+
+           ' cells)</div>');
+  }
+  L.push(rt3dExpRow(t('rt3d.d.displayed'),
+    '<span class="rt3deng" data-e="'+rt3dExpDisplayedEngine()+'">'+
+      t('rt3d.exp.engine.'+rt3dExpDisplayedEngine())+'</span>'));
+  if(!res){
+    L.push('<div class="rt3dn">'+(rt3dExpLastError
+      ? t('rt3d.exp.failed')+': '+escapeHtml(rt3dExpLastError) : t('rt3d.exp.noRun'))+'</div>');
+    return L.join('');
+  }
+  if(res.cancelled) L.push('<div class="rt3dwarn">'+t('rt3d.exp.cancelled')+'</div>');
+  L.push(rt3dExpRow(t('rt3d.d.activeFloor'), res.floorName+' <span class="rt3dsub2">(index '+res.floorIndex+')</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.planeZ'), res.receiverPlaneZ.toFixed(2)+' m <span class="rt3dsub2">absolute</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.apCount'), String(res.apCount)));
+  L.push(rt3dExpRow(t('rt3d.d.ownerFloors'), res.ownerFloors.length?res.ownerFloors.join(', '):'—'));
+  L.push(rt3dExpRow(t('rt3d.d.fan'),
+    res.fan.azimuthSamples+'×'+res.fan.elevationSamples+' = '+res.raysPerAp+
+    ' <span class="rt3dsub2">rays/AP</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.fanScheme'),
+    res.fanScheme+' <span class="rt3dsub2">bias '+res.density.densityBiasRatio.toFixed(3)+'</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.emitted'), res.emittedRays+' / '+res.totalUnits+
+    (res.cancelled?(' <span class="rt3dsub2">of '+res.completedUnits+' done</span>'):'')));
+  L.push(rt3dExpRow(t('rt3d.d.reached'), String(res.samples.length)));
+  L.push(rt3dExpRow(t('rt3d.d.samples'),
+    'direct '+res.directSamples+' / reflected '+res.reflectedSamples));
+  L.push(rt3dExpRow(t('rt3d.d.cells'),
+    res.sampledCells+' <span class="rt3dsub2">sampled</span> / '+res.unsampledCells+
+    ' <span class="rt3dsub2">unsampled</span> <span class="rt3dsub2">of '+res.totalCells+'</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.coverage'), '<b>'+res.coveragePct.toFixed(2)+'%</b>'));
+  L.push(rt3dExpRow(t('rt3d.d.bodies'), res.worldBodies+
+    ' <span class="rt3dsub2">/ BVH '+res.bvhNodes+' nodes</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.timing'),
+    'build '+res.buildMs+' / trace '+res.traceMs+' / bin '+res.binMs+
+    ' / <b>total '+res.totalMs+' ms</b>'));
+  L.push(rt3dExpRow(t('rt3d.d.gridCell'),
+    res.gridCellM+' m <span class="rt3dsub2">'+res.spec.cols+'×'+res.spec.rows+
+    ' cells, snapshot of the run</span>'));
+  L.push(rt3dExpRow(t('rt3d.d.maxDistance'), res.maxDistance+' m'));
+  L.push('<div class="rt3dwarn">'+t('rt3d.d.antenna')+': '+res.antennaModel+
+         '<br>'+res.antennaWarning+'</div>');
+  L.push('<div class="rt3dn">'+t('rt3d.d.cellRule')+': '+res.cellRule+
+         '<br>'+t('rt3d.d.rasterRule')+': '+res.rasterRule+
+         '<br>'+t('rt3d.d.aggregation')+': '+res.aggregation+
+         '<br>'+t('rt3d.d.noData')+': '+res.noDataRule+
+         '<br>'+t('rt3d.d.apRule')+': '+res.apRule+'</div>');
+  L.push('<div class="rt3dn"><b>'+t('rt3d.d.noDataLegend')+'</b></div>');
+  const lg=rt3dExpCache&&rt3dExpCache.legacy?rt3dExpCache.legacy.stats:null;
+  if(lg) L.push('<div class="rt3dn">'+t('rt3d.exp.legacyStats')+': '+lg.initialRays+
+    ' rays, '+lg.processedBranches+' branches, '+lg.elapsedMs.toFixed(0)+' ms, '+
+    lg.finiteCells+'/'+lg.totalCells+' finite cells @ '+lg.gridCellM+' m</div>');
+  return L.join('');
+}
+
+function rt3dExpBuildPanel(){
+  if(rt3dExpPanel || !RT3D_EXP_ENABLED) return;
+  const el=document.createElement('div');
+  el.id='rt3dExpPanel';
+  el.setAttribute('data-rt3d-dev','1');
+  el.innerHTML=
+    '<div class="rt3dh">'+t('rt3d.exp.title')+'</div>'+
+    '<div class="rt3dsub">'+t('rt3d.exp.sub')+'</div>'+
+    '<div class="rt3drow"><label>'+t('rt3d.exp.engine')+'</label>'+
+      '<select id="rt3dExpView">'+
+        '<option value="none">'+t('rt3d.exp.hidden')+'</option>'+
+        '<option value="legacy">'+t('rt3d.exp.legacy')+'</option>'+
+        '<option value="rt3d">'+t('rt3d.exp.rt3d')+'</option>'+
+      '</select></div>'+
+    '<div class="rt3drow"><label>'+t('rt3d.exp.fan')+'</label>'+
+      '<select id="rt3dExpFan">'+
+        '<option value="low">'+t('rt3d.exp.fanLow',{az:12,el:7,rays:84})+'</option>'+
+        '<option value="medium">'+t('rt3d.exp.fanMedium',{az:36,el:19,rays:684})+'</option>'+
+        '<option value="high">'+t('rt3d.exp.fanHigh',{az:72,el:33,rays:2376})+'</option>'+
+      '</select></div>'+
+    '<div class="rt3drow"><label>'+t('rt3d.exp.cells')+'</label>'+
+      '<input type="checkbox" id="rt3dExpCells"></div>'+
+    '<div class="rt3dbtns">'+
+      '<button id="rt3dExpRunLegacy">'+t('rt3d.exp.runLegacy')+'</button>'+
+      '<button id="rt3dExpRunRt3d" class="primary">'+t('rt3d.exp.runRt3d')+'</button>'+
+      '<button id="rt3dExpCancel" disabled>'+t('rt3d.exp.cancel')+'</button>'+
+    '</div>'+
+    '<div id="rt3dExpOut" class="rt3dout"></div>';
+  document.body.appendChild(el);
+  rt3dExpPanel=el;
+  $('#rt3dExpView').value=rt3dExpChoice;
+  $('#rt3dExpView').onchange=e=>rt3dExpSetView(e.target.value);
+  $('#rt3dExpCells').onchange=e=>{ rt3dExpShowCells=e.target.checked; draw2d(); };
+  $('#rt3dExpRunLegacy').onclick=rt3dExpRunLegacy;
+  $('#rt3dExpRunRt3d').onclick=rt3dExpStart;
+  $('#rt3dExpCancel').onclick=()=>{ if(rt3dExpJob) rt3dExpJob.cancel(); };
+}
+function rt3dExpSetView(v){
+  rt3dExpChoice=v;
+  // 'legacy' turns the application's own coverage switch on, which is what the
+  // stock heat underlay is gated by; 'rt3d' turns it off so the legacy layer
+  // cannot also draw.
+  showHeat = (v==='legacy');
+  const b=$('#btnHeat'); if(b) b.classList.toggle('primary', v==='legacy');
+  const lg=$('#legend'); if(lg) lg.classList.toggle('off', v!=='legacy');
+  if(v==='legacy' && rt3dExpCache && rt3dExpCache.legacy){
+    heatMeta=rt3dExpCache.legacy.meta;
+    heatGridRssi=rt3dExpCache.legacy.grid;
+    heatGridDisp=rt3dExpCache.legacy.grid;
+    heatCanvas=rt3dExpCache.legacy.canvas;
+  }
+  const sel=$('#rt3dExpView'); if(sel) sel.value=v;
+  rt3dExpOut(rt3dExpSummaryHtml(rt3dExpLastResult));
+  draw2d();
+  if(view==='3d') refresh3dHeat();
+}
+function rt3dExpStart(){
+  if(!RT3D_EXP_ENABLED) return;
+  rt3dExpBuildPanel();
+  const preset=$('#rt3dExpFan')?$('#rt3dExpFan').value:'medium';
+  const cancelBtn=$('#rt3dExpCancel');
+  if(cancelBtn) cancelBtn.disabled=false;
+  rt3dExpOut('<div class="rt3dn">'+t('rt3d.exp.building')+'</div>');
+  // Yield once so the "building" text paints before the synchronous
+  // rt3dBuildWorld()/BVH work begins.
+  requestAnimationFrame(()=>{
+    rt3dExpJob=rt3dExpRun(preset, {
+      onProgress:(frac,doneU,totalU)=>{
+        rt3dExpOut('<div class="rt3dn">'+t('rt3d.exp.tracing')+' '+
+          (100*frac).toFixed(0)+'% · '+doneU+' / '+totalU+' rays</div>'+
+          '<progress max="1" value="'+frac+'"></progress>');
+      },
+      onDone:(res)=>{
+        rt3dExpJob=null;
+        if(cancelBtn) cancelBtn.disabled=true;
+        rt3dExpLastError=null;
+        // A STALLED run is never published. The last valid RT3D cache, canvas
+        // and displayed grid are left exactly as they were, because a partial
+        // grid is not evidence the engine produced — it is evidence the run was
+        // cut short. Cancelling is different: that is a user action, and it is
+        // already flagged `cancelled` in the panel.
+        if(res.stalled){
+          rt3dExpLastStall={ completedUnits:res.completedUnits, totalUnits:res.totalUnits,
+                              floorName:res.floorName, floorIndex:res.floorIndex,
+                              receiverPlaneZ:res.receiverPlaneZ };
+          rt3dExpOut(rt3dExpStallHtml(res));
+          return;
+        }
+        rt3dExpLastStall=null;
+        rt3dExpLastResult=res;
+        rt3dExpCache=Object.assign({},rt3dExpCache,{ rt3d:res, rt3dPreset:preset });
+        rt3dExpCanvas=rt3dExpPaint(res);
+        rt3dExpSpec=res.spec;
+        rt3dExpMeta={ floorId:res.floorId, minx:res.spec.b.minx, miny:res.spec.b.miny,
+                      maxx:res.spec.b.maxx, maxy:res.spec.b.maxy };
+        rt3dExpCells=rt3dExpCellList(res);
+        rt3dExpSetView('rt3d');
+      },
+      onError:(err, wasCancelled, reason)=>{
+        // A failure while finalizing must be visible. Previously the exception
+        // escaped the animation-frame callback, the readout stayed on
+        // "tracing 100%", nothing was painted and the map stayed blank with no
+        // indication that anything had gone wrong.
+        rt3dExpJob=null;
+        if(cancelBtn) cancelBtn.disabled=true;
+        rt3dExpLastError=String((err&&err.message)||err);
+        rt3dExpOut('<div class="rt3dwarn"><b>'+t('rt3d.exp.failed')+'</b><br>'+
+                   escapeHtml(rt3dExpLastError)+
+                   (reason?'<br>'+escapeHtml(reason):'')+
+                   '<br>'+(wasCancelled?t('rt3d.exp.cancelled'):t('rt3d.exp.noRun'))+'</div>');
+      }
+    });
+  });
+}
+function rt3dExpRunLegacy(){
+  if(!RT3D_EXP_ENABLED) return;
+  rt3dExpBuildPanel();
+  rt3dExpOut('<div class="rt3dn">'+t('rt3d.exp.runningLegacy')+'</div>');
+  runRayTrace(()=>{
+    // Ephemeral runtime snapshot so switching back and forth needs no
+    // recompute. Nothing here is written to the project.
+    if(heatGridRssi && heatMeta){
+      rt3dExpCache=Object.assign({},rt3dExpCache,{ legacy:{
+        grid:new Float32Array(heatGridRssi), meta:heatMeta, canvas:heatCanvas,
+        stats:lastRayTraceStats||null }});
+    }
+    rt3dExpSetView('legacy');
+  });
+}
+// Flat list of sampled cell coordinates, for the optional inspection aid.
+// This is NOT interpolation: it marks which cells hold evidence, so a viewer
+// can tell "these cells have a sample" from "these cells have none".
+function rt3dExpCellList(result){
+  const spec=result.spec, grid=result.grid, out=[];
+  for(let j=0;j<spec.rows;j++) for(let i=0;i<spec.cols;i++){
+    if(grid.reach[j*spec.cols+i]===1) out.push(i,j);
+  }
+  return new Int32Array(out);
+}
+function rt3dExpInit(){
+  if(!RT3D_EXP_ENABLED) return;
+  rt3dExpBuildPanel();
+  rt3dExpOut(rt3dExpSummaryHtml(null));
 }
 
 function smoothRSSI(src,w,h){
@@ -11078,6 +11971,8 @@ function start(){
   // seed a simple demo room so it isn't empty
   seedDemo();
   scheduleHeat();
+  // No-op unless the page was opened with ?rt3d=1. Creates nothing otherwise.
+  rt3dExpInit();
 }
 function seedDemo(){
   const f=floor(); const mWall=state.materials[4].id, mGlass=state.materials[2].id;

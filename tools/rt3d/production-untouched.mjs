@@ -40,14 +40,27 @@ const prodBlock = (src) => {
   if (end < 0) throw new Error('end of RT block not found');
   return src.slice(a, end);
 };
+// Stage 5 is a deliberate browser/UI layer, not kernel. It has its own
+// contract and its own checks below; folding it into the inert-kernel slice
+// would test it against rules it was never meant to satisfy.
+const EXP = '//  RT3D EXPERIMENTAL BROWSER LAYER  (Stage 5)';
 const kernelSrc = (src) => {
   const k = src.indexOf(KERNEL);
   const s = src.indexOf('function smoothRSSI', k);
-  return src.slice(k, s);
+  const e = src.indexOf(EXP, k);
+  return src.slice(k, e > 0 ? e : s);
+};
+// The Stage-5 section itself, or '' when it is absent (e.g. the baseline).
+const expSrc = (src) => {
+  const a = src.indexOf(EXP);
+  if (a < 0) return '';
+  const s = src.indexOf('function smoothRSSI', a);
+  return src.slice(a, s);
 };
 const curBlock = prodBlock(cur);
 const baseBlock = prodBlock(base);
 const curKernel = kernelSrc(cur);
+const curExp = expSrc(cur);
 
 console.log('Production engine isolation\n');
 ok('production RT block is byte-identical to baseline ' + BASELINE,
@@ -62,10 +75,39 @@ ok('the new kernel exists and is a separate section',
    cur.includes(KERNEL));
 
 // ---- 2. the kernel is inert: nothing outside it calls it ----
-const outside = cur.slice(0, cur.indexOf(KERNEL)) + cur.slice(cur.indexOf('function smoothRSSI', cur.indexOf(KERNEL)));
-const callers = [...outside.matchAll(/\brt3d[A-Za-z0-9_]*\s*\(/g)].map((m) => m[0]);
-ok('no production code calls any rt3d* function', callers.length === 0,
-   callers.slice(0, 5).join(', '));
+// Everything outside both the kernel and the Stage-5 section, with comments
+// and CSS removed first. This file legitimately NAMES the experimental layer in
+// prose, and prose is not a call site.
+const outside = cur.slice(0, cur.indexOf(KERNEL))
+             + cur.slice(cur.indexOf('function smoothRSSI', cur.indexOf(KERNEL)));
+const stripComments = (s) => s
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/^\s*\/\/[^\n]*$/gm, ' ')
+  .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1')
+  .replace(/<style>[\s\S]*?<\/style>/g, ' ');
+const outsideCode = stripComments(outside);
+const callers = [...outsideCode.matchAll(/\brt3d[A-Za-z0-9_]*\s*\(/g)].map((m) => m[0]);
+const uniqCallers = [...new Set(callers)];
+
+// Exactly two hooks may exist in production, both from Stage 5, both inert
+// without the flag:
+//   draw2d()  -> rt3dExpActive()          the gated underlay predicate
+//   start()   -> rt3dExpInit()            builds the panel, if flagged
+ok('production touches RT3D only through the two gated Stage-5 hooks',
+   uniqCallers.length === 2 &&
+   callers.filter((c) => c.startsWith('rt3dExpActive')).length === 1 &&
+   callers.filter((c) => c.startsWith('rt3dExpInit')).length === 1,
+   JSON.stringify(uniqCallers));
+ok('no production code calls any rt3d KERNEL function',
+   !callers.some((c) => !c.startsWith('rt3dExp')),
+   callers.filter((c) => !c.startsWith('rt3dExp')).slice(0, 5).join(', '));
+ok('the draw2d hook is a boolean guard, not an unconditional draw',
+   /if\(rt3dExpActive\(\)\s*&&\s*rt3dExpCanvas/.test(outsideCode));
+ok('the experimental entry point is inert without the flag',
+   /function\s+rt3dExpInit\(\)\s*\{\s*if\(!RT3D_EXP_ENABLED\)\s*return;/.test(curExp));
+ok('rt3dExpActive() cannot be true without the flag',
+   /function\s+rt3dExpActive\(\)\s*\{\s*return rt3dExpDisplayedEngine\(\)==='rt3d';/.test(curExp) &&
+   /function\s+rt3dExpDisplayedEngine\(\)\s*\{\s*if\(!RT3D_EXP_ENABLED\)\s*return 'n\/a';/.test(curExp));
 
 // ---- 3. the kernel defines no DOM/UI hooks and no global side effects ----
 // Comments are stripped first (block comments, whole-line comments and

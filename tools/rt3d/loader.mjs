@@ -27,7 +27,9 @@ export function splitApp(src) {
 
 function el() {
   const e = {
-    style: {}, dataset: {}, classList: { add(){}, remove(){}, contains(){return false;} },
+    style: {}, dataset: {},
+    // toggle() is here because the application's own toolbar wiring already uses it
+    classList: { add(){}, remove(){}, toggle(){}, contains(){return false;} },
     children: [], options: [], className: '', value: '', checked: false,
     getContext(){ return ctx2d(); }, addEventListener(){}, removeEventListener(){},
     appendChild(){}, append(){}, remove(){}, insertBefore(){}, setAttribute(){},
@@ -47,6 +49,11 @@ function ctx2d() {
       if (k === 'createLinearGradient' || k === 'createRadialGradient')
         return () => ({ addColorStop: noop });
       if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+      // createImageData must return a correctly sized buffer. Without this the
+      // proxy silently returns noop, so any paint path that reads img.data
+      // throws — which hid the fact that the Stage-5 paint path was never
+      // actually executed by the test suite.
+      if (k === 'createImageData') return (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(Math.max(4, (w | 0) * (h | 0) * 4)) });
       if (k === 'putImageData') return noop;
       return typeof k === 'string' ? (t[k] !== undefined ? t[k] : noop) : noop;
     },
