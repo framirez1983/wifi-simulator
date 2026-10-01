@@ -20,11 +20,42 @@ node tools/rt3d/run-all.mjs      # everything below, in order
 | `smoke.mjs` | boots the app for real (`start()`) and traces the seeded demo room |
 | `production-untouched.mjs` | the production `runRayTrace()` block is byte-identical to baseline `78876a2` and nothing in production calls the kernel |
 | `bench.mjs` | Stage 1C performance of the pure intersection primitives |
+| `stage2.test.mjs` | Stage 2: true-3D path tracing, transmission per positive traversal, vertical-wall reflection only |
+| `stage3.test.mjs`, `stage3-paths.test.mjs`, `stage3-stress.test.mjs` | Stage 3: deterministic AABB BVH, path equivalence against the linear oracle, and a 12 000-ray differential stress run |
+| `slab-thickness.test.mjs` | one canonical slab thickness shared by interactive 3D, glTF export and RT3D |
+| `stage4.test.mjs` | Stage 4: deterministic 3D emission fan, receiver-plane crossing, and the sample-record budget |
+| `bench2.mjs`, `bench3.mjs`, `bench4.mjs` | per-stage performance harnesses (nearest query, full path, emission fan) |
+| `manual-scenes.mjs` | **not a check** — writes development-only diagnostic SVGs for visual inspection |
 
 `oracle.mjs` defaults to `check`. Use `node tools/rt3d/oracle.mjs record` only
 when a fixture's *legacy* fingerprint is expected to change, and only with an
 explicit reason: the oracle is the migration's ground truth and must not be
 weakened to make a new engine pass.
+
+## Diagnostic SVGs (development only)
+
+```
+node tools/rt3d/manual-scenes.mjs     # writes tools/rt3d/out/*.svg
+```
+
+These are **sample-cloud scatter plots, not heatmaps**: one mark per real path
+intersection with the receiver plane, coloured by received power. No grid, no
+interpolation, no splatting, no smoothing and no filling of empty regions —
+empty space means no path reached the plane there. Scene geometry (walls, RF
+Object footprints, pillars, Ceiling footprint and holes, slab footprint and
+Openings, AP positions) is drawn underneath at the same uniform scale, subdued,
+so a path can be read against the body that shaped it. Titles and the numeric
+annotations are generated from the actual fixture values, so a label cannot
+drift from the geometry.
+
+> **Scope.** `manual-scenes.mjs` builds **deterministic diagnostic fixtures** in
+> the Node harness. It does **not** read, load or inspect the project currently
+> open in a browser, and it does not connect to the running app in any way;
+> running it changes nothing in the application. A real project could be fed in
+> by serialising it into a fixture, but nothing like that happens automatically.
+
+Nothing in this directory is loaded by `index.html`. The SVGs are regenerated
+from scratch on every run and are not committed as reference artifacts.
 
 ## How it works
 

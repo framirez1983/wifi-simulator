@@ -13,6 +13,7 @@ const steps = [
   ['Stage 3 acceptance (deterministic BVH)', 'stage3.test.mjs', []],
   ['Stage 3 complete-path equivalence', 'stage3-paths.test.mjs', []],
   ['Stage 3 differential stress (12000 seeded rays)', 'stage3-stress.test.mjs', []],
+  ['Stage 4 acceptance (fan + receiver-plane samples)', 'stage4.test.mjs', []],
   ['Canonical slab thickness audit', 'slab-thickness.test.mjs', []],
   ['Stage 1A compatibility oracle', 'oracle.mjs', ['check']],
   ['App smoke test (real start() + production trace on the demo room)', 'smoke.mjs', []],

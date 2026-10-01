@@ -125,7 +125,8 @@ ok('the BVH is built with a deterministic median split and a fixed leaf size',
 // Scoped to the Stage-3 section: Date.now() legitimately appears in the
 // Stage-1 performance microbenchmark as a timer fallback, which is not a
 // determinism concern. The BVH itself must have neither.
-const bvhSrc = curKernel.slice(curKernel.indexOf('DETERMINISTIC AABB BVH'));
+const bvhSrc = curKernel.slice(curKernel.indexOf('DETERMINISTIC AABB BVH'),
+                              curKernel.indexOf('3D EMISSION FAN'));
 ok('the BVH introduces no randomness or hash-order dependence',
    !/\bMath\.random\b/.test(bvhSrc) &&
    !/\bDate\.now\b/.test(bvhSrc) &&
@@ -147,6 +148,46 @@ ok('all five physical families go through the one tree',
 ok('every tie resolves through the canonical family/ordinal order',
    /function\s+rt3dBodyLess\s*\(a, b\)/.test(curKernel) &&
    /function\s+rt3dEventBetter\s*\(e, best\)/.test(curKernel));
+
+// A duplicate function name anywhere in the kernel silently shadows an earlier
+// one. That is exactly how a Stage-4 helper briefly broke the Stage-2
+// compatibility plane, so the whole kernel is scanned for redefinitions.
+{
+  const defs = [...curKernel.matchAll(/^function\s+([A-Za-z0-9_]+)\s*\(/gm)].map((m) => m[1]);
+  const seen = new Map();
+  const dupes = [];
+  for (const n of defs) {
+    if (seen.has(n)) dupes.push(`${n} (x${seen.get(n) + 1})`);
+    else seen.set(n, 1);
+  }
+  ok('no function is defined twice in the kernel (no silent shadowing)',
+     dupes.length === 0, dupes.join(', '));
+}
+
+// ---- 6. Stage 4 specifics: a sample cloud, explicitly not a heatmap ----
+ok('every fan ray launches from the AP real origin, never the receiver plane',
+   /rt3dApOrigin\(ap, apFloorIndex\)/.test(curKernel) &&
+   !/rt3dTraceFan[\s\S]{0,600}?rt3dReceiverPlaneZ\(\)[^;]*\)\s*,\s*dirs/.test(curKernelCode));
+ok('the receiver plane is explicit absolute Z, not derived from a grid or view',
+   /function\s+rt3dReceiverPlaneZForFloor\(targetFloorIndex\)\s*\{\s*return floorElevation\(targetFloorIndex\)\s*\+\s*receiverHeight\(\)/.test(curKernel));
+ok('the fan reuses the existing tracer - there is no second tracer',
+   /rt3dTracePath\(world, ray, \{/.test(curKernel) &&
+   (curKernel.match(/function\s+rt3dTracePath\s*\(/g) || []).length === 1);
+ok('the fan does not rasterise: no splat, interpolation or smoothing',
+   !/rt3dTraceFan[\s\S]{0,6000}?\b(splat|interpolat|rasteriz|smoothing)\b(?![^;]*absent)(?!.*not)/i.test(curKernelCode) ||
+   !/\b(splat|interpolate|smoothSamples|rasterize)\s*\(/.test(curKernelCode));
+ok('the fan does not write any heatmap or production display state',
+   !/\b(heatGridRssi|heatGridDisp|heatMeta|heatMode|heatRtReach|showHeat|lastRayTraceStats|coverageUpdate)\b/.test(curKernelCode));
+ok('the fan adds no slab/Ceiling reflection and no volumetric voxels',
+   !/\b(voxel|volumeGrid|elevationSteps|azimuthSteps)\b/.test(curKernelCode) &&
+   /isWall = best\.kind==='wall'/.test(curKernelCode));
+ok('antenna gain stays azimuth-only: no vertical pattern is invented',
+   /antennaAzGain\(ap, azDeg\)/.test(curKernel) &&
+   !/function\s+rt3dElevationGain|\belBw\b|\belOff\b/.test(curKernelCode));
+ok('the receiver-plane crossing refuses rather than guesses when dz is not constant',
+   /if\(!dzConst\(trace\)\)/.test(curKernel) && /dzNotConstant/.test(curKernel));
+ok('the fan generator is deterministic: no randomness',
+   !/function\s+rt3dFanDirections[\s\S]{0,1500}?Math\.random/.test(curKernel));
 
 // ---- 4. the oracle still reproduces ----
 try {

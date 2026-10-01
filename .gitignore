@@ -8,3 +8,7 @@ Thumbs.db
 
 # Local experiments — never commit saved project files by accident
 *.wifiproj.json
+
+# Generated RT3D diagnostic renderings — regenerate with
+#   node tools/rt3d/manual-scenes.mjs
+tools/rt3d/out/

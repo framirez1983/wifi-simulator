@@ -4575,14 +4575,11 @@ function rt3dWorldBounds(w){
 //   rt3dBodyAabb(b)        the world-space box of one body
 //   rt3dBodyOverlapsAabb() box/box rejection
 //   rt3dRayAabbWindow()    ray/box, i.e. the node test a BVH descends with
-//   rt3dQuery(list, aabb)  the single entry point every caller uses
+//   rt3dQuery(list, aabb, out, opts)  the single entry point every caller
+//                          uses; defined in the Stage-3 section, which routes
+//                          to the linear oracle above when no BVH is supplied
 // rt3dBodyAabb caches into b._aabb, which is a property of the DERIVED
 // world only; it is never written onto a canonical project entity.
-function rt3dQuery(list, aabb, out){
-  out.length=0;
-  for(let i=0;i<list.length;i++) if(rt3dBodyOverlapsAabb(list[i], aabb)) out.push(list[i]);
-  return out;
-}
 function rt3dBodyAabb(b){
   if(b._aabb) return b._aabb;
   let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
@@ -6039,6 +6036,341 @@ function rt3dCandidateBodies(world, ray, horizon, kinds, opts){
     } else { stack.push(n.left); stack.push(n.right); }
   }
   return out;
+}
+
+
+// ============================================================
+//  3D EMISSION FAN + RECEIVER-PLANE SAMPLE CLOUD  (Stage 4)
+//
+//  Still a parallel engine and still not production. This stage emits a
+//  deterministic true-3D ray fan from an AP's real physical position and
+//  records the RF state at the point where each path crosses a requested
+//  horizontal receiver plane.
+//
+//  It deliberately stops there. It does NOT rasterise: no grid, no
+//  interpolation, no splatting, no smoothing. Rasterising a ray set onto a 2D
+//  grid introduces its own decisions - density, inter-ray gaps, splat kernels -
+//  and keeping that separate means a tracer bug can never be mistaken for a
+//  rasteriser artefact. That is Stage 5's problem, not this stage's.
+//
+//  ANTENNA MODEL - audited, and the audit result matters.
+//  The project DOES define a vertical antenna model: antennaGain() applies an
+//  elevation beamwidth and a downtilt term, and it is used by the Simple/SINR
+//  model (rssiFromAP). The RAY TRACING engine, however, has always used only
+//  antennaAzGain(), which is azimuth-only - see the two call sites in the
+//  production marcher and in the RT3D compatibility tracer.
+//
+//  So this stage preserves the RT engine's existing azimuth-only gain EXACTLY
+//  and treats elevation as GEOMETRICAL ONLY. It does not import the Simple
+//  model's vertical lobe: that is a different radiation model, and silently
+//  adopting it inside the fan would make the fan disagree with the engine it
+//  is meant to feed. A future antenna-model feature may add real vertical
+//  patterns; until then the divergence between the two models is recorded
+//  here and reported in the fan diagnostics.
+// ============================================================
+
+// Reflection loss per bounce, matching the legacy RT marcher's REFL_LOSS.
+// The legacy engine spawns a reflected branch at dB + mat*0.5 + REFL_LOSS; the
+// 3D tracer charges a pure mirror by default, so the fan passes this
+// explicitly to keep the budget comparable with the legacy engine.
+const RT3D_REFLECTION_LOSS_DB = 5;
+
+// ------------------------------------------------------------
+//  RECEIVER PLANE
+//  Explicit and absolute, never derived from a grid or an active view.
+//
+//  NOTE the distinct name. rt3dReceiverPlaneZ() above is the Stage-2
+//  COMPATIBILITY helper: no argument, always the ACTIVE floor, and it is what
+//  the horizontal compatibility tracer marches on. This one is the Stage-4
+//  sampling plane and REQUIRES an explicit floor. Giving both the same name
+//  shadowed the compatibility helper, which silently returned the wrong plane
+//  when called with no argument and moved the compatibility march down to
+//  z = receiverHeight on every floor. Two meanings, two names.
+// ------------------------------------------------------------
+function rt3dReceiverPlaneZForFloor(targetFloorIndex){
+  return floorElevation(targetFloorIndex) + receiverHeight();
+}
+
+// ------------------------------------------------------------
+//  DETERMINISTIC EMISSION FAN
+//
+//  Two elevation schemes are implemented so the consequence of each can be
+//  MEASURED rather than argued about:
+//
+//   'uniformAngle'     elevation angles evenly spaced. Simple, but the solid
+//                      angle a ring covers shrinks toward the poles, so rays
+//                      bunch up over the AP. Equal angles are NOT equal area.
+//
+//   'equalSolidAngle'  elevation sampled uniformly in mu = SIN(elevation).
+//                      The polar angle from +Z relates to elevation by
+//                      theta = 90 - el, so cos(theta) = sin(el): sin(el) is
+//                      the quantity whose uniform steps are equal solid
+//                      angle. Every ring then covers the same solid angle and
+//                      the fan is isotropic. This is the default.
+//
+//  Both use the MIDPOINT rule, so no sample ever lands exactly on a boundary
+//  and the scheme is symmetric about its centre. Neither is tuned for visual
+//  appearance; 'equalSolidAngle' is chosen because it is the mathematically
+//  correct uniform measure on a sphere, not because it looks better.
+//
+//  The azimuth ring runs 0 .. 360 EXCLUSIVE, so there is no duplicated seam
+//  direction at 0/360: with N azimuths the last sample sits at
+//  360*(N-1)/N, and azimuth 0 appears exactly once.
+// ------------------------------------------------------------
+function rt3dFanDirections(opts){
+  opts=opts||{};
+  const azN=Math.max(1, opts.azimuthSamples|0);
+  const elN=Math.max(1, opts.elevationSamples|0);
+  const scheme=(opts.elevationScheme==='uniformAngle') ? 'uniformAngle' : 'equalSolidAngle';
+  const elMin=opts.elevationMinDeg!=null ? opts.elevationMinDeg : -90;
+  const elMax=opts.elevationMaxDeg!=null ? opts.elevationMaxDeg : 90;
+  // mu = sin(elevation): the equal-solid-angle coordinate. cos(el) is NOT
+  // usable: over -90..+90 it is zero at BOTH poles and is not monotonic, so it
+  // cannot parametrise the sphere. Polar angle from +Z is 90 - el, so
+  // cos(theta) = sin(el).
+  const muHi=Math.sin(elMax*Math.PI/180);
+  const muLo=Math.sin(elMin*Math.PI/180);
+  const out=[];
+  for(let ia=0; ia<azN; ia++){
+    // exclusive upper bound: no 360/0 seam duplicate
+    const azDeg = ia*360/azN;
+    const az=azDeg*Math.PI/180;
+    for(let ie=0; ie<elN; ie++){
+      const f=(ie+0.5)/elN;                 // midpoint rule
+      let elDeg;
+      if(scheme==='uniformAngle') elDeg = elMin + f*(elMax-elMin);
+      else elDeg = Math.asin(Math.max(-1, Math.min(1, muHi + f*(muLo-muHi))))*180/Math.PI;
+      const el=elDeg*Math.PI/180, ce=Math.cos(el);
+      const d=rt3dUnit(rt3dV(ce*Math.cos(az), ce*Math.sin(az), Math.sin(el)));
+      out.push({ azDeg:azDeg, elDeg:elDeg, dx:d.x, dy:d.y, dz:d.z });
+    }
+  }
+  return out;
+}
+// The documented cost of each scheme, per elevation ring: the solid angle each
+// sample represents. A perfectly isotropic fan has one identical value per
+// ring; the ratio of the largest to the smallest is the density bias.
+function rt3dFanDensity(opts){
+  opts=opts||{};
+  const azN=Math.max(1, opts.azimuthSamples|0);
+  const elN=Math.max(1, opts.elevationSamples|0);
+  const scheme=(opts.elevationScheme==='uniformAngle') ? 'uniformAngle' : 'equalSolidAngle';
+  const elMin=opts.elevationMinDeg!=null ? opts.elevationMinDeg : -90;
+  const elMax=opts.elevationMaxDeg!=null ? opts.elevationMaxDeg : 90;
+  // mu = sin(elevation): the equal-solid-angle coordinate, same as the generator
+  const muHi=Math.sin(elMax*Math.PI/180), muLo=Math.sin(elMin*Math.PI/180);
+  const dAz=2*Math.PI/azN;
+  const rings=[];
+  for(let ie=0; ie<elN; ie++){
+    const f=(ie+0.5)/elN;
+    let elDeg, dMu;
+    if(scheme==='uniformAngle'){
+      elDeg=elMin + f*(elMax-elMin);
+      // dOmega = cos(el) * dAz * dEl   (dEl in radians)
+      dMu = Math.cos(elDeg*Math.PI/180) * ((elMax-elMin)*Math.PI/180)/elN;
+    } else {
+      const mu=muHi + f*(muLo-muHi);
+      elDeg=Math.asin(Math.max(-1,Math.min(1,mu)))*180/Math.PI;
+      dMu = Math.abs(muLo-muHi)/elN;
+    }
+    rings.push({ elDeg:+elDeg.toFixed(4), solidAnglePerSample:+(dAz*dMu).toFixed(8) });
+  }
+  const vals=rings.map(r=>r.solidAnglePerSample);
+  const mx=Math.max.apply(null, vals), mn=Math.min.apply(null, vals);
+  return { scheme, azimuthSamples:azN, elevationSamples:elN, rings,
+           minSolidAngle:mn, maxSolidAngle:mx,
+           densityBiasRatio: mn>0 ? +(mx/mn).toFixed(3) : null,
+           // vals are PER-SAMPLE solid angles, one per elevation ring; the
+           // fan as a whole covers azN of them per ring
+           totalSolidAngle:+(vals.reduce((a,b)=>a+b,0)*azN).toFixed(6) };
+}
+
+// ------------------------------------------------------------
+//  RECEIVER-PLANE CROSSING
+//
+//  Where does this true-3D path cross absolute Z = planeZ?
+//
+//  Because the only reflector is a VERTICAL WALL surface, and a vertical wall's
+//  normal has nz = 0, the general reflection law R = D - 2(D.N)N leaves dz
+//  untouched. Transmissions never turn a ray. Therefore dz is CONSTANT along
+//  the whole path and z is monotonic in the path parameter s, so a path can
+//  cross a horizontal plane AT MOST ONCE. That makes the crossing a closed
+//  form and removes any interval ambiguity - and it is asserted, not assumed:
+//  if a future stage ever introduces a horizontal reflector this returns
+//  null rather than silently sampling the wrong point.
+//
+//  The state reported is the state AT the crossing: only events strictly
+//  before it contribute. Anything that happens afterwards is excluded by
+//  construction.
+// ------------------------------------------------------------
+function rt3dReceiverPlaneCrossing(trace, planeZ, tol){
+  tol = tol!=null ? tol : RT3D_TOL.zeroLength;
+  if(!trace) return null;
+  const o=trace.origin, d=trace.initialDirection;
+  const dzConst = (tr)=>{
+    // every event must be consistent with a CONSTANT dz, i.e. point.z == o.z + dz*distance
+    for(const e of tr.events){
+      const want=o.z + d.z*e.distance;
+      if(Math.abs(e.point.z - want) > 1e-7) return false;
+    }
+    return true;
+  };
+  if(!dzConst(trace)){
+    // A horizontal reflector exists, or something is wrong. Refuse rather
+    // than invent a crossing.
+    return { hit:false, reason:'dzNotConstant', inPlane:false };
+  }
+  if(Math.abs(d.z) <= tol){
+    // A horizontal ray never crosses a horizontal plane transversally.
+    if(Math.abs(o.z - planeZ) <= 1e-7){
+      // It LIES IN the plane. There is no unique crossing, so this is an
+      // explicitly defined degenerate case, reported once, at the origin.
+      return { hit:true, inPlane:true, reason:'rayLiesInPlane',
+               pathDistance:0,
+               x:o.x, y:o.y, z:planeZ,
+               materialLoss:0, reflectionCount:0, transmissionCount:0 };
+    }
+    return { hit:false, reason:'horizontalRayMissesPlane', inPlane:false };
+  }
+  const s=(planeZ - o.z)/d.z;
+  if(s < -tol) return { hit:false, reason:'planeBehindRayOrigin', inPlane:false };
+  if(s > trace.totalDistance + tol) return { hit:false, reason:'planeNeverReached', inPlane:false };
+
+  // only events strictly BEFORE the crossing contribute
+  let materialLoss=0, reflectionCount=0, transmissionCount=0;
+  for(const e of trace.events){
+    if(e.distance > s + tol) break;            // events are in increasing distance
+    materialLoss += e.loss;
+    if(e.type==='reflection') reflectionCount++;
+    if(e.type==='transmission') transmissionCount += e.traversals;
+  }
+  return { hit:true, inPlane:false, reason:'crossed',
+           pathDistance:+s.toFixed(9),
+           x:+(o.x + d.x*s).toFixed(9),
+           y:+(o.y + d.y*s).toFixed(9),
+           z:+planeZ.toFixed(9),
+           materialLoss:+materialLoss.toFixed(9),
+           reflectionCount, transmissionCount };
+}
+
+// ------------------------------------------------------------
+//  RECEIVED-POWER BUDGET AT A SAMPLE
+//
+//  Reuses the approved legacy path-loss semantics where they transfer, and
+//  uses TRUE 3D path distance - never the XY projection.
+//
+//  LEGACY TERMS THAT DELIBERATELY DO NOT TRANSFER:
+//   * antennaGain()'s vertical beamwidth / downtilt term. The RT engine has
+//     always used antennaAzGain() only; see the section header.
+//   * the legacy cross-floor model folds AP/receiver floor separation into the
+//     distance (rfDist) and then adds slab loss SEPARATELY via slabAt(). The
+//     3D tracer traverses the slab as real geometry, so its loss already
+//     arrives inside `materialLoss`. Adding the legacy slab term on top would
+//     double-count it. Only the distance term is dropped: the true 3D path
+//     distance already contains the vertical separation.
+//   * the legacy below-floor cut-off (RT_FLOOR_DBM) is a marching
+//     optimisation, not a propagation term, so it is reported as a flag
+//     rather than subtracted from the budget.
+// ------------------------------------------------------------
+function rt3dSampleReceivedPower(sample, ap, mhz, plExp, pl1){
+  const azDeg=Math.atan2(sample.rayDirection.y, sample.rayDirection.x)*180/Math.PI;
+  const gain=antennaAzGain(ap, azDeg);          // azimuth only, RT semantics
+  const d=Math.max(0.5, sample.pathDistance);   // metres, TRUE 3D path length
+  const p=ap.txPower + gain - (pl1 + 10*plExp*Math.log10(d) + sample.materialLoss);
+  return { receivedPower:+p.toFixed(4), antennaGainDb:+gain.toFixed(4),
+           distanceUsed:+d.toFixed(6), belowLegacyFloor: p < RT_FLOOR_DBM };
+}
+
+// ------------------------------------------------------------
+//  FAN TRACE
+//
+//  Every fan ray is launched from the AP's real physical position and traced
+//  with the EXISTING Stage-3 tracer - there is no second tracer here. The BVH
+//  is the default broadphase; 'linear' stays selectable for differential
+//  validation.
+// ------------------------------------------------------------
+function rt3dTraceFan(world, ap, apFloorIndex, planeZ, opts){
+  opts=opts||{};
+  const dirs = opts.directions || rt3dFanDirections(opts);
+  const backend = opts.backend || rt3dBroadphaseBackend;
+  const mhz = opts.mhz!=null ? opts.mhz : BANDS[state.band].mhz;
+  const pl1 = opts.pl1!=null ? opts.pl1 : fsplAt1m(mhz);
+  const plExp = opts.plExp!=null ? opts.plExp : state.plExp;
+  const maxReflections = opts.maxReflections!=null ? opts.maxReflections : 2;
+  const maxDistance = opts.maxDistance!=null ? opts.maxDistance : 120;
+  const reflLoss = opts.reflectLossDb!=null ? opts.reflectLossDb : RT3D_REFLECTION_LOSS_DB;
+  const stats = rt3dNewStats();
+
+  const origin = rt3dApOrigin(ap, apFloorIndex);
+  const samples=[];
+  const rays=[];
+  let reached=0, terminatedEarly=0, direct=0, reflected=0, totalEvents=0, totalDist=0;
+
+  for(const dir of dirs){
+    const ray = rt3dRay(origin.x, origin.y, origin.z, dir.dx, dir.dy, dir.dz);
+    if(!ray) continue;
+    const t0=(typeof performance!=='undefined'? performance.now():0);
+    const tr = rt3dTracePath(world, ray, {
+      backend: backend, maxDistance: maxDistance, maxReflections: maxReflections,
+      reflectWalls: opts.reflectWalls!==false, reflectLossDb: reflLoss,
+      collectCandidates: !!opts.collectCandidates, stats: stats });
+    const t1=(typeof performance!=='undefined'? performance.now():0);
+    const ms=(t1-t0);
+    const cross = rt3dReceiverPlaneCrossing(tr, planeZ);
+    const rec = { azDeg:dir.azDeg, elDeg:dir.elDeg, rayDirection:dir,
+                  cross: cross, events: tr? tr.events.length : 0,
+                  distance: tr? tr.totalDistance : 0, ms:ms };
+    rays.push(rec);
+    totalEvents += rec.events;
+    totalDist += rec.distance;
+    if(!cross || !cross.hit){ terminatedEarly++; continue; }
+    reached++;
+    if(cross.reflectionCount>0) reflected++; else direct++;
+    const sample = {
+      x:cross.x, y:cross.y, z:cross.z,
+      pathDistance:cross.pathDistance,
+      materialLoss:cross.materialLoss,
+      reflectionCount:cross.reflectionCount,
+      transmissionCount:cross.transmissionCount,
+      inPlane: !!cross.inPlane,
+      sourceAp: { id:ap.id, x:ap.x, y:ap.y, z:origin.z, floorIndex:apFloorIndex,
+                  txPower:ap.txPower, antennaType:(ap.antenna&&ap.antenna.type)||'omni' },
+      rayDirection: { x:dir.dx, y:dir.dy, z:dir.dz },
+      azDeg:dir.azDeg, elDeg:dir.elDeg
+    };
+    Object.assign(sample, rt3dSampleReceivedPower(sample, ap, mhz, plExp, pl1));
+    samples.push(sample);
+  }
+
+  return {
+    receiverPlaneZ: planeZ,
+    apOrigin: { x:origin.x, y:origin.y, z:origin.z },
+    backend: backend,
+    density: rt3dFanDensity(opts),
+    samples: samples,
+    rays: rays,
+    diagnostics: {
+      totalEmittedRays: rays.length,
+      raysReachingPlane: reached,
+      raysTerminatedBeforePlane: terminatedEarly,
+      directSamples: direct,
+      reflectedSamples: reflected,
+      averageEventsPerRay: rays.length? +(totalEvents/rays.length).toFixed(3) : 0,
+      averagePathDistance: rays.length? +(totalDist/rays.length).toFixed(3) : 0,
+      bvhCandidatesTested: stats.candidatesTested,
+      bvhNodesVisited: stats.nodesVisited,
+      bvhLeavesVisited: stats.leavesVisited,
+      totalBodies: stats.totalBodies,
+      runtimeMs: +rays.reduce((a,r)=>a+(r.ms||0),0).toFixed(3),
+      runtimePerApMs: rays.length? +(rays.reduce((a,r)=>a+(r.ms||0),0)/rays.length).toFixed(4) : 0,
+      // Antenna model, stated explicitly in the artefact itself.
+      antennaModel: 'azimuth-only (antennaAzGain), elevation is geometrical only',
+      antennaModelNote: 'the Simple/SINR model uses antennaGain() with a vertical ' +
+                         'beamwidth and downtilt; the RT engine has always used ' +
+                         'antennaAzGain() alone, and this fan preserves that',
+      reflectionLossDb: reflLoss
+    }
+  };
 }
 
 function smoothRSSI(src,w,h){
