@@ -50,17 +50,62 @@ const kernelSrc = (src) => {
   const e = src.indexOf(EXP, k);
   return src.slice(k, e > 0 ? e : s);
 };
-// The Stage-5 section itself, or '' when it is absent (e.g. the baseline).
+// The Stage-5 experimental section: from its banner up to whatever comes next
+// (the Stage-6 core on this branch, smoothRSSI otherwise). Stage 5 is scoped on
+// its own, because Stage 6 is a separate contract with its own checks below and
+// Stage 6 legitimately reconciles the antenna model Stage 5 refused to touch.
+const S6CORE = '//  UNIFIED RT3D COVERAGE FIELD CORE  (Stage 6)';
+const S6UI = 'STAGE 6 BROWSER INTEGRATION';
 const expSrc = (src) => {
   const a = src.indexOf(EXP);
   if (a < 0) return '';
-  const s = src.indexOf('function smoothRSSI', a);
-  return src.slice(a, s);
+  const s6 = src.indexOf(S6CORE, a);
+  return src.slice(a, s6 > 0 ? s6 : src.indexOf('function smoothRSSI', a));
+};
+// The Stage-6 coverage core: physics only, up to the browser integration.
+const s6CoreSrc = (src) => {
+  const a = src.indexOf(S6CORE);
+  if (a < 0) return '';
+  const u = src.indexOf(S6UI, a);
+  return src.slice(a, u > 0 ? u : src.indexOf('function smoothRSSI', a));
+};
+// The Stage-6.5 audit section: its own scope, so the audit instrument is never
+// mistaken for part of the Stage-6 engine it exists to interrogate.
+const S65AUDIT = '//  STAGE 6.5 — LEGACY vs RT3D RF TRUTH AUDIT';
+const S65UI = '//  STAGE 6.5 — BROWSER PROBE SURFACE';
+const s65End = (src) => src.indexOf('function smoothRSSI', src.indexOf(S65AUDIT));
+// The audit CORE: physics-free instrument. It must not touch the UI at all.
+const s65Src = (src) => {
+  const a = src.indexOf(S65AUDIT);
+  if (a < 0) return '';
+  const e = src.indexOf(S65UI, a);
+  return src.slice(a, e > 0 ? e : s65End(src));
+};
+// The audit UI: development-only panel and click handling. It is allowed to ask
+// for a repaint, because a probe marker that never appears is useless, but it is
+// held to every rule that could touch physics or the canonical field.
+const s65UiCodeSrc = (src) => {
+  const a = src.indexOf(S65UI);
+  if (a < 0) return '';
+  return src.slice(a, s65End(src));
+};
+// The Stage-6 browser integration layer, ending where the audit section begins.
+const s6UiSrc = (src) => {
+  const a = src.indexOf(S6UI);
+  if (a < 0) return '';
+  const e = src.indexOf(S65AUDIT, a);
+  return src.slice(a, e > 0 ? e : src.indexOf('function smoothRSSI', a));
 };
 const curBlock = prodBlock(cur);
 const baseBlock = prodBlock(base);
 const curKernel = kernelSrc(cur);
 const curExp = expSrc(cur);
+const curS6Core = s6CoreSrc(cur);
+// the app <script> block, for cross-section checks
+const SRC = cur.match(/<script>\n([\s\S]*?)\n<\/script>/)[1];
+const curS6Ui = s6UiSrc(cur);
+const curS65 = s65Src(cur);
+const curS65Ui = s65UiCodeSrc(cur);
 
 console.log('Production engine isolation\n');
 ok('production RT block is byte-identical to baseline ' + BASELINE,
@@ -118,6 +163,15 @@ const code = (s) => s
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
   .replace(/^\s*\/\/[^\n]*$/gm, ' ')
   .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+// For CALL-SITE scans only, drop string literals. A call-site check must be able to
+// tell a call from a mention: the Stage-6.5 snapshot store records
+// `source:'runRayTrace() completion'`, and the check that the audit "never runs a
+// propagation engine" failed on that label. This is deliberately NOT folded into
+// code(), because the kernel checks above legitimately inspect string content.
+const calls = (s) => code(s)
+  .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+  .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+  .replace(/`(?:[^`\\]|\\.)*`/g, '``');
 const curKernelCode = code(curKernel);
 ok('kernel touches no DOM API',
    !/\b(document|window|localStorage|querySelector|addEventListener)\b/.test(curKernelCode),
@@ -235,7 +289,164 @@ ok('the fan generator is deterministic: no randomness',
 try {
   const out = execFileSync('node', [path.join(HERE, 'oracle.mjs'), 'check'],
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 900000 });
-  ok('oracle reproduces exactly for all fixtures', out.includes('oracle stable'), out.trim().split('\n').pop());
+  // ---- 7. Stage 6: the unified coverage field core --------------------------
+// The core is PHYSICS. It must not know about rendering, and it must not grow
+// into a second engine or a second antenna model.
+{
+  const code6 = curS6Core
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^\s*\/\/[^\n]*$/gm, ' ')
+    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+  ok('the Stage-6 coverage core exists and is its own section',
+     curS6Core.length > 4000 && cur.includes(S6CORE));
+  ok('the coverage core touches no canvas, colour, heatmap or active floor',
+     !/\b(canvas|getContext|THREE|drawImage|createImageData|imageSmoothing)\b/.test(code6) &&
+     !/\bheatGrid(Rssi|Disp|Meta)\b/.test(code6) &&
+     !/\brssiColor|sinrColor\b/.test(code6) &&
+     !/\bactiveFloor\b/.test(code6),
+     (code6.match(/\b(canvas|getContext|THREE|heatGridRssi|rssiColor|activeFloor)\b/g) || [])
+       .slice(0, 5).join(', '));
+  ok('the coverage core contains no interpolation, splat or IDW',
+     !/\b(splat|interpolat|idw|inverseDistance|blurCell|floodFill)\w*\s*\(/.test(code6));
+  ok('the coverage core builds no volumetric structure (no voxel/grid3D)',
+     !/\b(voxel|volumeGrid|grid3D|octree|quadtree)\b/i.test(code6),
+     (code6.match(/\b(voxel|volumeGrid|grid3D|octree|quadtree)\b/gi) || []).join(', '));
+  ok('the coverage core still uses the one shared tracer, not a second one',
+     /rt3dTracePath\(/.test(code6) &&
+     (SRC.match(/function\s+rt3dTracePath\s*\(/g) || []).length === 1);
+  ok('the coverage core uses the BVH for intersection acceleration',
+     /backend:\s*opts\.backend\s*\|\|\s*rt3dBroadphaseBackend/.test(code6));
+  ok('the coverage core reconciles the antenna model deliberately: antennaGain(), not a new model',
+     /antennaGain\(ap, p\.x, p\.y, apz, p\.z\)/.test(code6) &&
+     !/function\s+rt3dElevationGain|\belBw\b|\belOff\b/.test(code6));
+  ok('the coverage core still reflects from vertical walls only',
+     /isWall\s*=\s*best\.kind==='wall'/.test(SRC) &&
+     !/kind==='slab'[^;]{0,80}reflect|kind==='ceiling'[^;]{0,80}reflect/.test(code6));
+  ok('the coverage core solves reflection analytically, never by sampling a fan',
+     /rt3dReflectCandidate/.test(code6) &&
+     !/rt3dFanDirections/.test(code6),
+     'a fan inside the point query would make the answer density-dependent');
+  ok('the coverage core aggregates by strongest path, never by summing dBm',
+     /strongest physically valid path/.test(code6) &&
+     !/interfMW|Math\.pow\(10,\s*\S*\/10/.test(code6));
+  ok('the Stage-6 browser integration is a separate, later section',
+     curS6Ui.length > 500 && curS6Ui.indexOf(S6UI) >= 0);
+  ok('the Stage-6 integration adds no normal application control outside ?rt3d=1',
+     /RT3D Coverage Field \(Stage 6\)/.test(SRC) &&
+     /function\s+rt3dExpRunCoverage\(\)\s*\{\s*if\(!RT3D_EXP_ENABLED\)\s*return;/.test(curS6Ui));
+  ok('the Stage-5 fan tooling is retained alongside the coverage field',
+     /function\s+rt3dExpStart\s*\(/.test(cur) &&
+     /id="rt3dExpSource"/.test(SRC));
+}
+
+// ---- 4. the Stage-6.5 audit section is an INSTRUMENT, not an engine ----
+// Its whole purpose is to interrogate two engines. If it could alter either one,
+// every number it reports would be worthless: it would be measuring itself.
+if (curS65) {
+  const s65Code = code(curS65);
+  console.log('Stage 6.5 audit isolation\n');
+  ok('the Stage-6.5 audit section exists and is scoped separately',
+     curS65.length > 4000 && curS65.includes('rt3dAuditProbeAt'));
+  ok('the audit never writes to canonical project state',
+     !/\bstate\.[A-Za-z0-9_.]*\s*=(?!=)/.test(s65Code),
+     (s65Code.match(/\bstate\.[A-Za-z0-9_.]*\s*=(?!=)[^;\n]*/g) || []).slice(0, 3).join(' | '));
+  ok('the audit never writes a heatmap or trace result',
+     !/\b(heatGridRssi|heatGridDisp|heatMeta|heatRtReach|heatMode|heatMetric|showHeat)\s*=(?!=)/.test(s65Code),
+     (s65Code.match(/\b(heatGridRssi|heatGridDisp|heatMeta|heatRtReach|heatMode|showHeat)\s*=(?!=)[^;\n]*/g) || []).slice(0, 3).join(' | '));
+  ok('the audit never triggers a production engine or a repaint',
+     !/(runRayTrace|paintHeat|draw2d|showToast|coverageUpdate|scheduleHeat|refresh3dHeat|computeHeatSimple)\s*\(/.test(calls(s65Code)),
+     (s65Code.match(/(runRayTrace|paintHeat|draw2d|showToast|coverageUpdate|scheduleHeat|refresh3dHeat|computeHeatSimple)\s*\(/g) || []).slice(0, 3).join(' | '));
+  ok('the audit does not modify any RF parameter',
+     !/\b(matById|apMount|antennaGain|antennaAzGain|rssiFromAP|slabLossBetweenPoints|ceilingLossBetweenPoints|wallLossOnFloor|pillarLossOnFloor|fsplAt1m|plExp)\s*\.[A-Za-z0-9_]*\s*=/.test(s65Code));
+  // The audit reads the legacy result and reports it. It must never write one.
+  ok('the audit declares legacy output is not truth, in code',
+     /legacyIsTruth:\s*false/.test(curS65) &&
+     /Legacy output is NOT truth/.test(curS65));
+  // A counterfactual that leaked into the canonical field would be the single
+  // worst failure mode this section could have.
+  ok('no audit variant is ever assigned to the canonical coverage field',
+     !/(heatGridRssi|heatGridDisp|best\[k\]|apBest\[k\])\s*=\s*[^;]*(azOnly|noReflections|losOnly)/.test(s65Code));
+
+  // ---- the classification chain has exactly ONE authoritative material path ---
+  // The conservative policy is: a material-crossing difference may only be asserted
+  // as an EXPECTED LEGACY LIMITATION when the compared path is identifiable; with
+  // several live AP paths Legacy discarded per-cell AP/path identity at deposition,
+  // so the result must be PHYSICALLY UNRESOLVED with the attribution limit stated.
+  //
+  // That policy was previously NOT PRESENT at all while an older, pre-conservative
+  // material branch sat alone in the if/else chain. When the conservative gate was
+  // then added, a second copy of the gate is exactly how the chain ends up with two
+  // competing material branches whose wording a cell receives depends on chain
+  // position rather than on policy. So the invariant is asserted on the SOURCE of
+  // the classifier itself, not merely on one behavioural fixture.
+  //
+  // The classifier sits after the audit-core and audit-UI banners, so the scope
+  // slices above do not contain it; slice its own function body instead.
+  const clsSrc = (() => {
+    const i = cur.indexOf('function rt3dAuditClassifyDisagreement');
+    if (i < 0) return '';
+    const j = cur.indexOf('\nfunction ', i + 1);
+    return cur.slice(i, j < 0 ? undefined : j);
+  })();
+  const materialBranches = (clsSrc.match(
+    /top\.term===\s*'material crossings on the direct path'/g) || []).length;
+  ok('the disagreement classifier exists and is reachable', clsSrc.length > 500,
+     'classifier body not found');
+  ok('exactly ONE authoritative material-crossing classification branch exists',
+     materialBranches === 1, 'found ' + materialBranches);
+  ok('every material-crossing verdict is gated on legacyWinnerIdentifiable',
+     (() => {
+       if (!clsSrc) return false;
+       const i = clsSrc.indexOf("top.term==='material crossings on the direct path'");
+       const j = clsSrc.indexOf("top.term==='first-order reflections'", i);
+       const body = clsSrc.slice(i, j < 0 ? undefined : j);
+       return /if\(legacyWinnerIdentifiable\)/.test(body) &&
+              /classification='PHYSICALLY UNRESOLVED'/.test(body) &&
+              /attributionLimit/.test(body);
+     })());
+  // Ordering is the substantive part: the identifiability gate must be evaluated
+  // BEFORE any EXPECTED LEGACY LIMITATION is assigned inside the material branch.
+  // A branch that assigns the attribution first and gates afterwards would satisfy
+  // a mere substring scan while still asserting the cause unconditionally.
+  ok('the identifiability gate is evaluated BEFORE the material verdict is assigned',
+     (() => {
+       if (!clsSrc) return false;
+       const i = clsSrc.indexOf("top.term==='material crossings on the direct path'");
+       const j = clsSrc.indexOf("top.term==='first-order reflections'", i);
+       const body = clsSrc.slice(i, j < 0 ? undefined : j);
+       const g = body.indexOf('if(legacyWinnerIdentifiable)');
+       const a = body.indexOf("classification='EXPECTED LEGACY LIMITATION'");
+       const u = body.indexOf("classification='PHYSICALLY UNRESOLVED'");
+       return g >= 0 && a > g && u > g;
+     })(), 'the gate does not dominate both verdicts in the material branch');
+  ok('the attribution limit is surfaced on every classified probe',
+     /legacyWinnerIdentifiable:/.test(clsSrc) && /attributionLimit:/.test(clsSrc));
+
+  // The probe UI: same physics prohibitions, but a repaint request is legitimate.
+  const s65UiCode = code(curS65Ui);
+  ok('the Stage-6.5 probe UI exists and is scoped separately', curS65Ui.length > 500);
+  ok('the probe UI is inert without the flag',
+     /function\s+rt3dAuditBindProbe\(\)\s*\{\s*if\(!RT3D_EXP_ENABLED\)\s*return;/.test(curS65Ui));
+  ok('the probe UI never writes canonical project state',
+     !/\bstate\.[A-Za-z0-9_.]*\s*=(?!=)/.test(s65UiCode),
+     (s65UiCode.match(/\bstate\.[A-Za-z0-9_.]*\s*=(?!=)[^;\n]*/g) || []).slice(0, 3).join(' | '));
+  ok('the probe UI never writes a heatmap or trace result',
+     !/\b(heatGridRssi|heatGridDisp|heatMeta|heatRtReach|heatMode|heatMetric|showHeat)\s*=(?!=)/.test(s65UiCode),
+     (s65UiCode.match(/\b(heatGridRssi|heatGridDisp|heatMeta|heatRtReach|heatMode|showHeat)\s*=(?!=)[^;\n]*/g) || []).slice(0, 3).join(' | '));
+  ok('the probe UI never runs a propagation engine',
+     !/(runRayTrace|computeHeatSimple|rt3dCoverageSlice|rt3dExpRunCoverage|rt3dExpStart)\s*\(/.test(calls(s65UiCode)),
+     (s65UiCode.match(/(runRayTrace|computeHeatSimple|rt3dCoverageSlice|rt3dExpRunCoverage|rt3dExpStart)\s*\(/g) || []).slice(0, 3).join(' | '));
+  ok('the probe UI never modifies an RF parameter',
+     !/\b(matById|apMount|antennaGain|antennaAzGain|rssiFromAP|fsplAt1m|plExp)\s*\.[A-Za-z0-9_]*\s*=/.test(s65UiCode));
+  ok('the probe is not persisted: it lives in module locals, not in state',
+     /let\s+rt3dAuditProbePoint/.test(curS65Ui) &&
+     !/rt3dAuditProbe(Point|Result)\s*=\s*state\./.test(s65UiCode));
+  ok('the probe receiver Z is the canonical plane, not a free choice',
+     /floorElevation\(activeFloor\)\s*\+\s*receiverHeight\(\)/.test(curS65Ui) ||
+     /rt3dAuditReceiverPlaneZ/.test(curS65Ui));
+}
+
+ok('oracle reproduces exactly for all fixtures', out.includes('oracle stable'), out.trim().split('\n').pop());
   const m = out.match(/rays=(\d+)\/(\d+) branch=(\d+)\/(\d+)/g) || [];
   const mism = [...out.matchAll(/(\w[\w-]*)\s+old\.fp=(\w+) new\.fp=(\w+)/g)]
     .filter((x) => x[2] !== x[3]);

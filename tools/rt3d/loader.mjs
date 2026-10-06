@@ -31,7 +31,21 @@ function el() {
     // toggle() is here because the application's own toolbar wiring already uses it
     classList: { add(){}, remove(){}, toggle(){}, contains(){return false;} },
     children: [], options: [], className: '', value: '', checked: false,
-    getContext(){ return ctx2d(); }, addEventListener(){}, removeEventListener(){},
+    // innerHTML is real state here: panels are written by innerHTML and asserted
+    // on by tests, and an element that forgets it hides every rendering bug.
+    innerHTML: '', textContent: '',
+    getContext(){ return ctx2d(); },
+    // Listeners are RECORDED and dispatch is real. addEventListener(){} silently
+    // discarding every handler means a click-driven code path can never be tested:
+    // the wiring either works or is invisible. A previous harness gap of this kind
+    // hid a real TypeError for an entire stage.
+    _l: Object.create(null),
+    addEventListener(t, f){ (this._l[t] || (this._l[t] = [])).push(f); },
+    removeEventListener(t, f){ const a = this._l[t]; if (!a) return;
+      const i = a.indexOf(f); if (i >= 0) a.splice(i, 1); },
+    dispatchEvent(ev){ const a = this._l[ev.type]; if (!a) return false;
+      for (const f of a.slice()) f.call(this, ev); return true; },
+    listenerCount(t){ return (this._l[t] || []).length; },
     appendChild(){}, append(){}, remove(){}, insertBefore(){}, setAttribute(){},
     getAttribute(){ return null; }, removeAttribute(){}, focus(){}, blur(){},
     querySelector(){ return el(); }, querySelectorAll(){ return []; },
@@ -67,8 +81,18 @@ export function makeDom() {
     body: el(), head: el(), documentElement: el(),
     createElement: () => el(), createElementNS: () => el(),
     createTextNode: (t) => ({ nodeValue: t }),
-    getElementById: () => el(),
-    querySelector: () => el(), querySelectorAll: () => [],
+    // Cached by id: the app writes innerHTML on one lookup and a test reads it on
+    // another, so a fresh element per call would make every panel assertion read
+    // an empty string and silently match nothing.
+    getElementById: (() => { const byId = Object.create(null);
+      return (id) => (byId[id] || (byId[id] = el())); })(),
+    // The app's $() is querySelector, so this is the path that matters: it MUST
+    // return a stable element per selector. Returning a fresh one made every panel
+    // write land on a throwaway object, so innerHTML assertions read '' and passed
+    // or failed for reasons unrelated to the code under test.
+    querySelector: (() => { const bySel = Object.create(null);
+      return (sel) => (bySel[sel] || (bySel[sel] = el())); })(),
+    querySelectorAll: () => [],
     addEventListener(){}, removeEventListener(){},
     createDocumentFragment: () => el(),
   };

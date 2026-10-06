@@ -519,7 +519,13 @@ console.log('Stage 5 acceptance — RT3D experimental browser layer\n');
     const k = script.indexOf('// ============================================================\n//  TRUE 3D RAY-TRACING KERNEL', a);
     return script.slice(a, k);
   })();
-  const exp = script.slice(script.indexOf('//  RT3D EXPERIMENTAL BROWSER LAYER'));
+  // Stage 5 is scoped on its own, up to the Stage-6 core banner. Stage 6 is a
+  // separate contract that deliberately reconciles the antenna model, so folding it
+  // into Stage 5's slice tests it against rules it was never meant to satisfy.
+  const expFrom = script.indexOf('//  RT3D EXPERIMENTAL BROWSER LAYER');
+  const s6At = script.indexOf('//  UNIFIED RT3D COVERAGE FIELD CORE', expFrom);
+  const exp = script.slice(expFrom,
+    s6At > 0 ? s6At : script.indexOf('function smoothRSSI', expFrom));
   check(18, 'the experimental layer never redefines or replaces the production tracer',
     !/function runRayTrace/.test(exp) && /function runRayTrace\(onDone\)/.test(prodBlock) &&
     !/runRayTrace\s*=/.test(exp),
