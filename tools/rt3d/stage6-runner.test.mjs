@@ -16,7 +16,7 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeDom, run } from './loader.mjs';
+import { makeDom, run, attachCore, installFakeWorker } from './loader.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = fs.readFileSync(path.join(HERE, '..', '..', 'index.html'), 'utf8')
@@ -35,11 +35,19 @@ function check(id, name, cond, detail) {
 // A sandbox with a controllable clock and an explicit animation-frame queue, so
 // each frame is observable. Cost per point query is charged to the fake clock, so
 // a large grid WOULD blow a real frame budget unless the budget is honoured.
+//
+// Stage 7A.1: the coverage runner now executes its slice in a Dedicated Worker.
+// The worker double is installed here so this suite drives the REAL controller
+// over the REAL protocol. The double evaluates the same application source and
+// runs the same RT3DCore job runner, so the physics exercised is unchanged; only
+// message delivery is stepped by this harness's frame queue.
 function makeSandbox({ perQueryMs = 0.25 } = {}) {
   const win = makeDom();
   win.location = { search: '?rt3d=1' };
   const ctx = vm.createContext(win);
   vm.runInContext(SRC, ctx, { filename: 'index.html<script>' });
+  attachCore(ctx);
+  installFakeWorker(ctx, { appSource: SRC });
   run(ctx, `
     paintHeat=function(){}; computeHeatSimple=function(){}; draw2d=function(){};
     coverageUpdate=function(){}; showToast=function(){}; refresh3dHeat=function(){};

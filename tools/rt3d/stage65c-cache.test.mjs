@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeDom, run } from './loader.mjs';
+import { makeDom, run, attachCore, installFakeWorker } from './loader.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = fs.readFileSync(path.join(HERE, '..', '..', 'index.html'), 'utf8')
@@ -58,6 +58,11 @@ function sandbox() {
   // the page's own drawing entry points, recorded rather than performed
   const ctx = vm.createContext(win);
   vm.runInContext(SRC, ctx, { filename: 'index.html<script>' });
+  // Stage 7A.1: the coverage run executes in a Dedicated Worker. The double runs
+  // the same RT3DCore job runner over the same application source; only message
+  // delivery is stepped by this harness's frame pump.
+  attachCore(ctx);
+  installFakeWorker(ctx, { appSource: SRC });
   run(ctx, `
     paintHeat=function(){}; computeHeatSimple=function(){}; draw2d=function(){};
     coverageUpdate=function(){}; showToast=function(){}; refresh3dHeat=function(){};

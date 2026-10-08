@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="app.title">RF Planner — Simulador de cobertura WiFi</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Stage 7A.1: the RT3D worker protocol. Loaded on the main thread so the main
+     thread and the Dedicated Worker share ONE definition of the message names
+     and payload shapes. Contains no RF mathematics: the engine itself stays in
+     the inline script below, and the Worker evaluates that same inline script. -->
+<script src="rt3d-core.js"></script>
 <style>
   :root{
     --bg:#0d1117; --panel:#141a22; --panel2:#1a212b; --line:#27313e;
@@ -838,6 +843,7 @@ const translations = {
     "rt3d.cov.cancelled": "ejecución RT3D cancelada",
     "rt3d.cov.cancelledCount": "procesadas {done} / {total} celdas",
     "rt3d.cov.cancelledKeep": "La visualización anterior queda intacta.",
+    "rt3d.cov.workerError": "Error del worker de cobertura RT3D. No se ha calculado ningún campo y no se ha recurrido a otro motor.",
     "rt3d.cov.keeping": "se conserva el resultado válido:",
     "rt3d.d.noDataLegend": "Leyenda: el color es la escala RSSI de la aplicación; transparente = ninguna muestra de RT3D alcanzó esa celda.",
     "trace.progress": "Ray tracing — calculando propagación…",
@@ -1261,6 +1267,7 @@ const translations = {
     "rt3d.cov.cancelled": "RT3D run cancelled",
     "rt3d.cov.cancelledCount": "processed {done} / {total} cells",
     "rt3d.cov.cancelledKeep": "The previous display is untouched.",
+    "rt3d.cov.workerError": "RT3D coverage worker error. No field was computed and no other engine was substituted.",
     "rt3d.cov.keeping": "keeping the last valid result:",
     "rt3d.d.noDataLegend": "Legend: colour is the application RSSI scale; transparent = no RT3D sample reached that cell.",
     "trace.progress": "Ray tracing — calculating propagation…",
@@ -1684,6 +1691,7 @@ const translations = {
     "rt3d.cov.cancelled": "RT3D-körningen avbröts",
     "rt3d.cov.cancelledCount": "bearbetade {done} / {total} celler",
     "rt3d.cov.cancelledKeep": "Den tidigare visningen är orörd.",
+    "rt3d.cov.workerError": "Fel i RT3D-täckningsworkern. Inget fält beräknades och ingen annan motor användes.",
     "rt3d.cov.keeping": "behåller senaste giltiga resultat:",
     "rt3d.d.noDataLegend": "Förklaring: färgen är programmets RSSI-skala; transparent = inget RT3D-prov nådde den cellen.",
     "trace.progress": "Ray tracing — beräknar utbredning…",
@@ -1743,6 +1751,44 @@ try {
   if (['es','en','sv'].includes(storedLanguage)) uiLanguage = storedLanguage;
   localStorage.setItem(uiLanguageKey, uiLanguage);
 } catch (_) { /* Storage may be unavailable; keep the selected language. */ }
+
+// ============================================================
+//  RUNTIME MODE
+//
+//  This script is executed by TWO runtimes, from ONE source:
+//
+//    browser mode      the editor itself, via a normal <script> tag
+//    RT3D Worker mode  the Stage-7A.1 coverage Worker, which fetches this very
+//                      file and evaluates it with importScripts
+//
+//  A Dedicated Worker has no DOM. Evaluating this script there therefore runs
+//  every top-level statement against globals that do not exist -- which is
+//  exactly how the first browser smoke failed, with
+//  `MutationObserver is not defined`.
+//
+//  The Worker sets `globalThis.__RT3D_WORKER__ = true` on its own global scope
+//  BEFORE importing this script, and the few presentation-only startups below
+//  are skipped when it is set.
+//
+//  WHAT THIS GATES, AND WHAT IT MUST NEVER GATE
+//  This gates PRESENTATION SIDE EFFECTS ONLY: the i18n DOM observer, the 2D
+//  canvas handle, the device-pixel ratio, global editor listeners, and app
+//  startup. It never gates an RF function, a material, a constant, the engine,
+//  or any geometry. Both runtimes execute byte-identical physics source, so
+//  moving computation to a Worker cannot change a single computed value -- and
+//  if that ever stopped being true, the Stage-7 oracle would fail rather than
+//  this flag quietly choosing different code.
+//
+//  Keep this to the few initialisation boundaries below. Do NOT scatter
+//  Worker conditionals through RF code.
+// ============================================================
+const RT3D_WORKER_MODE = (typeof globalThis!=='undefined')
+                        && globalThis.__RT3D_WORKER__===true;
+
+// UI-only global listener. A no-op in Worker mode, where there is no `window`.
+// One definition, so the editor's gesture wiring states its own dependency
+// instead of each call site repeating the check.
+function uiWindowListen(type, fn){ if(RT3D_WORKER_MODE) return; window.addEventListener(type, fn); }
 
 function t(key, params = {}) {
   const messages = translations[uiLanguage];
@@ -1807,6 +1853,7 @@ function setUiLanguage(language){
 }
 // New property/dialog markup is translated before the browser paints it. Only
 // explicitly marked elements are visited; text changes do not trigger rebuilds.
+if(!RT3D_WORKER_MODE){
 new MutationObserver(records=>{
   records.forEach(record=>record.addedNodes.forEach(node=>{
     if(node.nodeType===1) translateNodes(node);
@@ -1814,6 +1861,7 @@ new MutationObserver(records=>{
 }).observe(document.body,{childList:true,subtree:true});
 document.documentElement.lang=uiLanguage;
 translateNodes();
+}
 
 const wallSnapStoragePrefix = 'wifiSimulator.';
 const WALL_GEOMETRY_SNAP_STEP = 0.05;
@@ -1867,8 +1915,30 @@ function saveEditorPref(key,value){
 }
 
 // ---------- small helpers ----------
-const $  = (s,r=document)=>r.querySelector(s);
-const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+// DOM accessors.
+//
+// `document` is resolved LAZILY and SAFELY. It used to be a default parameter
+// (`(s,r=document)=>…`), which is fine in a browser but fatal in the RT3D Worker:
+// evaluating the default would read a global that does not exist there, so every
+// call would throw instead of returning nothing. Because there is no document in
+// a Worker, `$` now yields null and `$$` yields an empty list -- which is exactly
+// what the surrounding code already guards for (`if(!el) return;`, `if(el)`).
+//
+// This is not DOM emulation: nothing is faked. It removes a whole class of
+// latent failure by making the accessors degrade honestly where there is no
+// document to query.
+const $  = (s,r)=>{
+  const root = (r!==undefined) ? r : globalThis.document;
+  return root ? root.querySelector(s) : null;
+};
+const $$ = (s,r)=>{
+  const root = (r!==undefined) ? r : globalThis.document;
+  return root ? [...root.querySelectorAll(s)] : [];
+};
+
+// UI-only element listener. A no-op when the element does not exist, which in
+// Worker mode is always the case: `cv` is null and there is no document.
+function uiElListen(el, type, fn){ if(!el) return; el.addEventListener(type, fn); }
 const uid = (p='id')=>p+'_'+Math.random().toString(36).slice(2,9);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -2070,9 +2140,12 @@ const TOOLS = [
 // ============================================================
 //  2D EDITOR  (the source of truth)
 // ============================================================
-const cv = $('#canvas2d');
-const ctx = cv.getContext('2d');
-let dpr = Math.min(window.devicePixelRatio||1, 2);
+// The 2D canvas handle, its context and the device-pixel ratio are declarations
+// used across the editor, so they stay top-level; only their INITIALISATION is
+// Worker-aware. In Worker mode they are inert and no RF code reads them.
+const cv = RT3D_WORKER_MODE ? null : $('#canvas2d');
+const ctx = RT3D_WORKER_MODE ? null : cv.getContext('2d');
+let dpr = RT3D_WORKER_MODE ? 1 : Math.min(window.devicePixelRatio||1, 2);
 
 // view transform: world(meters) -> screen(px).  px = (world*ppm)*zoom + pan
 // camera.x / camera.y are NOT a pixel offset: W2S is
@@ -2101,12 +2174,14 @@ function updateZoomIndicator(){
 // it deliberately does NOT fit the project or compute any bounds. Pan, active
 // floor, selection, background plan, project state, undo history and RF are all
 // left untouched; only the camera changes.
+if(!RT3D_WORKER_MODE){
 $('#zoomPct').onclick=()=>{
   camera.x=0; camera.y=0;
   camera.zoom=CAMERA_REFERENCE_ZOOM;
   updateZoomIndicator();
   draw2d();
 };
+}
 updateZoomIndicator();
 
 // ---- document-relative text scaling (generic plan labels) -----------------
@@ -3257,8 +3332,8 @@ function finishOpeningDraft(){
   const op={id:uid('opn'),name:'Open space',points:openingDraft.map(p=>({x:p.x,y:p.y}))};
   f.openings.push(op); openingDraft=null; select('opening',op.id); scheduleHeat(); return true;
 }
-cv.addEventListener('contextmenu',e=>e.preventDefault());
-cv.addEventListener('pointerdown',e=>{
+uiElListen(cv,'contextmenu',e=>e.preventDefault());
+uiElListen(cv,'pointerdown',e=>{
   cv.setPointerCapture(e.pointerId);
   const w=S2W(e.offsetX,e.offsetY);
   mouse.down=true; mouse.button=e.button;
@@ -3445,7 +3520,7 @@ cv.addEventListener('pointerdown',e=>{
   }
   draw2d();
 });
-window.addEventListener('pointermove',e=>{
+uiWindowListen('pointermove',e=>{
   const rect=cv.getBoundingClientRect();
   const ox=e.clientX-rect.left, oy=e.clientY-rect.top;
   const w=S2W(ox,oy); mouse.wx=w.x; mouse.wy=w.y;
@@ -3540,8 +3615,8 @@ window.addEventListener('pointermove',e=>{
   if(draft){ const s=snapWallPoint(w.x,w.y,{fixed:{x:draft.x1,y:draft.y1},altKey:e.altKey}); draft.x2=s.x; draft.y2=s.y; draw2d(); }
   if(tool==='measure'&&measureLine&&!measureLine.done){ measureLine.x2=w.x;measureLine.y2=w.y;draw2d(); }
 });
-cv.addEventListener('dblclick',e=>{ if(tool==='opening'){ e.preventDefault(); finishOpeningDraft(); draw2d(); } });
-window.addEventListener('pointerup',e=>{
+uiElListen(cv,'dblclick',e=>{ if(tool==='opening'){ e.preventDefault(); finishOpeningDraft(); draw2d(); } });
+uiWindowListen('pointerup',e=>{
   if(zoneDraft){
     const z=zoneDraft; zoneDraft=null;
     if(Math.abs(z.x1-z.x0)>0.3 && Math.abs(z.y1-z.y0)>0.3){
@@ -3568,7 +3643,7 @@ window.addEventListener('pointerup',e=>{
   }
   panning=false; panStart=null; mouse.down=false;
 });
-cv.addEventListener('wheel',e=>{
+uiElListen(cv,'wheel',e=>{
   e.preventDefault();
   const before=S2W(e.offsetX,e.offsetY);
   const k=Math.exp(-e.deltaY*0.0012);
@@ -3654,7 +3729,7 @@ function nudgeSelection(dx,dy){
   return true;
 }
 
-window.addEventListener('keydown',e=>{
+uiWindowListen('keydown',e=>{
   const mod=e.ctrlKey||e.metaKey;
   if(mod && e.key.toLowerCase()==='z'){ e.preventDefault(); if(e.shiftKey)redo(); else undo(); return; }
   if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
@@ -3672,8 +3747,8 @@ window.addEventListener('keydown',e=>{
   if(map[e.key.toLowerCase()]){ setTool(map[e.key.toLowerCase()]); }
   if((e.key==='Delete'||e.key==='Backspace')&&selection){ deleteSelection(); }
 });
-window.addEventListener('keyup',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) endNudgeGesture(); });
-window.addEventListener('blur',endNudgeGesture);
+uiWindowListen('keyup',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) endNudgeGesture(); });
+uiWindowListen('blur',endNudgeGesture);
 
 // ============================================================
 //  RF MODEL  (simple log-distance + walls + inter-floor)
@@ -8191,6 +8266,118 @@ function rt3dExpCoverageSummaryHtml(slice, column, ui){
 // slice so the two engines remain comparably responsive.
 const RT3D_COV_FRAME_MS = 35;
 
+// ============================================================
+//  STAGE 7A.1 — WORKER TRANSPORT (main-thread side)
+//
+//  One long-lived Dedicated Worker is reused across runs. It is created lazily
+//  and, if creation or boot fails, that failure is THROWN to the caller, which
+//  surfaces it. There is deliberately no fallback to a main-thread loop: during
+//  Stage 7A a broken worker must be loud, not invisible.
+//
+//  Every inbound message is checked against the current job id before it is
+//  allowed to touch any application state. That single guard is what makes a
+//  late message from a superseded job harmless.
+// ============================================================
+let rt3dExpWorker=null;
+let rt3dExpWorkerHooks=null;
+let rt3dExpWorkerSeq=0;
+let rt3dExpWorkerProbeHook=null;
+let rt3dExpWorkerProbeJobId=0;
+
+function rt3dExpWorkerUrl(){
+  // Resolved against the document so the worker is found at the same path as
+  // this script, whatever the app is served from. The fallback matters: a host
+  // without document.baseURI must still be able to name the worker, and failing
+  // here would abort the run before any cell is evaluated.
+  const base=(typeof document!=='undefined' && document.baseURI) ? document.baseURI : null;
+  try { return base ? new URL('rt3d-worker.js', base).href : 'rt3d-worker.js'; }
+  catch(e){ return 'rt3d-worker.js'; }
+}
+
+function rt3dExpWorkerEnsure(){
+  if(rt3dExpWorker) return rt3dExpWorker;
+  if(typeof Worker!=='function')
+    throw new Error('this browser does not support Dedicated Workers');
+  const w=new Worker(rt3dExpWorkerUrl());
+  w.onmessage=(ev)=>{
+    const m=ev && ev.data;
+    if(!m) return;
+    // A boot probe is answered before the coverage-job guard, because it carries
+    // its own id and is not a field run at all.
+    if(rt3dExpWorkerProbeHook && m.jobId===rt3dExpWorkerProbeJobId){
+      const hook=rt3dExpWorkerProbeHook;
+      rt3dExpWorkerProbeHook=null; rt3dExpWorkerProbeJobId=0;
+      hook(m);
+      return;
+    }
+    const h=rt3dExpWorkerHooks;
+    if(!h) return;
+    // The id guard. A message from any job other than the one we last started is
+    // dropped here, before it can reach the panel, the caches or the audit.
+    if(m.jobId!==rt3dExpWorkerJobId) return;
+    if(m.type==='PROGRESS')        h.onProgress(m);
+    else if(m.type==='COMPLETE')   h.onComplete(m);
+    else if(m.type==='CANCELLED')  h.onCancelled(m);
+    else if(m.type==='ERROR')      h.onError(m);
+  };
+  w.onerror=(ev)=>{
+    const h=rt3dExpWorkerHooks;
+    if(h) h.onError({ jobId: rt3dExpWorkerJobId,
+                      message: 'worker error: '+(ev && ev.message ? ev.message : 'unknown') });
+  };
+  w.onmessageerror=(ev)=>{
+    const h=rt3dExpWorkerHooks;
+    if(h) h.onError({ jobId: rt3dExpWorkerJobId, message: 'worker message could not be deserialised' });
+  };
+  rt3dExpWorker=w;
+  return w;
+}
+let rt3dExpWorkerJobId=0;
+
+// Start a job. Returns its id. Throws if the worker cannot be created, so the
+// caller can surface the failure instead of pretending the run started.
+function rt3dExpWorkerStart(snapshot, hooks){
+  const w=rt3dExpWorkerEnsure();
+  rt3dExpWorkerHooks=hooks;
+  const jobId=++rt3dExpWorkerSeq;
+  rt3dExpWorkerJobId=jobId;
+  w.postMessage({ type: RT3DCore.MSG.RUN_SLICE, jobId: jobId,
+                  snapshot: snapshot,
+                  // The chunk budget is the same 35 ms idea as the old frame
+                  // budget: it keeps individual chunks short enough that a
+                  // CANCEL is observed promptly and progress is emitted often.
+                  options: { timeBudgetMs: RT3D_COV_FRAME_MS,
+                             progressEveryCells: RT3DCore.DEFAULT_PROGRESS_EVERY_CELLS } });
+  return jobId;
+}
+
+function rt3dExpWorkerCancel(jobId){
+  if(!rt3dExpWorker) return;
+  try { rt3dExpWorker.postMessage({ type: RT3DCore.MSG.CANCEL, jobId: jobId }); }
+  catch(e){ /* the worker is gone; the job is already marked finished locally */ }
+}
+
+// Boot probe: "can the Worker load the canonical engine at all?". Kept separate
+// from a field run on purpose, so a bootstrap failure can be told apart from a
+// physics or scheduling problem without waiting on a multi-second computation.
+// Returns a Promise that resolves to { ready:boolean, error:string|null }.
+function rt3dExpWorkerProbe(){
+  let w;
+  try { w = rt3dExpWorkerEnsure(); }
+  catch(e){ return Promise.resolve({ ready:false,
+            error: String(e && e.message ? e.message : e) }); }
+  const jobId = ++rt3dExpWorkerSeq;
+  return new Promise(resolve=>{
+    rt3dExpWorkerProbeJobId = jobId;
+    rt3dExpWorkerProbeHook = (m)=>{
+      resolve(m.type===RT3DCore.MSG.READY
+        ? { ready:true, error:null }
+        : { ready:false, error:String(m && m.message ? m.message : 'boot failed') });
+    };
+    w.postMessage({ type: RT3DCore.MSG.PING, jobId: jobId });
+  });
+}
+
 const RT3D_COV_PHASES = ['snapshot','world','bvh','init','evaluate','finalize','paint'];
 
 function rt3dExpRunCoverage(){
@@ -8247,101 +8434,173 @@ function rt3dExpRunCoverage(){
   };
   render();
 
-  requestAnimationFrame(()=>{
-    // ---- snapshot: the project as it is RIGHT NOW -----------------------
-    const floorIndex=state.activeFloor;
-    const fl=state.floors[floorIndex];
-    const spec=rt3dGridSpec(fl);
-    const planeZ=rt3dReceiverPlaneZForFloor(floorIndex);
-    const sources=rt3dCoverageSources();
-    ui.total=spec.cols*spec.rows;
+// ============================================================
+  //  STAGE 7A.1 — EXECUTION MOVES TO A DEDICATED WORKER
+  //
+  //  What changed: WHERE the slice is evaluated. The physics is untouched --
+  //  the worker evaluates this very script (see rt3d-core.js), so there is one
+  //  implementation, not two.
+  //
+  //  Why it matters: the previous loop re-armed itself with
+  //  requestAnimationFrame, and rAF is SUSPENDED ENTIRELY while a tab is
+  //  hidden, a window is minimised or the desktop is switched. The field
+  //  therefore stopped being computed at exactly the moment the user was away
+  //  from it. The worker's chunk loop yields through a MessageChannel instead,
+  //  which the event loop delivers regardless of visibility, so computation
+  //  continues. requestAnimationFrame is still used to REPAINT the panel, never
+  //  to decide whether RF cells get evaluated.
+  //
+  //  Nothing here silently falls back to the old main-thread loop. If the worker
+  //  cannot be created, imported, or throws, that is surfaced and nothing is
+  //  published, so a Stage-7A regression is obvious instead of invisible.
+  // ============================================================
+  const floorIndex=state.activeFloor;
+  const fl=state.floors[floorIndex];
+  const spec=rt3dGridSpec(fl);
+  const planeZ=rt3dReceiverPlaneZForFloor(floorIndex);
+  ui.total=spec.cols*spec.rows;
 
-    // ---- world: derived from the live canonical entities ------------------
-    phase('world');
-    const world=rt3dBuildWorld();
-    // ---- BVH: built exactly once, and measured on its own -----------------
-    phase('bvh');
-    const bvh=rt3dBvhFor(world);
-    // ---- initialise: cheap. Arrays only, no evaluation happens here ------
-    phase('init');
-    const stats=rt3dNewStats();
-    const cursor={ j:0, i:0, best:null, apBest:null, valid:null, acc:null };
+  // ---- snapshot: the project as it is RIGHT NOW --------------------------
+  // The main thread resolves application state into the canonical input the
+  // engine already consumes. This is the application's own deep-clone
+  // convention (snapState / loadProject): it drops the runtime `_img` renderer
+  // handle, which is an Image and is never an RF input. No second floor / slab
+  // / Ceiling / Opening model is introduced -- the worker calls the same
+  // rt3dBuildWorld() and rt3dCoverageSources() this thread does.
+  const snapshot = {
+    state: JSON.parse(JSON.stringify(state, (k,v)=> k==='_img' ? undefined : v)),
+    floorIndex: floorIndex,
+    spec: spec,
+    planeZ: planeZ,
+    columnX: 0, columnY: 0,
+    columnZs: [0.5,1.2,2.0,2.8,4.2].filter(z=>z<floorElevation(floorIndex)+(fl.height||3)+0.5)
+  };
 
-    const publish=(out, col)=>{
-      // Nothing above this line has touched the display, so a cancel, an error
-      // or a stall leaves the previously shown field exactly as it was.
-      phase('paint');
-      const res={ spec: out.spec, grid:{ best: out.best, reach: out.valid },
-                  floorId: fl.id, floorIndex: floorIndex, floorName: out.diagnostics.floorName,
-                  receiverPlaneZ: out.planeZ, slice: out, column: col };
-      rt3dExpLastStall=null; rt3dExpLastError=null;
-      rt3dExpLastResult=res;
-      rt3dExpCache=Object.assign({},rt3dExpCache,{ coverage:res });
-      // Retain an independent copy for the Stage-6.5 audit. `res.grid.best` is the
-      // completed field; retaining it here means the comparison survives a later
-      // Legacy run, a later RT3D run, and any view change.
-      rt3dAuditRetainRt3d(res);
-      rt3dExpCanvas=rt3dExpPaint(res);
-      rt3dExpSpec=out.spec;
-      rt3dExpMeta={ floorId: fl.id, minx: out.spec.b.minx, miny: out.spec.b.miny,
-                    maxx: out.spec.b.maxx, maxy: out.spec.b.maxy };
-      rt3dExpCells=rt3dExpCellList(res);
-      rt3dExpSetView('rt3d');
-      rt3dExpLastCoverageUi=ui;
+  // world / BVH / initialise now happen inside the worker; the phases are still
+  // announced, in the same order, because they describe real work.
+  phase('world');
+  phase('bvh');
+  phase('init');
+  phase('evaluate');
+
+  const publish=(out, col)=>{
+    // Nothing above this line has touched the display, so a cancel, an error
+    // or a stall leaves the previously shown field exactly as it was.
+    phase('paint');
+    const res={ spec: out.spec, grid:{ best: out.best, reach: out.valid },
+                floorId: fl.id, floorIndex: floorIndex, floorName: out.diagnostics.floorName,
+                receiverPlaneZ: out.planeZ, slice: out, column: col };
+    rt3dExpLastStall=null; rt3dExpLastError=null;
+    rt3dExpLastResult=res;
+    rt3dExpCache=Object.assign({},rt3dExpCache,{ coverage:res });
+    // Retain an independent copy for the Stage-6.5 audit. `res.grid.best` is the
+    // completed field; retaining it here means the comparison survives a later
+    // Legacy run, a later RT3D run, and any view change.
+    rt3dAuditRetainRt3d(res);
+    rt3dExpCanvas=rt3dExpPaint(res);
+    rt3dExpSpec=out.spec;
+    rt3dExpMeta={ floorId: fl.id, minx: out.spec.b.minx, miny: out.spec.b.miny,
+                  maxx: out.spec.b.maxx, maxy: out.spec.b.maxy };
+    rt3dExpCells=rt3dExpCellList(res);
+    rt3dExpSetView('rt3d');
+    rt3dExpLastCoverageUi=ui;
+    ui.finished=true;
+    rt3dExpOut(rt3dExpCoverageSummaryHtml(out, col, ui));
+  };
+  const abort=()=>{
+    ui.finished=true;
+    if(cancelBtn) cancelBtn.disabled=true;
+    rt3dExpCovJob=null;
+    // deliberately NO publish: the last valid field stays on screen, and the
+    // Stage-6.5 audit cache keeps whatever it already held.
+    rt3dExpOut('<div class="rt3dwarn"><b>'+escapeHtml(t('rt3d.cov.cancelled'))+'</b><br>'+
+      escapeHtml(t('rt3d.cov.cancelledCount',{done:ui.cells.toLocaleString(),
+                                              total:ui.total.toLocaleString()}))+
+      '<br>'+escapeHtml(t('rt3d.cov.cancelledKeep'))+'</div>'+
+      (rt3dExpLastResult?('<div class="rt3dn">'+escapeHtml(t('rt3d.cov.keeping'))+' '+
+        escapeHtml(rt3dExpLastResult.floorName)+' (Z '+
+        rt3dExpLastResult.receiverPlaneZ.toFixed(2)+' m)</div>'):''));
+  };
+  const workerError=(message)=>{
+    // A worker failure is an ERROR, not a cancellation and never a silent
+    // fallback. Nothing is published, so the last good retained snapshot stands.
+    ui.finished=true;
+    if(cancelBtn) cancelBtn.disabled=true;
+    rt3dExpCovJob=null;
+    rt3dExpLastError=message;
+    rt3dExpOut('<div class="rt3dwarn"><b>'+escapeHtml(t('rt3d.cov.workerError'))+'</b><br>'+
+      escapeHtml(message)+'<br>'+escapeHtml(t('rt3d.cov.cancelledKeep'))+'</div>'+
+      (rt3dExpLastResult?('<div class="rt3dn">'+escapeHtml(t('rt3d.cov.keeping'))+' '+
+        escapeHtml(rt3dExpLastResult.floorName)+' (Z '+
+        rt3dExpLastResult.receiverPlaneZ.toFixed(2)+' m)</div>'):''));
+  };
+  const finish=(payload)=>{
+    if(cancelBtn) cancelBtn.disabled=true;
+    rt3dExpCovJob=null;
+    phase('finalize');
+    // Rebuild the canonical slice shape from the worker's payload. The numeric
+    // arrays arrive as transferred buffers and are used verbatim -- no rounding,
+    // no re-quantisation -- so the displayed field is the worker's own bits.
+    const out = {
+      spec: payload.spec, planeZ: payload.planeZ,
+      best: payload.grid.best, apBest: payload.grid.apBest, valid: payload.grid.valid,
+      cols: payload.spec.cols, rows: payload.spec.rows,
+      totalCells: payload.spec.cols*payload.spec.rows,
+      evaluatedCells: payload.evaluatedCells, validCells: payload.validCells,
+      noSignalCells: payload.noSignalCells, complete: payload.complete, row: payload.row,
+      sources: payload.sources,
+      diagnostics: Object.assign({}, payload.diagnostics)
+    };
+    out.diagnostics.floorIndex=floorIndex;
+    out.diagnostics.floorName=fl.name||('F'+(floorIndex+1));
+    out.diagnostics.phases=ui.phases.slice();
+    out.diagnostics.timeToFirstCellMs=ui.firstCellMs;
+    out.diagnostics.totalMs=+(performance.now()-t0).toFixed(2);
+    rt3dExpLastCoverage=out;
+    rt3dExpLastColumn=payload.column;
+    rt3dExpLastCoverageBest = out.best;   // read-only, for the Stage-6.5 audit
+    publish(out, payload.column);
+  };
+
+  // ---- drive the worker --------------------------------------------------
+  let jobId;
+  try {
+    jobId = rt3dExpWorkerStart(snapshot, {
+      onProgress: (m)=>{
+        // A superseded job's progress must never move a newer job's panel.
+        if(rt3dExpCovJob && rt3dExpCovJob.id!==m.jobId) return;
+        ui.cells=m.evaluatedCells;
+        if(ui.firstCellMs===null && m.evaluatedCells>0)
+          ui.firstCellMs=+(performance.now()-t0).toFixed(1);
+        render();
+      },
+      onComplete: (m)=>{
+        if(rt3dExpCovJob && rt3dExpCovJob.id!==m.jobId) return;   // stale COMPLETE
+        finish(m);
+      },
+      onCancelled: (m)=>{
+        if(rt3dExpCovJob && rt3dExpCovJob.id!==m.jobId) return;   // stale cancellation
+        abort();
+      },
+      onError: (m)=>{
+        if(rt3dExpCovJob && rt3dExpCovJob.id!==m.jobId) return;   // stale error
+        workerError(m.message);
+      }
+    });
+  } catch(err){
+    workerError(String(err && err.message ? err.message : err));
+    return;
+  }
+  rt3dExpCovJob={ id: jobId,
+    cancel(){
+      // Cancellation is a REQUEST, not an assertion. The job is marked finished
+      // immediately so the panel can accept nothing further from it, and the
+      // worker is told so it stops at its next chunk boundary and replies
+      // CANCELLED. Nothing is published either way.
+      ui.cancelled=true;
       ui.finished=true;
-      rt3dExpOut(rt3dExpCoverageSummaryHtml(out, col, ui));
-    };
-    const abort=()=>{
-      ui.finished=true;
-      if(cancelBtn) cancelBtn.disabled=true;
-      rt3dExpCovJob=null;
-      // deliberately NO publish: the last valid field stays on screen
-      rt3dExpOut('<div class="rt3dwarn"><b>'+escapeHtml(t('rt3d.cov.cancelled'))+'</b><br>'+
-        escapeHtml(t('rt3d.cov.cancelledCount',{done:ui.cells.toLocaleString(),
-                                                total:ui.total.toLocaleString()}))+
-        '<br>'+escapeHtml(t('rt3d.cov.cancelledKeep'))+'</div>'+
-        (rt3dExpLastResult?('<div class="rt3dn">'+escapeHtml(t('rt3d.cov.keeping'))+' '+
-          escapeHtml(rt3dExpLastResult.floorName)+' (Z '+
-          rt3dExpLastResult.receiverPlaneZ.toFixed(2)+' m)</div>'):''));
-    };
-    const finish=(out)=>{
-      if(cancelBtn) cancelBtn.disabled=true;
-      rt3dExpCovJob=null;
-      phase('finalize');
-      out.diagnostics.floorIndex=floorIndex;
-      out.diagnostics.floorName=fl.name||('F'+(floorIndex+1));
-      out.diagnostics.worldBodies=rt3dAllBodies(world).length;
-      out.diagnostics.bvhNodes=bvh?bvh.nodeCount:0;
-      out.diagnostics.phases=ui.phases.slice();
-      out.diagnostics.timeToFirstCellMs=ui.firstCellMs;
-      out.diagnostics.totalMs=+(performance.now()-t0).toFixed(2);
-      // the vertical column is the proof that this is a field, not a 2D map
-      const col = rt3dCoverageColumn(world, 0, 0,
-        [0.5,1.2,2.0,2.8,4.2].filter(z=>z<floorElevation(floorIndex)+(fl.height||3)+0.5),
-        { sources:sources, backend:'bvh', stats:rt3dNewStats() });
-      rt3dExpLastCoverage=out;
-      rt3dExpLastColumn=col;
-      publish(out, col);
-    };
-
-    // ---- evaluate: time-budgeted, yields every frame ---------------------
-    phase('evaluate');
-    const loop=()=>{
-      if(ui.finished) return;
-      if(ui.cancelled){ abort(); return; }
-      const r=rt3dCoverageSlice(world, spec, planeZ, {
-        cursor: cursor, stats: stats, sources: sources,
-        timeBudgetMs: RT3D_COV_FRAME_MS });
-      ui.cells=r.evaluatedCells;
-      if(ui.firstCellMs===null && r.evaluatedCells>0)
-        ui.firstCellMs=+(performance.now()-t0).toFixed(1);
-      render();
-      if(!r.complete){ requestAnimationFrame(loop); return; }
-      rt3dExpLastCoverageBest = r.best;   // read-only, for the Stage-6.5 audit
-    finish(r);
-    };
-    requestAnimationFrame(loop);
-  });
+      rt3dExpWorkerCancel(jobId);
+    } };
 }
 
 // ============================================================
@@ -16678,8 +16937,15 @@ function seedDemo(){
   refreshStats();
 }
 
+//<rt3d-bootstrap-tail>
+// Application startup. Guarded as a whole because `start()` builds the entire
+// editor and needs a document. The headless test harness splits the script here
+// (see tools/rt3d/loader.mjs) so it can install state without booting the UI, so
+// this sentinel marks the boundary and must stay on its own column-0 line.
+if(!RT3D_WORKER_MODE){
 document.addEventListener('DOMContentLoaded',start);
 if(document.readyState!=='loading') start();
+}
 
 </script>
 </body>

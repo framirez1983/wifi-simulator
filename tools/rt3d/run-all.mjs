@@ -29,6 +29,10 @@ const steps = [
   ['Stage 6.5f corrected above-rack rule and Legacy wording', 'stage65f-aboverack.test.mjs', []],
   ['Stage 6.5g canonical audit report and export actions', 'stage65g-export.test.mjs', []],
   ['Stage 6.5h corrected evidence rules, conservative attribution, AP-audit wording', 'stage65h-evidence.test.mjs', []],
+  // Stage 7A. The oracle freezes the numerics; the worker suite proves that moving
+  // the computation to a Dedicated Worker changed WHERE it runs and nothing else.
+  ['Stage 7A numerical oracle (frozen exact IEEE-754 values)', 'stage7a-oracle.test.mjs', []],
+  ['Stage 7A.1 Worker execution (worker/main equality, protocol, cancellation)', 'stage7a-worker.test.mjs', []],
   ['Canonical slab thickness audit', 'slab-thickness.test.mjs', []],
   ['Stage 1A compatibility oracle', 'oracle.mjs', ['check']],
   ['App smoke test (real start() + production trace on the demo room)', 'smoke.mjs', []],
