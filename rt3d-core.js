@@ -376,6 +376,18 @@
                   worldBodies: d.worldBodies,
                   bvhNodes: bvh && bvh.nodeCount != null ? bvh.nodeCount : 0,
                   bvhCandidatesTested: d.bvhCandidatesTested,
+                  // Stage 7A.2 measurement pass: the BVH traversal counters the
+                  // engine already maintains, forwarded so the browser report can
+                  // show the same categories as the offline profiler. These are
+                  // counts read from `stats`, never recomputed, and they carry no
+                  // RF meaning.
+                  bvhNodesVisited: job.snapshot.stats.nodesVisited,
+                  bvhLeavesVisited: job.snapshot.stats.leavesVisited,
+                  bvhPrunedNodes: job.snapshot.stats.prunedNodes,
+                  bvhTotalBodies: job.snapshot.stats.totalBodies,
+                  // End-to-end compute time inside the worker, kept separate from
+                  // the main thread's total so the panel can distinguish them.
+                  sliceTotalMs: d.totalMs,
                   rasterRule: d.rasterRule,
                   aggregationRule: d.aggregationRule,
                   antennaModel: d.antennaModel,

@@ -8556,6 +8556,13 @@ function rt3dExpRunCoverage(){
     out.diagnostics.phases=ui.phases.slice();
     out.diagnostics.timeToFirstCellMs=ui.firstCellMs;
     out.diagnostics.totalMs=+(performance.now()-t0).toFixed(2);
+    // Stage 7A.2: the summary panel and the downloadable report both show
+    // cells/s, and Stage 7A.1's worker path dropped it because the worker's
+    // own cellsPerSec is measured on the worker's clock. It is recomputed here
+    // from the SAME totalMs this panel displays, so the two figures can never
+    // disagree. Display-only: no RF value is touched.
+    if(out.evaluatedCells>0 && out.diagnostics.totalMs>0)
+      out.diagnostics.cellsPerSec=Math.round(out.evaluatedCells/(out.diagnostics.totalMs/1000));
     rt3dExpLastCoverage=out;
     rt3dExpLastColumn=payload.column;
     rt3dExpLastCoverageBest = out.best;   // read-only, for the Stage-6.5 audit
@@ -11522,6 +11529,121 @@ function rt3dAuditReportSliceDiagnostics(){
   return d;
 }
 
+// ---- performance section (Stage 7A.2, MEASUREMENT ONLY) --------------------
+//
+// Appended to the EXISTING downloadable audit report rather than added as a new
+// panel, so the same run yields RF evidence and cost evidence in one document and
+// Fernando does not have to screenshot anything.
+//
+// READ-ONLY BY CONSTRUCTION. Every value below is already recorded by the last
+// completed RT3D Coverage Field run. This function performs NO ray tracing, NO
+// re-slice, NO point query and NO cache write, so appending it cannot change a
+// single RF value -- which is exactly what the frozen Stage-7 oracle enforces.
+//
+// It is derived from whatever project is loaded: there is no project name, no
+// hardcoded geometry and no S4 reference anywhere in it. A project with no RT3D
+// run yet, or one with no walls at all, produces a correct "not available" note
+// rather than a blank section.
+//
+// WHAT IS REPORTED, and why each row is there:
+//   cold/warm separation  the Worker evaluates the whole application script once
+//                         per worker instance; that cost is bootstrap, never RF.
+//   traversal volume      rt3dSegment and rt3dBodyEvent counts are the direct
+//                         measure of how much intersection work the run did.
+//   reflection volume     candidate bodies considered vs candidates accepted, and
+//                         the leg count they imply.
+//   BVH volume            nodes/leaves visited and candidate bodies tested, which
+//                         the engine already counts for its own diagnostics.
+//   normalisation         cells, APs and bodies, so the volumes above can be
+//                         compared across projects instead of only within one.
+function rt3dAuditReportPerf(){
+  const L=[];
+  L.push('## 9. Performance baseline (measurement only)');
+  L.push('');
+  L.push('Read-only. Derived entirely from counters the last completed RT3D run');
+  L.push('already recorded. No re-computation, no re-slice, no RF value is affected.');
+  L.push('');
+
+  const cov = rt3dExpLastCoverage;
+  if(!cov || !cov.diagnostics){
+    L.push('> No completed RT3D Coverage Field run is retained for this session, so there');
+    L.push('> is nothing to report. Run the RT3D Coverage Field first.');
+    L.push('');
+    return L;
+  }
+
+  const d = cov.diagnostics;
+  const cells = cov.totalCells!=null ? cov.totalCells
+              : ((cov.spec&&cov.spec.cols&&cov.spec.rows) ? cov.spec.cols*cov.spec.rows : null);
+  const aps  = d.participatingAps;
+  const bodies = d.worldBodies;
+  // Each accepted first-order reflection traces two extra legs.
+  const directSeg = d.directPathsTested;
+  const acceptedRefl = d.validReflectedPaths;
+  const legSeg = acceptedRefl!=null ? acceptedRefl*2 : null;
+  const totalSeg = (directSeg!=null && legSeg!=null) ? directSeg+legSeg : null;
+
+  const row=(k,v)=>L.push('| '+k+' | '+(v==null?'—':v)+' |');
+
+  L.push('### 9.1 Volume (exact counts)');
+  L.push('');
+  L.push('| quantity | value |');
+  L.push('|---|---|');
+  row('cells evaluated', cells==null?null:cells.toLocaleString());
+  row('participating APs', aps);
+  row('world bodies', bodies);
+  row('direct segments traced (`rt3dSegment`, direct)', directSeg==null?null:directSeg.toLocaleString());
+  row('reflection candidates accepted', acceptedRefl==null?null:acceptedRefl.toLocaleString());
+  row('reflection leg segments implied (2 per accepted)', legSeg==null?null:legSeg.toLocaleString());
+  row('total segments implied', totalSeg==null?null:totalSeg.toLocaleString());
+  row('BVH nodes built', d.bvhNodes==null?null:d.bvhNodes);
+  row('BVH candidate bodies tested', d.bvhCandidatesTested==null?null:d.bvhCandidatesTested.toLocaleString());
+  row('BVH nodes visited', d.bvhNodesVisited==null?null:d.bvhNodesVisited.toLocaleString());
+  L.push('');
+
+  L.push('### 9.2 Elapsed (wall clock; environment dependent)');
+  L.push('');
+  L.push('| quantity | value |');
+  L.push('|---|---|');
+  row('total (main thread, end to end)', d.totalMs!=null ? d.totalMs+' ms' : null);
+  row('slice compute inside the Worker', d.sliceTotalMs!=null ? d.sliceTotalMs+' ms' : null);
+  row('time to first evaluated cell', d.timeToFirstCellMs!=null ? d.timeToFirstCellMs+' ms' : null);
+  row('cells/s', d.cellsPerSec!=null ? d.cellsPerSec : null);
+  if(d.phases && d.phases.length){
+    L.push('');
+    L.push('Phase durations (each announced before its work began):');
+    L.push('');
+    for(const p of d.phases)
+      L.push('- `'+p.name+'`: '+(p.ms>=1000 ? (p.ms/1000).toFixed(2)+' s' : p.ms+' ms'));
+  }
+  L.push('');
+
+  L.push('### 9.3 Normalised cost');
+  L.push('');
+  L.push('| quantity | value |');
+  L.push('|---|---|');
+  row('cells x APs (the irreducible direct-path volume)',
+      (cells!=null && aps!=null) ? (cells*aps).toLocaleString() : null);
+  row('segments per cell', (totalSeg!=null && cells) ? +(totalSeg/cells).toFixed(2) : null);
+  row('reflection amplification (total segments / direct segments)',
+      (totalSeg!=null && directSeg) ? +(totalSeg/directSeg).toFixed(2)+'x' : null);
+  row('BVH candidate tests per segment',
+      (d.bvhCandidatesTested!=null && totalSeg) ? +(d.bvhCandidatesTested/totalSeg).toFixed(2) : null);
+  row('ms per cell', (d.totalMs!=null && cells) ? +(d.totalMs/cells).toFixed(3) : null);
+  L.push('');
+  L.push('The reflection amplification row is the one to read first: it shows how much');
+  L.push('extra traced work first-order reflection added for THIS project. A value near');
+  L.push('1.0 means reflection processing added little here; a larger value means it added');
+  L.push('a lot. It is a measured ratio for the project that was run, reported as measured,');
+  L.push('and is never used to assume anything about another project.');
+  L.push('');
+  L.push('No share of runtime and no asymptotic cost is asserted anywhere in this section.');
+  L.push('It reports volumes and elapsed times; attributing runtime between components is');
+  L.push('out of scope for a single run and is not inferred from these numbers.');
+  L.push('');
+  return L;
+}
+
 // ---- report body -----------------------------------------------------------
 function rt3dAuditReportBody(){
   const L=[];
@@ -11891,6 +12013,7 @@ function rt3dAuditReportBody(){
   L.push('Legacy output is **not** truth. It is a compatibility oracle used for regression.');
   L.push('No site measurement is attached to this run.');
   L.push('');
+  L.push(...rt3dAuditReportPerf());
   return L.join('\n');
 }
 
