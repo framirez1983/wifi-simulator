@@ -33,6 +33,10 @@ const steps = [
   // the computation to a Dedicated Worker changed WHERE it runs and nothing else.
   ['Stage 7A numerical oracle (frozen exact IEEE-754 values)', 'stage7a-oracle.test.mjs', []],
   ['Stage 7A.1 Worker execution (worker/main equality, protocol, cancellation)', 'stage7a-worker.test.mjs', []],
+  // Stage 7B.1. Not an optimisation: a feasibility study whose verdict is UNSAFE.
+  // It pins the counterexample that blocks reflection pruning, so a future
+  // attempt cannot silently rediscover the bound as if it were sound.
+  ['Stage 7B.1 reflection-pruning feasibility (shadow measurement + counterexample)', 'stage7b1-prune-feasibility.test.mjs', []],
   ['Canonical slab thickness audit', 'slab-thickness.test.mjs', []],
   ['Stage 1A compatibility oracle', 'oracle.mjs', ['check']],
   ['App smoke test (real start() + production trace on the demo room)', 'smoke.mjs', []],

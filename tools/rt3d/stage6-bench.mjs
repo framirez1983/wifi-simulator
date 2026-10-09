@@ -105,6 +105,10 @@ const PROJECT = `
 // point, but is opt-in so the Stage-7A.2 profiling sections can be run quickly.
 //   node tools/rt3d/stage6-bench.mjs --with-stage6
 const WITH_STAGE6 = process.argv.includes('--with-stage6');
+// --only-prune runs just the Stage-7B.1 feasibility section. Sections 1-4 cost
+// roughly half an hour on this host, and the feasibility measurement does not
+// depend on them, so a full run every time would be pure waiting.
+const ONLY_PRUNE = process.argv.includes('--only-prune');
 
 const sb = sandbox();
 run(sb, PROJECT);
@@ -293,103 +297,6 @@ console.log('\n' + '='.repeat(78));
 console.log('  STAGE 7A.2 PROFILING BASELINE — measurement only');
 console.log('='.repeat(78));
 
-console.log('\n--- 1. COLD WORKER BOOTSTRAP (script evaluation, NOT RF compute) ---');
-const appBytes = SRC.length;
-const coldSamples = [];
-const warmBootSamples = [];
-{
-  // Cold: a brand-new worker environment, which must evaluate the app script.
-  for (let i = 0; i < 5; i++) {
-    const t0 = performance.now();
-    workerEnv();
-    coldSamples.push(performance.now() - t0);
-  }
-  // Warm: reuse ONE worker environment and time a trivial engine call, to show
-  // what a warm worker costs per dispatch as opposed to per boot.
-  const w = workerEnv();
-  w.run('state=freshState();');            // the engine needs a project, as start() would do
-  for (let i = 0; i < 5; i++) {
-    const t0 = performance.now();
-    w.run('rt3dBuildWorld()');
-    warmBootSamples.push(performance.now() - t0);
-  }
-}
-console.log(`  canonical application script : ${k(appBytes)} bytes`);
-console.log(`  cold worker boot  (5 fresh)  : median ${ms(median(coldSamples))} ms   ` +
-            `[${coldSamples.map((v) => v.toFixed(0)).join(', ')}]`);
-console.log(`  warm worker, 1 world build   : median ${ms(median(warmBootSamples))} ms   ` +
-            `[${warmBootSamples.map((v) => v.toFixed(2)).join(', ')}]`);
-console.log('  NOTE: cold boot is paid ONCE per worker instance and is not RF work.');
-console.log('        It is reported here purely so it is never mistaken for compute.');
-
-// ===========================================================================
-//  SECTION 2 — WARM RUN_SLICE JOBS THROUGH ONE WORKER
-// ===========================================================================
-console.log('\n--- 2. WARM RUN_SLICE JOBS THROUGH A SINGLE WORKER (same scene) ---');
-const WARM_SCENE = `
-  state=freshState(); state.floors.length=1;
-  var f=state.floors[0];
-  f.id='bench_a'; f.name='BENCH'; f.w=30; f.d=20; f.height=3.4;
-  f.walls=[]; f.pillars=[]; f.rfObjects=[]; f.ceilingAreas=[]; f.openings=[]; f.aps=[];
-  var M4=state.materials[4].id;
-  var W=15,H=10, pts=[[-W,-H],[W,-H],[W,H],[-W,H]];
-  for(var i=0;i<4;i++){ var a=pts[i], b=pts[(i+1)%4];
-    f.walls.push({id:'w'+i,x1:a[0],y1:a[1],x2:b[0],y2:b[1],materialId:M4,
-      thickness:DEFAULT_WALL_THICKNESS_M}); }
-  [[-10,-6],[-10,6],[0,-7],[0,7],[10,-6],[10,6]].forEach(function(c,i){
-    var ap=makeAP(c[0],c[1],'AP-'+(i+1),3.4); ap.id='ap_'+(i+1); ap.mount=2.6; f.aps.push(ap); });
-  state.activeFloor=0; state.receiverHeight=1.2;
-`;
-{
-  const w = workerEnv();
-  w.run(WARM_SCENE);
-  w.run(SNAPSHOT_FN);
-  const snapshot = JSON.parse(w.run('JSON.stringify(__rt3dWorkerSnapshot())'));
-  // a fixed, moderate grid so warm-job cost is clearly compute, not boot
-  snapshot.spec = { cols: 32, rows: 24, cell: 0.5,
-                    b: { minx: -8, miny: -6, maxx: 8, maxy: 6 },
-                    cw: 0.5, ch: 0.5, raySpacing: 0.5 };
-
-  const JOBS = 3;
-  const jobMs = [], transferMs = [], serializeMs = [];
-  let lastPayload = null;
-  for (let j = 0; j < JOBS; j++) {
-    const tick = manualTick();
-    const t0 = performance.now();
-    const { messages } = runProtocol(w, snapshot, { jobId: j + 1, tick });
-    tick.flushAll();
-    jobMs.push(performance.now() - t0);
-    const done = messages.find((m) => m.type === 'COMPLETE');
-    if (!done) throw new Error('warm job ' + j + ' produced no COMPLETE');
-    lastPayload = done;
-    // What the main thread actually pays to receive this result.
-    const t1 = performance.now();
-    const json = JSON.stringify({
-      best: Array.from(done.grid.best),
-      apBest: Array.from(done.grid.apBest),
-      valid: Array.from(done.grid.valid),
-    });
-    serializeMs.push(performance.now() - t1);
-    const t2 = performance.now();
-    structuredClone({ best: done.grid.best, apBest: done.grid.apBest, valid: done.grid.valid });
-    transferMs.push(performance.now() - t2);
-    void json;
-  }
-  const cells = snapshot.spec.cols * snapshot.spec.rows;
-  console.log(`  grid            : ${snapshot.spec.cols} x ${snapshot.spec.rows} = ${k(cells)} cells`);
-  console.log(`  bodies          : ${lastPayload.diagnostics.worldBodies}`);
-  console.log(`  APs (participating): ${lastPayload.diagnostics.participatingAps}`);
-  console.log(`  warm job, median: ${ms(median(jobMs))} ms   [${jobMs.map((v) => v.toFixed(0)).join(', ')}]`);
-  console.log(`  cold boot, median: ${ms(median(coldSamples))} ms  -> boot is ` +
-              `${(median(coldSamples) / median(jobMs)).toFixed(2)}x one warm job`);
-  console.log(`  result serialize (to arrays): median ${ms(median(serializeMs))} ms`);
-  console.log(`  result structuredClone       : median ${ms(median(transferMs))} ms`);
-  console.log(`  transferable buffers         : 3 (Float32 best, Int16 apBest, Uint8 valid)`);
-  console.log('  NOTE: transfer is measured WITHOUT the transfer list, i.e. it is the');
-  console.log('        cost a non-transferable clone would pay. With the transfer list the');
-  console.log('        buffers move instead of being copied.');
-}
-
 // ===========================================================================
 //  SECTION 3 — SCENES
 // ===========================================================================
@@ -493,6 +400,104 @@ function gridSpecFor(g) {
            cw: g.cell, ch: g.cell, raySpacing: g.cell,
            b: { minx: -half.cols * g.cell / 2, miny: -half.rows * g.cell / 2,
                 maxx: half.cols * g.cell / 2, maxy: half.rows * g.cell / 2 } };
+}
+
+if(!ONLY_PRUNE){
+console.log('\n--- 1. COLD WORKER BOOTSTRAP (script evaluation, NOT RF compute) ---');
+const appBytes = SRC.length;
+const coldSamples = [];
+const warmBootSamples = [];
+{
+  // Cold: a brand-new worker environment, which must evaluate the app script.
+  for (let i = 0; i < 5; i++) {
+    const t0 = performance.now();
+    workerEnv();
+    coldSamples.push(performance.now() - t0);
+  }
+  // Warm: reuse ONE worker environment and time a trivial engine call, to show
+  // what a warm worker costs per dispatch as opposed to per boot.
+  const w = workerEnv();
+  w.run('state=freshState();');            // the engine needs a project, as start() would do
+  for (let i = 0; i < 5; i++) {
+    const t0 = performance.now();
+    w.run('rt3dBuildWorld()');
+    warmBootSamples.push(performance.now() - t0);
+  }
+}
+console.log(`  canonical application script : ${k(appBytes)} bytes`);
+console.log(`  cold worker boot  (5 fresh)  : median ${ms(median(coldSamples))} ms   ` +
+            `[${coldSamples.map((v) => v.toFixed(0)).join(', ')}]`);
+console.log(`  warm worker, 1 world build   : median ${ms(median(warmBootSamples))} ms   ` +
+            `[${warmBootSamples.map((v) => v.toFixed(2)).join(', ')}]`);
+console.log('  NOTE: cold boot is paid ONCE per worker instance and is not RF work.');
+console.log('        It is reported here purely so it is never mistaken for compute.');
+
+// ===========================================================================
+//  SECTION 2 — WARM RUN_SLICE JOBS THROUGH ONE WORKER
+// ===========================================================================
+console.log('\n--- 2. WARM RUN_SLICE JOBS THROUGH A SINGLE WORKER (same scene) ---');
+const WARM_SCENE = `
+  state=freshState(); state.floors.length=1;
+  var f=state.floors[0];
+  f.id='bench_a'; f.name='BENCH'; f.w=30; f.d=20; f.height=3.4;
+  f.walls=[]; f.pillars=[]; f.rfObjects=[]; f.ceilingAreas=[]; f.openings=[]; f.aps=[];
+  var M4=state.materials[4].id;
+  var W=15,H=10, pts=[[-W,-H],[W,-H],[W,H],[-W,H]];
+  for(var i=0;i<4;i++){ var a=pts[i], b=pts[(i+1)%4];
+    f.walls.push({id:'w'+i,x1:a[0],y1:a[1],x2:b[0],y2:b[1],materialId:M4,
+      thickness:DEFAULT_WALL_THICKNESS_M}); }
+  [[-10,-6],[-10,6],[0,-7],[0,7],[10,-6],[10,6]].forEach(function(c,i){
+    var ap=makeAP(c[0],c[1],'AP-'+(i+1),3.4); ap.id='ap_'+(i+1); ap.mount=2.6; f.aps.push(ap); });
+  state.activeFloor=0; state.receiverHeight=1.2;
+`;
+{
+  const w = workerEnv();
+  w.run(WARM_SCENE);
+  w.run(SNAPSHOT_FN);
+  const snapshot = JSON.parse(w.run('JSON.stringify(__rt3dWorkerSnapshot())'));
+  // a fixed, moderate grid so warm-job cost is clearly compute, not boot
+  snapshot.spec = { cols: 32, rows: 24, cell: 0.5,
+                    b: { minx: -8, miny: -6, maxx: 8, maxy: 6 },
+                    cw: 0.5, ch: 0.5, raySpacing: 0.5 };
+
+  const JOBS = 3;
+  const jobMs = [], transferMs = [], serializeMs = [];
+  let lastPayload = null;
+  for (let j = 0; j < JOBS; j++) {
+    const tick = manualTick();
+    const t0 = performance.now();
+    const { messages } = runProtocol(w, snapshot, { jobId: j + 1, tick });
+    tick.flushAll();
+    jobMs.push(performance.now() - t0);
+    const done = messages.find((m) => m.type === 'COMPLETE');
+    if (!done) throw new Error('warm job ' + j + ' produced no COMPLETE');
+    lastPayload = done;
+    // What the main thread actually pays to receive this result.
+    const t1 = performance.now();
+    const json = JSON.stringify({
+      best: Array.from(done.grid.best),
+      apBest: Array.from(done.grid.apBest),
+      valid: Array.from(done.grid.valid),
+    });
+    serializeMs.push(performance.now() - t1);
+    const t2 = performance.now();
+    structuredClone({ best: done.grid.best, apBest: done.grid.apBest, valid: done.grid.valid });
+    transferMs.push(performance.now() - t2);
+    void json;
+  }
+  const cells = snapshot.spec.cols * snapshot.spec.rows;
+  console.log(`  grid            : ${snapshot.spec.cols} x ${snapshot.spec.rows} = ${k(cells)} cells`);
+  console.log(`  bodies          : ${lastPayload.diagnostics.worldBodies}`);
+  console.log(`  APs (participating): ${lastPayload.diagnostics.participatingAps}`);
+  console.log(`  warm job, median: ${ms(median(jobMs))} ms   [${jobMs.map((v) => v.toFixed(0)).join(', ')}]`);
+  console.log(`  cold boot, median: ${ms(median(coldSamples))} ms  -> boot is ` +
+              `${(median(coldSamples) / median(jobMs)).toFixed(2)}x one warm job`);
+  console.log(`  result serialize (to arrays): median ${ms(median(serializeMs))} ms`);
+  console.log(`  result structuredClone       : median ${ms(median(transferMs))} ms`);
+  console.log(`  transferable buffers         : 3 (Float32 best, Int16 apBest, Uint8 valid)`);
+  console.log('  NOTE: transfer is measured WITHOUT the transfer list, i.e. it is the');
+  console.log('        cost a non-transferable clone would pay. With the transfer list the');
+  console.log('        buffers move instead of being copied.');
 }
 
 // One scene, one grid: run the uninstrumented timing pass and the instrumented
@@ -763,6 +768,227 @@ console.log('       this pass (measurement-only stage).');
   console.log('    establish an exponent, and none should be inferred from it.');
 }
 
+}
+
+// ============================================================================
+//  STAGE 7B.1 — REFLECTION-PRUNING FEASIBILITY (MEASUREMENT ONLY)
+//
+//  Production traces every reflection candidate exactly as before. Nothing here
+//  prunes anything. This section reconstructs, from the candidate list that
+//  rt3dCoverageAt() already returns, what a no-material-loss pre-trace bound
+//  WOULD have decided, and checks that decision against what actually happened.
+//
+//  THE DERIVATION, from the real code
+//  ---------------------------------
+//  Reflected RSSI (index.html:7854):
+//      rssi = ap.txPower + gain
+//           - (pl1 + 10*plExp*log10(max(0.5, c.pathDistance))
+//              + c.materialLossDb + c.reflectionLossDb)
+//  Known before any trace: txPower, gain (antennaGain, one call per AP per
+//  point), c.pathDistance (pure geometry: rt3dSegment computes len before it
+//  traces, index.html:7645), pl1, plExp, reflectLossDb.
+//  Learned only by tracing: c.materialLossDb = legA.loss + legB.loss.
+//
+//  Therefore  optimistic = the same expression with materialLossDb := 0, and
+//            optimistic - actual = materialLossDb.
+//  The bound holds for a candidate ONLY IF materialLossDb >= 0.
+//
+//  THE COMPARATOR (this fixes the safe inequality; no epsilon)
+//  -------------------------------------------------------
+//  rt3dCoverageAt(): for(c of candidates)
+//      if(c.valid && (!strongest || c.receivedPower > strongest.receivedPower))
+//          strongest = c;
+//  -> STRICT '>' and FIRST-WINS on ties. A candidate replaces the incumbent only
+//  if it is STRICTLY greater. rt3dAuditApDetail() uses the same strict '>' for
+//  bestRefl, and '>=' for the direct-vs-reflected winnerKind tie (index.html:8883).
+//
+//  So candidate X may be skipped only when it CANNOT change any frozen
+//  observable. It cannot change `strongest` (hence winnerKind, strongestRssi,
+//  serving AP, and every winning-path field) unless
+//        X.receivedPower  >  strongestSoFar
+//  and that in turn implies it cannot change best-reflected either, because
+//  bestReflectedSoFar <= strongestSoFar. Hence:
+//
+//        SAFE PRUNE  <=>  optimisticRssi(X)  <=  strongestSoFar      (<=, strict >)
+//                                  or  <=  bestReflectedSoFar
+//
+//  Counts (reflectedValidCount, validCandidates) are preserved without tracing
+//  because a candidate's `valid` flag is decided by PURE GEOMETRY before any
+//  segment is traced: rt3dReflectCandidate rejects on same-side, wall extent,
+//  wall height and leg degeneracy, and rt3dSegment's `degenerate` is only
+//  !(len>0) or a non-finite ray (index.html:7645-7648). No body test is involved.
+// ============================================================================
+
+const SHADOW = `
+window.__shadow = function(world, sources, point){
+  var planeZ = point.z;
+  var results = [];
+  for(var s=0;s<sources.length;s++){
+    var src = sources[s], ap = src.ap;
+    var apPoint = rt3dApOrigin(ap, src.floorIndex);
+    var A = rt3dCoverageAt(world, point, { sources:sources, stats:rt3dNewStats() }).aps[s];
+    var gain = A.antennaGainDb;
+    var pl1  = fsplAt1m(BANDS[state.band].mhz);
+    var plExp= state.plExp;
+
+    // Replay the production comparator over the production candidate list.
+    // 'incumbent' mirrors the production 'strongest'; 'bestRefl' mirrors the audit's bestRefl.
+    var incumbent = -Infinity, bestRefl = -Infinity;
+    var directValid = false;
+    var rows = [];
+    for(var i=0;i<A.candidates.length;i++){
+      var c = A.candidates[i];
+      if(c.kind==='direct'){
+        if(c.valid){ directValid = true; incumbent = c.receivedPower; }
+        continue;
+      }
+      if(!c.valid) continue;
+      // exact geometric path length, recomputed from the reflection point so no
+      // toFixed(6) rounding in the candidate record can perturb the bound
+      var R = c.reflectionPoint;
+      var dGeo = Math.hypot(R.x-apPoint.x, R.y-apPoint.y, R.z-apPoint.z)
+               + Math.hypot(point.x-R.x, point.y-R.y, point.z-R.z);
+      var pathLoss = pl1 + 10*plExp*Math.log10(Math.max(0.5, dGeo));
+      var optimistic = ap.txPower + gain - (pathLoss + 0 + c.reflectionLossDb);
+      var actual    = ap.txPower + gain - (pathLoss + c.materialLossDb + c.reflectionLossDb);
+
+      var prunable = (optimistic <= incumbent) && (optimistic <= bestRefl);
+      var becameBestRefl  = actual > bestRefl;
+      var becameStrongest = actual > incumbent;
+
+      rows.push({
+        optimistic: optimistic, actual: actual,
+        materialLossDb: c.materialLossDb,
+        prunable: prunable,
+        becameBestRefl: becameBestRefl, becameStrongest: becameStrongest,
+        incumbentBefore: incumbent
+      });
+
+      // advance the incumbents exactly as production does
+      if(actual > bestRefl) bestRefl = actual;
+      if(actual > incumbent) incumbent = actual;
+    }
+    results.push({ apId: ap.id, directValid: directValid, rows: rows });
+  }
+  return results;
+};
+'shadow-ready'
+`;
+
+function shadowFor(scene, gridName) {
+  const spec = gridSpecFor(GRIDS[gridName]);
+  const sbx = sandbox();
+  run(sbx, SHADOW);
+  run(sbx, scene);
+  return JSON.parse(run(sbx, `JSON.stringify((function(){
+    var spec=${JSON.stringify(spec)};
+    var fi=state.activeFloor;
+    var planeZ=rt3dReceiverPlaneZForFloor(fi);
+    var world=rt3dBuildWorld();
+    var sources=rt3dCoverageSources();
+    var stats=rt3dNewStats();
+    var cursor={ j:0,i:0,best:null,apBest:null,valid:null,acc:null };
+    var slice=rt3dCoverageSlice(world,spec,planeZ,{cursor:cursor,stats:stats,sources:sources});
+
+    var tot={considered:0,accepted:0,prunable:0,becameBest:0,becameWinner:0,
+             falsePrune:0,negativeLoss:0,minMatLoss:Infinity};
+    var per=[];
+    for(var k=0;k<spec.rows;k++) for(var i=0;i<spec.cols;i++){
+      var pt={ x: spec.b.minx+(i+0.5)*spec.cw, y: spec.b.miny+(k+0.5)*spec.ch, z: planeZ };
+      var res=window.__shadow(world, sources, pt);
+      for(var a=0;a<res.length;a++){
+        var rows=res[a].rows;
+        per.push(rows.length);
+        for(var r=0;r<rows.length;r++){
+          var R=rows[r];
+          tot.accepted++;
+          if(R.materialLossDb<0) tot.negativeLoss++;
+          if(R.materialLossDb<tot.minMatLoss) tot.minMatLoss=R.materialLossDb;
+          if(R.prunable){
+            tot.prunable++;
+            // THE ASSERTION: anything the bound would skip must be genuinely unable
+            // to beat the incumbent, under the strict '>' comparator.
+            if(R.actual > R.incumbentBefore) tot.falsePrune++;
+          }
+          if(R.becameBestRefl) tot.becameBest++;
+          if(R.becameStrongest) tot.becameWinner++;
+        }
+      }
+    }
+    if(!isFinite(tot.minMatLoss)) tot.minMatLoss=null;
+    return { total:tot, cells:spec.cols*spec.rows, bodies:rt3dAllBodies(world).length,
+             aps:sources.length };
+  })())`));
+}
+
+console.log('\n--- 8. STAGE 7B.1 shadow reflection-pruning feasibility (MEASUREMENT ONLY) ---');
+console.log('    Production pruned nothing. Every candidate was traced exactly as today.');
+console.log('    This replays the production comparator over the real candidate list.\n');
+
+const shadowRows = [];
+for (const [id, def] of Object.entries(SCENES)) {
+  // small grid: this is a feasibility measurement, and every cell multiplies the
+  // work by the cell count, so the smallest grid keeps it affordable
+  const r = shadowFor(def.scene, 'small');
+  const t = r.total;
+  shadowRows.push({ id, title: def.title, ...r });
+  console.log(`  ${def.title}`);
+  console.log(`      bodies ${k(r.bodies)}, APs ${r.aps}, cells ${k(r.cells)}`);
+  console.log(`      accepted candidates ${k(t.accepted)}` +
+              `   shadow-prunable ${k(t.prunable)}` +
+              (t.accepted ? `  (${((100 * t.prunable) / t.accepted).toFixed(2)}%)` : ''));
+  console.log(`      became best-reflected ${k(t.becameBest)}   became overall winner ${k(t.becameWinner)}`);
+  console.log(`      minimum materialLossDb seen: ${t.minMatLoss == null ? 'n/a' : t.minMatLoss + ' dB'}` +
+              `   candidates with NEGATIVE loss: ${k(t.negativeLoss)}`);
+  console.log(`      FALSE-PRUNE PREDICTIONS: ${t.falsePrune}  ` +
+              `${t.falsePrune === 0 ? '(bound held on every candidate)' : '<-- BOUND VIOLATED'}`);
+}
+
+// --- totals and the opportunity estimate ------------------------------------
+{
+  const T = shadowRows.reduce((a, r) => {
+    a.accepted += r.total.accepted; a.prunable += r.total.prunable;
+    a.becameBest += r.total.becameBest; a.becameWinner += r.total.becameWinner;
+    a.falsePrune += r.total.falsePrune; a.negativeLoss += r.total.negativeLoss;
+    return a;
+  }, { accepted: 0, prunable: 0, becameBest: 0, becameWinner: 0, falsePrune: 0, negativeLoss: 0 });
+
+  console.log('\n--- 8b. SHADOW-PRUNING TOTALS across all seven scenes ---');
+  console.log(`      reflection candidates geometrically accepted : ${k(T.accepted)}`);
+  console.log(`      shadow-prunable under the current order       : ${k(T.prunable)}` +
+              `  (${((100 * T.prunable) / Math.max(1, T.accepted)).toFixed(2)}%)`);
+  console.log(`      that became best-reflected                  : ${k(T.becameBest)}`);
+  console.log(`      that became the overall winning path         : ${k(T.becameWinner)}`);
+  console.log(`      candidates with negative material loss       : ${k(T.negativeLoss)}`);
+  console.log(`      FALSE-PRUNE predictions                      : ${k(T.falsePrune)}`);
+  console.log('');
+  console.log(`      ESTIMATE segment traces avoidable = 2 x prunable = ${k(2 * T.prunable)}`);
+  console.log('      (each accepted candidate costs exactly two rt3dSegment traces:');
+  console.log('       AP->R and R->receiver, index.html:7760-7761.)');
+  console.log('      ESTIMATE BodyEvent volume avoided: NOT computed here. It would require');
+  console.log('      replaying each skipped leg, which is the very work being skipped, so any');
+  console.log('      figure would be an extrapolation, not a measurement. Deliberately omitted');
+  console.log('      rather than presented as evidence.');
+  console.log('');
+  console.log('      NOT CONVERTED TO RUNTIME: no saving above is a speedup claim. Stage 7A.2');
+  console.log('      showed elapsed time tracks BodyEvent volume, but the harness here cannot');
+  console.log('      convert a trace count into milliseconds for the browser.');
+}
+
+// --- order sensitivity -------------------------------------------------------
+{
+  const per = shadowRows.filter((r) => r.total.accepted > 0)
+    .map((r) => ({ id: r.id, prunable: r.total.prunable, accepted: r.total.accepted }));
+  console.log('\n--- 8c. CANDIDATE-ORDER SENSITIVITY (current canonical order only) ---');
+  console.log('    Candidates are NOT reordered in this stage. The figures below are what the');
+  console.log('    bound would achieve under the order the engine already uses.');
+  for (const p of per)
+    console.log(`      ${padL(p.id, 18)} ${pad(k(p.prunable), 8)} / ${pad(k(p.accepted), 8)}` +
+                `  ${((100 * p.prunable) / p.accepted).toFixed(2)}%`);
+  console.log('    A theoretical "strongest candidate first" ordering ceiling is NOT computed:');
+  console.log('    it would require reordering, which is out of scope, and reporting a number');
+  console.log('    that cannot be realised would be misleading.');
+}
 console.log('\n' + '='.repeat(78));
 console.log('  Stage 7A.2 profiling baseline complete — nothing was optimised.');
 console.log('='.repeat(78));

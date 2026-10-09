@@ -11641,6 +11641,49 @@ function rt3dAuditReportPerf(){
   L.push('It reports volumes and elapsed times; attributing runtime between components is');
   L.push('out of scope for a single run and is not inferred from these numbers.');
   L.push('');
+  L.push('### 9.4 Reflection-pruning feasibility — MEASUREMENT ONLY, NO PRUNING IS ACTIVE');
+  L.push('');
+  L.push('**No reflection candidate is skipped, approximated or reordered anywhere in this');
+  L.push('application.** Every accepted first-order reflection is still traced as two full');
+  L.push('segments, exactly as before. The rows below are the volume such a bound would have');
+  L.push('had to work against, and nothing more.');
+  L.push('');
+  L.push('| quantity | value |');
+  L.push('|---|---|');
+  row('reflection candidates geometrically accepted', acceptedRefl==null?null:acceptedRefl.toLocaleString());
+  row('reflection leg segments traced (2 per accepted, all of them real)',
+      legSeg==null?null:legSeg.toLocaleString());
+  row('segment traces a perfect pre-trace bound could at most avoid',
+      legSeg==null?null:legSeg.toLocaleString());
+  L.push('');
+  L.push('`shadow-prunable under current order` is deliberately **not** listed as a number');
+  L.push('here. Answering it per project would require the engine to record a per-candidate');
+  L.push('optimistic value and a running incumbent during the production run. It does not,');
+  L.push('and adding that instrumentation is a production change this report does not make.');
+  L.push('The candidate-level measurement lives in `tools/rt3d/stage6-bench.mjs`');
+  L.push('(section 8) and `tools/rt3d/stage7b1-prune-feasibility.test.mjs`, which run');
+  L.push('against the same engine and do not alter it.');
+  L.push('');
+  L.push('**Status: UNSAFE — do not implement.** The proposed bound was to evaluate the');
+  L.push('exact reflected-RSSI formula with `materialLossDb` set to zero and skip the two');
+  L.push('segment traces when that value cannot beat the incumbent. Since');
+  L.push('`optimisticRssi - actualRssi = materialLossDb`, the bound is only an upper bound');
+  L.push('while every material loss is `>= 0`. That is **not** guaranteed for every project');
+  L.push('this application can represent:');
+  L.push('');
+  L.push('- a Ceiling Area\'s additional attenuation has no minimum in the UI and no guard in');
+  L.push('  its change handler, and `ceilEffectiveLoss()` adds it without the clamp its RF');
+  L.push('  Object and floor-slab counterparts both apply, so it can be negative;');
+  L.push('- `loadProject` adopts the file\'s state wholesale, so a project file can also');
+  L.push('  supply a negative material `db`.');
+  L.push('');
+  L.push('With a negative ceiling extra loss the engine reports `actualRssi` **above** the');
+  L.push('"optimistic" value, which makes it a lower bound rather than an upper bound and');
+  L.push('makes `optimistic <= incumbent` unsafe to conclude `actual <= incumbent` from.');
+  L.push('The test suite reproduces this through the real engine. Until every material loss');
+  L.push('is proven non-negative for every representable project, no such prune may be');
+  L.push('added. No figure in this section is a speedup claim.');
+  L.push('');
   return L;
 }
 
