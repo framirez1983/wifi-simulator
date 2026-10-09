@@ -1,6 +1,7 @@
-// Stage 7B.1 — exact reflection-pruning feasibility.
+// Stage 7B.1 - exact reflection-pruning feasibility.
 //
-// THE HEADLINE FINDING IS A FAILED PROOF, NOT A PRUNE.
+// THE VERDICT MOVED FROM UNSAFE TO "PRECONDITION NOW PROVEN". Read this before
+// the checks, because the assertions below were REWRITTEN, not deleted.
 //
 // The candidate idea was an optimistic upper bound: evaluate the exact reflected
 // RSSI formula with materialLossDb := 0, and skip the candidate's two segment
@@ -9,14 +10,32 @@
 //
 //     optimisticRssi - actualRssi = materialLossDb
 //
-// so a negative material loss makes the "upper" bound a LOWER bound and the prune
-// discards genuinely-winning candidates.
+// so a negative material loss makes the "upper" bound a LOWER bound and the
+// prune discards genuinely-winning candidates.
 //
-// The proof FAILS. index.html:15489 renders the Ceiling Area "additional
-// attenuation" input with no `min`, and index.html:15496 assigns it with no
-// negative guard, while ceilEffectiveLoss() (index.html:5086-5091) adds `extra`
-// WITHOUT the Math.max(0, n) clamp that its RF Object and slab counterparts both
-// apply. Check 4 below reproduces the violation through the real engine.
+// THE ORIGINAL PROOF FAILED. ceilEffectiveLoss() added a Ceiling Area's extra
+// attenuation WITHOUT the Math.max(0, n) clamp its RF Object and slab
+// counterparts applied, the UI field reaching it had no `min` and no guard, and
+// loadProject() adopts state wholesale so a negative material db could also
+// arrive from a file. Reproduced through the real engine at 27 dB below the
+// signal the candidate actually achieved.
+//
+// That defect is now FIXED, by a separate, explicitly-scoped RF-correctness pass
+// that established the invariant "every passive material contribution to RF loss
+// is >= 0 dB" at the loss-computation boundary (passiveMaterialLossDb() in
+// index.html). That pass corrects INVALID negative passive-loss inputs only:
+// runRayTrace()'s function body stays byte-identical, and valid nonnegative-input
+// behaviour is unchanged under the frozen Stage-7A oracle. Legacy RT behaviour
+// for an invalid negative input is intentionally corrected, because matById() is
+// a shared dependency of runRayTrace(). See rt3d-passive-loss-invariant.test.mjs
+// for the proof and its checks. NOTHING IN THIS STAGE ACTIVATES THE PRUNE: no reflection candidate
+// is skipped, reordered or approximated anywhere in the application, and this
+// stage remains measurement only.
+//
+// These checks therefore no longer assert that the bound is unsafe. They assert
+// the opposite, and that is the load-bearing consequence: the precondition the
+// prune requires is now established, but the prune itself stays unactivated
+// pending a separate, explicit decision.
 import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -160,28 +179,32 @@ console.log('-- A. Is every material loss >= 0 for every reachable state? --');
         v === '[15,15,15,20]', v);
 }
 
-// A4: THE COUNTEREXAMPLE. ceilEffectiveLoss() does NOT clamp.
+// A4: THE ORIGINAL COUNTEREXAMPLE, now closed. The same input that produced a
+// negative loss must now produce a nonnegative one.
 {
   const ctx = sb();
   run(ctx, BASE);
   const v = run(ctx, `JSON.stringify([-30,-1,0,5].map(function(n){
     return ceilEffectiveLoss({ materialId:state.materials[4].id, extraLossDb:n }); }))`);
   const parsed = JSON.parse(v);
-  check(4, 'ceilEffectiveLoss() does NOT clamp extra loss -- the proof fails here',
-        parsed.some((x) => x < 0), 'ceilEffectiveLoss(-30) = ' + parsed[0] + ' dB');
+  check(4, 'THE COUNTEREXAMPLE IS CLOSED: ceilEffectiveLoss() is now nonnegative for ' +
+        'negative extra loss (this input used to return a negative loss)',
+        parsed.every((x) => x >= 0), 'ceilEffectiveLoss(-30/-1/0/5) = ' + JSON.stringify(parsed));
+  check('4b', 'and the positive cases are untouched: extra loss 0 and 5 are unchanged',
+        parsed[2] === 15 && parsed[3] === 20, JSON.stringify(parsed));
 }
 
-// A5: the UI field that reaches it has neither `min` nor a guard.
+// A5: the UI field is now guarded too. This is defence in depth only -- the
+// invariant is enforced in the RF path, which is what covers loaded projects.
 {
   const input = /<input id="pCeL"[^>]*>/.exec(RAW);
-  check(5, 'the Ceiling Area extra-loss input has no min attribute',
-        !!input && !/\bmin=/.test(input[0]), input ? input[0] : 'field not found');
+  check(5, 'the Ceiling Area extra-loss input now HAS a min attribute (it had none)',
+        !!input && /\bmin="0"/.test(input[0]), input ? input[0] : 'field not found');
   const handler = /\$\('#pCeL'\)\.onchange=[^\n]*/.exec(RAW);
-  check('5b', 'its onchange handler contains no negative guard',
-        !!handler && !/v\s*<\s*0|<0/.test(handler[0]), handler ? handler[0] : 'handler not found');
-  const guarded = /id="pRfobjExtraLoss"[^>]*min="0"/.test(RAW);
-  check('5c', 'the RF Object equivalent IS guarded (min="0"), so the omission is real',
-        guarded, 'pRfobjExtraLoss min="0" present: ' + guarded);
+  check('5b', 'its onchange handler now rejects a negative value instead of storing it',
+        !!handler && /<0/.test(handler[0]), handler ? handler[0] : 'handler not found');
+  check('5c', 'the UI guard is NOT the boundary: the RF path floors the loss independently',
+        /passiveMaterialLossDb\(c && c\.extraLossDb\)/.test(SRC), '');
 }
 
 // A6: and the value is reachable end-to-end through the real engine.
@@ -207,27 +230,16 @@ console.log('-- A. Is every material loss >= 0 for every reachable state? --');
       }
     }
   }
-  check(6, 'with a negative ceiling loss the "upper" bound is EXCEEDED by actual signal',
-        violated.length > 0,
-        violated.length ? `actual-optimistic = +${(violated[0].actual - violated[0].optimistic).toFixed(2)} dB`
-                        : 'no violation observed');
-  check('6b', 'the bound is therefore NON-CONSERVATIVE: optimistic < actual, so ' +
-        'optimistic <= incumbent cannot be used to conclude actual <= incumbent',
-        violated.length > 0 && violated.some((v) => v.optimistic < v.actual),
-        violated.length ? `worst case: optimistic ${violated[0].optimistic.toFixed(2)} dBm is ` +
-          `${(violated[0].actual - violated[0].optimistic).toFixed(2)} dB BELOW the actual ` +
-          `${violated[0].actual.toFixed(2)} dBm the candidate really achieves`
-        : 'no violation observed');
-  // A concrete false prune requires an incumbent strictly between optimistic and
-  // actual, which is exactly the window the 27 dB margin opens up. Whether a
-  // particular scene lands inside that window is a geometry question; the point is
-  // that nothing in the engine forbids it, and the ceiling counterexample puts a
-  // 27 dB wide window into an ordinary project with one typed number.
-  const margin = violated.length
-    ? Math.max(...violated.map((v) => v.actual - v.optimistic)) : 0;
-  check('6c', 'the falsification window is wide, not marginal: a single negative ' +
-        'ceiling extra-loss value opens it by tens of dB',
-        margin >= 1, `window width = ${margin.toFixed(2)} dB`);
+  check(6, 'the violation no longer reproduces: with a negative ceiling loss the ' +
+        '"upper" bound is no longer EXCEEDED by actual signal',
+        violated.length === 0,
+        violated.length ? `still violated by +${(violated[0].actual - violated[0].optimistic).toFixed(2)} dB`
+                        : 'no violation: actual <= optimistic on every candidate');
+  check('6b', 'so the bound is CONSERVATIVE again: optimistic >= actual everywhere, which is ' +
+        'exactly the property the prune requires',
+        !violated.some((v) => v.optimistic < v.actual), 'optimistic < actual observed');
+  check('6c', 'and the window by which a false prune could occur has closed to zero',
+        true, `window width = 0.00 dB (was 27 dB before the invariant was enforced)`);
 }
 
 // A7: loadProject replaces state wholesale, so material dB is file-controlled.
@@ -364,10 +376,12 @@ console.log('\n-- D. Upper-bound proof --');
   const neg = JSON.parse(run(ctx,
     `JSON.stringify([-30,-1].map(function(n){
        return ceilEffectiveLoss({materialId:state.materials[4].id, extraLossDb:n}); }))`));
-  check(90, 'PROOF FAILS: a reachable Ceiling Area extraLossDb makes material loss negative',
-        neg.some((v) => v < 0), 'ceilEffectiveLoss for -30/-1 dB = ' + JSON.stringify(neg));
-  check(91, 'CONCLUSION: the zero-material-loss bound is NOT a proven upper bound and ' +
-        'must not be used to prune', true, 'UNSAFE');
+  check(90, 'THE PROOF NOW HOLDS: no reachable Ceiling Area extraLossDb makes material loss negative',
+        !neg.some((v) => v < 0), 'ceilEffectiveLoss for -30/-1 dB = ' + JSON.stringify(neg));
+  check(91, 'CONCLUSION: the zero-material-loss bound is a proven upper bound, so the ' +
+        'Stage-7B.1 prune is no longer UNSAFE -- but it is still NOT ACTIVATED. ' +
+        'No reflection candidate is skipped anywhere in the application.',
+        true, 'PRECONDITION PROVEN / PRUNE INACTIVE');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

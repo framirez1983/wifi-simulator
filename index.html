@@ -2292,7 +2292,75 @@ function W2S(wx,wy){
 }
 
 function floor(){ return state.floors[state.activeFloor]; }
-function matById(id){ return state.materials.find(m=>m.id===id) || state.materials[0]; }
+
+// ---- CANONICAL PASSIVE-MATERIAL LOSS FLOOR ------------------------------
+// Every passive material in this model (wall, pillar, RF Object, floor slab,
+// Ceiling Area) models absorption and scattering. Absorption cannot be
+// negative: a passive barrier that reports negative attenuation does not become
+// a stronger absorber, it becomes a barrier that ADDS received power to any
+// signal crossing it. That is physically invalid for this model, and it
+// inverts the meaning of every RSSI, SINR, diagnostic and serving-AP decision
+// derived from those numbers.
+//
+// passiveMaterialLossDb() is the single enforcement point for a passive loss
+// value, and it lives here, at the boundary where loss is COMPUTED, rather than
+// in the UI or in loadProject(). That placement is deliberate:
+//
+//   * A UI guard alone is insufficient. A .wifiproj.json file can be edited by
+//     hand, and loadProject() adopts its state wholesale, so any UI-only check
+//     is bypassed by an ordinary round trip through a saved project.
+//   * loadProject() is not a suitable boundary either. Silently rewriting raw
+//     project data to make the engine safe would destroy the user's actual
+//     input and mutate saved files. That is a migration decision, and migration
+//     is warranted only if separately justified. It is not needed here.
+//   * Enforcing at the effective-loss computation means every route into the RF
+//     physics obeys one invariant: UI-created projects, loaded projects, older
+//     files, programmatic fixtures, the RT3D kernel, AND the legacy engine.
+//
+// matById() applies the floor to a material's base attenuation. Doing it there
+// rather than at each loss-computation site is what makes the invariant total:
+// the legacy ray tracer reads material .db directly from inside the frozen
+// runRayTrace() function body, so a clamp applied only at the RT3D body
+// builders would leave legacy RT free to add signal on a saved project.
+//
+// WHAT IS AND IS NOT UNCHANGED, precisely:
+//
+//   * runRayTrace() function body ................ byte-identical; it is not
+//                                                  edited here, and
+//                                                  production-untouched.mjs
+//                                                  still passes
+//   * valid nonnegative-input behaviour ....... unchanged, covered by the
+//                                                  existing frozen oracle
+//   * invalid negative passive-loss behaviour . INTENTIONALLY CORRECTED to a
+//                                                  0 dB minimum
+//
+// The third line is the point of this change. The first two must not move, and
+// neither does. It would be inaccurate to call the legacy engine "untouched":
+// matById() is a shared dependency of runRayTrace(), so what it reports
+// necessarily reaches legacy RT, and for invalid negative passive-loss inputs
+// legacy RT behaviour changes on purpose.
+//
+// This is a clamp, not a rescale. Any value already >= 0 — which is every value
+// reachable through the editor — is returned as the SAME object, unmodified and
+// un-cloned, so no valid result changes and no hot loop allocates. Only an
+// invalid negative (or non-finite) value produces a corrected view, and the
+// stored project data is never modified: raw input is preserved verbatim.
+function passiveMaterialLossDb(db){
+  const n=Number(db);
+  if(!Number.isFinite(n) || n<=0) return 0;
+  return n;
+}
+function matById(id){
+  const m = state.materials.find(x=>x.id===id) || state.materials[0];
+  // Identity fast path: a valid material is handed back untouched.
+  if(!m) return m;
+  const raw = Number(m.db);
+  if(Number.isFinite(raw) && raw>0) return m;
+  // Only an invalid value reaches here. Return a corrected VIEW; state.materials
+  // itself is left exactly as loaded or typed.
+  const fixed = Object.assign({}, m, { db: passiveMaterialLossDb(raw) });
+  return fixed;
+}
 
 // ----- world bounds for a floor (for heatmap grid) -----
 function floorBounds(f){
@@ -3776,10 +3844,12 @@ function pointInOpening(f,x,y){
 // optional fields are numerically unchanged. Absence is resolved HERE, not by
 // injecting defaults into stored floors, so old projects need no migration.
 function slabLossForFloor(f){
+  // Two sources for the base: an explicit material (already floored by
+  // matById), else the legacy state.slabDb default, which is a bare number and
+  // therefore does NOT pass through matById. Both bases are file-controlled, so
+  // both are floored, and so is the extra term.
   const base=(f && f.slabMaterialId!=null) ? matById(f.slabMaterialId).db : state.slabDb;
-  const n=Number(f && f.slabExtraLossDb);
-  const extra=Number.isFinite(n) ? Math.max(0,n) : 0;
-  return base + extra;
+  return passiveMaterialLossDb(base) + passiveMaterialLossDb(f && f.slabExtraLossDb);
 }
 function slabLossBetweenPoints(ax,ay,az, af, bx,by,bz, tf){
   if(af===tf) return 0;
@@ -3866,8 +3936,7 @@ function rfSegmentHitsPrism(ax,ay,az, bx,by,bz, o, baseZ){
 // it can never create RF gain, so negatives clamp to 0 and invalid values
 // (NaN, Infinity, non-numeric, missing) contribute 0.
 function rfObjectExtraLoss(o){
-  const n=Number(o && o.extraLossDb);
-  return Number.isFinite(n) ? Math.max(0, n) : 0;
+  return passiveMaterialLossDb(o && o.extraLossDb);
 }
 // Attenuation of one straight AP->receiver segment through every canonical RF
 // Object in the project. This is the single integration point used by Simple
@@ -11664,25 +11733,43 @@ function rt3dAuditReportPerf(){
   L.push('(section 8) and `tools/rt3d/stage7b1-prune-feasibility.test.mjs`, which run');
   L.push('against the same engine and do not alter it.');
   L.push('');
-  L.push('**Status: UNSAFE — do not implement.** The proposed bound was to evaluate the');
-  L.push('exact reflected-RSSI formula with `materialLossDb` set to zero and skip the two');
-  L.push('segment traces when that value cannot beat the incumbent. Since');
-  L.push('`optimisticRssi - actualRssi = materialLossDb`, the bound is only an upper bound');
-  L.push('while every material loss is `>= 0`. That is **not** guaranteed for every project');
-  L.push('this application can represent:');
+  L.push('**Status: the precondition is now PROVEN. The prune is still NOT ACTIVE.**');
   L.push('');
-  L.push('- a Ceiling Area\'s additional attenuation has no minimum in the UI and no guard in');
-  L.push('  its change handler, and `ceilEffectiveLoss()` adds it without the clamp its RF');
-  L.push('  Object and floor-slab counterparts both apply, so it can be negative;');
-  L.push('- `loadProject` adopts the file\'s state wholesale, so a project file can also');
+  L.push('The proposed bound evaluates the exact reflected-RSSI formula with');
+  L.push('`materialLossDb` set to zero and would skip the two segment traces when that');
+  L.push('value cannot beat the incumbent. Since `optimisticRssi - actualRssi =');
+  L.push('materialLossDb`, that is only an upper bound while every material loss is `>= 0`.');
+  L.push('');
+  L.push('It was not, and the Stage-7B.1 study recorded the proof as failing:');
+  L.push('');
+  L.push('- a Ceiling Area\'s additional attenuation had no minimum in the UI and no guard in');
+  L.push('  its change handler, and `ceilEffectiveLoss()` added it without the clamp its RF');
+  L.push('  Object and floor-slab counterparts both applied;');
+  L.push('- `loadProject` adopts the file\'s state wholesale, so a project file could also');
   L.push('  supply a negative material `db`.');
   L.push('');
-  L.push('With a negative ceiling extra loss the engine reports `actualRssi` **above** the');
-  L.push('"optimistic" value, which makes it a lower bound rather than an upper bound and');
-  L.push('makes `optimistic <= incumbent` unsafe to conclude `actual <= incumbent` from.');
-  L.push('The test suite reproduces this through the real engine. Until every material loss');
-  L.push('is proven non-negative for every representable project, no such prune may be');
-  L.push('added. No figure in this section is a speedup claim.');
+  L.push('With a negative ceiling extra loss the engine then reported `actualRssi` **above**');
+  L.push('the "optimistic" value, making it a lower bound rather than an upper bound.');
+  L.push('');
+  L.push('Both paths are now closed by the invariant that every passive material');
+  L.push('contribution to RF loss is `>= 0` dB, enforced at the loss-computation boundary');
+  L.push('(`passiveMaterialLossDb`) so that editor-created projects, loaded projects, older');
+  L.push('files and the legacy engine all obey the same physics. A passive barrier can no');
+  L.push('longer add received power to a signal crossing it.');
+  L.push('');
+  L.push('Note precisely what that correction does and does not touch:');
+  L.push('');
+  L.push('- `runRayTrace()` function body: byte-identical, it was not edited;');
+  L.push('- valid nonnegative-input behaviour: unchanged, covered by the existing');
+  L.push('  frozen oracle;');
+  L.push('- invalid negative passive-loss behaviour: intentionally corrected to a 0 dB');
+  L.push('  minimum. `matById()` is a shared dependency of `runRayTrace()`, so this is a');
+  L.push('  deliberate behaviour change for invalid inputs, not a no-op.');
+  L.push('');
+  L.push('**No prune has been activated.** No reflection candidate is skipped, reordered or');
+  L.push('approximated anywhere in this application; every accepted reflection is still');
+  L.push('traced as two full segments. Turning the measurement into a prune is a separate');
+  L.push('decision that has not been taken. No figure in this section is a speedup claim.');
   L.push('');
   return L;
 }
@@ -13686,8 +13773,11 @@ function ceilPlan(c){
 // already treat a crossing.
 function ceilEffectiveLoss(c){
   const m=matById(c&&c.materialId);
-  const extra=Number(c&&c.extraLossDb);
-  return (m.db||0) + (Number.isFinite(extra)?extra:0);
+  // BOTH terms are floored, not just the extra. The base material db is
+  // already floored by matById, and the extra is floored here: clamping only
+  // the extra is precisely the omission that let a Ceiling Area barrier add
+  // received power instead of attenuating it.
+  return passiveMaterialLossDb(m && m.db) + passiveMaterialLossDb(c && c.extraLossDb);
 }
 // CANONICAL CEILING VERTICAL INTERVAL - the single source of truth for where a
 // Ceiling physically is, in metres relative to its OWNER FLOOR BASE.
@@ -13908,7 +13998,7 @@ function ceilingCreate(){
   area.virtualEdges=ceilingDraft.virtualEdges.map(e=>({a:{x:e.a.x,y:e.a.y}, b:{x:e.b.x,y:e.b.y}}));
   area.height=Number(d.height)||0.1;
   area.thickness=Math.max(0.001, Number(d.thickness)||CEIL_DEFAULT_THICKNESS);
-  area.extraLossDb=Number(d.extraLossDb)||0;
+  area.extraLossDb=passiveMaterialLossDb(d.extraLossDb);
   commit();                                   // undo/redo participates normally
   if(!f.ceilingAreas) f.ceilingAreas=[];
   f.ceilingAreas.push(area);
@@ -15529,14 +15619,17 @@ function renderProp(){
       <div class="field"><label data-i18n="ceiling.height">Altura (m)</label><input id="pCeH" type="number" step="0.05" min="0.05" value="${(+c.height).toFixed(2)}"></div>
       <div class="field"><label data-i18n="ceiling.thickness">Espesor (m)</label><input id="pCeT" type="number" step="0.01" min="0.001" value="${(+c.thickness).toFixed(3)}"></div>
       <div class="field"><label data-i18n="ceiling.material">Material</label><select id="pCeM">${matOpts}</select></div>
-      <div class="field"><label data-i18n="ceiling.extraLoss">Atenuación adicional (dB)</label><input id="pCeL" type="number" step="0.5" value="${Number(c.extraLossDb)||0}"></div>
+      <div class="field"><label data-i18n="ceiling.extraLoss">Atenuación adicional (dB)</label><input id="pCeL" type="number" step="0.5" min="0" value="${passiveMaterialLossDb(c.extraLossDb)}"></div>
       <div class="stat"><span data-i18n="ceiling.effectiveLoss">Pérdida efectiva</span><b>${ceilEffectiveLoss(c).toFixed(1)} dB</b></div>
       <button class="delbtn" id="pDel" data-i18n="ceiling.delete">Eliminar techo</button>`;
     const bump=()=>{ renderProp(); scheduleHeat(); draw2d(); if(view==='3d')build3d(); };
     $('#pCeH').onchange=e=>{ commit(); c.height=Math.max(0.05,+e.target.value||0.1); bump(); };
     $('#pCeT').onchange=e=>{ commit(); c.thickness=Math.max(0.001,+e.target.value||CEIL_DEFAULT_THICKNESS); bump(); };
     $('#pCeM').onchange=e=>{ commit(); c.materialId=e.target.value; bump(); };
-    $('#pCeL').onchange=e=>{ commit(); c.extraLossDb=+e.target.value||0; bump(); };
+    // UI guard, mirroring the RF Object field. Defence in depth only: the
+    // invariant is enforced at passiveMaterialLossDb()/matById(), which also
+    // covers projects that arrive from a file without passing through here.
+    $('#pCeL').onchange=e=>{ const v=parseFloat(e.target.value); if(!Number.isFinite(v)||v<0){ e.target.value=passiveMaterialLossDb(c.extraLossDb); return; } commit(); c.extraLossDb=v; bump(); };
     $('#pDel').onclick=deleteSelection;
   }
   else if(selection.type==='zone'){

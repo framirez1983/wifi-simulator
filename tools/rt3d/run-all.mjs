@@ -37,6 +37,10 @@ const steps = [
   // It pins the counterexample that blocks reflection pruning, so a future
   // attempt cannot silently rediscover the bound as if it were sound.
   ['Stage 7B.1 reflection-pruning feasibility (shadow measurement + counterexample)', 'stage7b1-prune-feasibility.test.mjs', []],
+  // RF CORRECTNESS, not performance. Establishes that a passive material can
+  // never contribute negative attenuation, which is the precondition Stage 7B.1
+  // found missing and which blocks any reflection-pruning bound.
+  ['Passive-material loss invariant (no passive barrier may add RF power)', 'rt3d-passive-loss-invariant.test.mjs', []],
   ['Canonical slab thickness audit', 'slab-thickness.test.mjs', []],
   ['Stage 1A compatibility oracle', 'oracle.mjs', ['check']],
   ['App smoke test (real start() + production trace on the demo room)', 'smoke.mjs', []],
